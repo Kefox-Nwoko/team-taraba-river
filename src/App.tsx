@@ -1,28 +1,57 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { logger } from "./lib/logger";
 import { Member, GroupEvent, PhotoApprovalRequest } from "./types";
 import { AppStateManager } from "./services/storage";
 import { fetchMembers, fetchEvents, fetchApprovals, fetchVisitMetrics } from "./services/apiClient";
 import { FirebaseSyncManager, triggerGoogleAdminSignIn } from "./services/firebaseService";
 import { ChevronUp } from "lucide-react";
+import { ViewSkeleton } from "./components/ui/Skeleton";
+import { NetworkStatusBanner } from "./components/NetworkStatusBanner";
+import { useToast } from "./components/ui/Toast";
 
-// Components
+// Eager (shell) components — needed for first paint
 import { LoginGate } from "./components/LoginGate";
 import { Navbar } from "./components/Navbar";
 import { HeroBanner } from "./components/HeroBanner";
-import { TermsAndConditionsModal } from "./components/TermsAndConditionsModal";
 import { EventCalendarView } from "./components/EventCalendarView";
-import { EventMediaView } from "./components/EventMediaView";
-import { AdminDashboardView } from "./components/AdminDashboardView";
-import { AIKnowledgeAssistant } from "./components/AIKnowledgeAssistant";
-import { MemberRegistrationModal } from "./components/MemberRegistrationModal";
 import { SignInModal } from "./components/SignInModal";
-import { MicroservicesArchModal } from "./components/MicroservicesArchModal";
-import { CreateEventModal } from "./components/CreateEventModal";
-import { FullPageMediaUpload } from "./components/FullPageMediaUpload";
 import { MobileBottomNav } from "./components/MobileBottomNav";
-import { MyProfileView } from "./components/MyProfileView";
-import { BRAND_LOGO } from "./constants/assets";
+
+// Lazy (code-split) — heavy views & modals loaded on demand to shrink the
+// initial bundle and speed up first paint on low-bandwidth connections.
+const TermsAndConditionsModal = lazy(() =>
+  import("./components/TermsAndConditionsModal").then((m) => ({ default: m.TermsAndConditionsModal }))
+);
+const EventMediaView = lazy(() =>
+  import("./components/EventMediaView").then((m) => ({ default: m.EventMediaView }))
+);
+const AdminDashboardView = lazy(() =>
+  import("./components/AdminDashboardView").then((m) => ({ default: m.AdminDashboardView }))
+);
+const AIKnowledgeAssistant = lazy(() =>
+  import("./components/AIKnowledgeAssistant").then((m) => ({ default: m.AIKnowledgeAssistant }))
+);
+const MemberRegistrationModal = lazy(() =>
+  import("./components/MemberRegistrationModal").then((m) => ({ default: m.MemberRegistrationModal }))
+);
+const MicroservicesArchModal = lazy(() =>
+  import("./components/MicroservicesArchModal").then((m) => ({ default: m.MicroservicesArchModal }))
+);
+const CreateEventModal = lazy(() =>
+  import("./components/CreateEventModal").then((m) => ({ default: m.CreateEventModal }))
+);
+const FullPageMediaUpload = lazy(() =>
+  import("./components/FullPageMediaUpload").then((m) => ({ default: m.FullPageMediaUpload }))
+);
+const MyProfileView = lazy(() =>
+  import("./components/MyProfileView").then((m) => ({ default: m.MyProfileView }))
+);
+
+const ModalFallback = () => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-md animate-fadeIn">
+    <div className="h-10 w-10 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+  </div>
+);
 
 function isProfileComplete(user: Member | null): boolean {
   if (!user) return false;
@@ -45,6 +74,7 @@ function isProfileComplete(user: Member | null): boolean {
 }
 
 export default function App() {
+  const { notify } = useToast();
   const [currentUser, setCurrentUser] = useState<Member | null>(AppStateManager.getCurrentUser());
   const [activeTab, setActiveTab] = useState<
     "media" | "events" | "admin" | "architecture" | "upload" | "profile"
@@ -52,7 +82,7 @@ export default function App() {
 
   const handleSetActiveTab = (tab: any) => {
     if (currentUser && !isProfileComplete(currentUser)) {
-      alert("🔔 Action Required: You must complete all required profile fields (all fields except Marital Status and Skills are mandatory) before you can access the calendar, media library, or other features.");
+      notify("Action Required: Please complete all required profile fields before accessing other features.", "info");
       setActiveTab("profile");
       return;
     }
@@ -311,7 +341,7 @@ export default function App() {
   const renderScrollToTopButton = () => (
     <button
       onClick={scrollToTop}
-      className={`fixed bottom-56 sm:bottom-44 md:bottom-36 right-6 sm:right-8 p-3.5 rounded-full bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600 text-white shadow-2xl hover:scale-110 active:scale-95 transition-all duration-300 z-[9999] flex items-center justify-center border border-white/30 cursor-pointer
+      className={`fixed bottom-56 sm:bottom-44 md:bottom-36 right-6 sm:right-8 p-3.5 rounded-full bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600 text-white shadow-2xl hover:scale-110 active:scale-95 transition-all duration-300 z-[9999] flex items-center justify-center border border-white/30 cursor-pointer interactive
         ${showScrollTop ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10 pointer-events-none"}`}
       title="Back to top"
       aria-label="Back to top"
@@ -341,27 +371,32 @@ export default function App() {
         {registerModalOpen && (
           <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-16 overflow-y-auto flex items-start justify-center animate-fadeIn">
             <div className="w-full max-w-[1600px] mx-auto">
-              <MemberRegistrationModal
-                isOpen={registerModalOpen}
-                onClose={() => setRegisterModalOpen(false)}
-                onOpenTerms={() => setTermsModalOpen(true)}
-                memberToEdit={null}
-                originatingPageName="Member Sign-In Gate"
-                onSuccess={(updatedM) => {
-                  handleRefreshAll();
-                  setCurrentUser(updatedM);
-                  AppStateManager.setCurrentUser(updatedM);
-                  setActiveTab("events");
-                  setRegisterModalOpen(false);
-                }}
-              />
+              <Suspense fallback={<ModalFallback />}>
+                <MemberRegistrationModal
+                  isOpen={registerModalOpen}
+                  onClose={() => setRegisterModalOpen(false)}
+                  onOpenTerms={() => setTermsModalOpen(true)}
+                  memberToEdit={null}
+                  originatingPageName="Member Sign-In Gate"
+                  onSuccess={(updatedM) => {
+                    handleRefreshAll();
+                    setCurrentUser(updatedM);
+                    AppStateManager.setCurrentUser(updatedM);
+                    setActiveTab("events");
+                    setRegisterModalOpen(false);
+                  }}
+                />
+              </Suspense>
             </div>
           </div>
         )}
-        <TermsAndConditionsModal 
-          isOpen={termsModalOpen} 
-          onClose={() => setTermsModalOpen(false)} 
-        />
+        <Suspense fallback={null}>
+          <TermsAndConditionsModal 
+            isOpen={termsModalOpen} 
+            onClose={() => setTermsModalOpen(false)} 
+          />
+        </Suspense>
+        <NetworkStatusBanner />
         {renderScrollToTopButton()}
       </div>
     );
@@ -396,7 +431,7 @@ export default function App() {
         onSignOut={handleSignOut}
         onToggleAiAssistant={() => {
           if (currentUser && !isProfileComplete(currentUser)) {
-            alert("🔔 Action Required: Please complete your member profile details first.");
+            notify("Action Required: Please complete your member profile details first.", "info");
             return;
           }
           setRegisterModalOpen(false);
@@ -410,39 +445,45 @@ export default function App() {
       />
 
       {/* Terms and Conditions Modal */}
-      <TermsAndConditionsModal 
-        isOpen={termsModalOpen} 
-        onClose={() => setTermsModalOpen(false)} 
-      />
+      <Suspense fallback={null}>
+        <TermsAndConditionsModal 
+          isOpen={termsModalOpen} 
+          onClose={() => setTermsModalOpen(false)} 
+        />
+      </Suspense>
 
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-16">
-        <CreateEventModal
-          isOpen={createEventModalOpen}
-          onClose={() => setCreateEventModalOpen(false)}
-          currentUser={currentUser}
-          onSuccess={() => {
-            handleRefreshEvents();
-            setCreateEventModalOpen(false);
-          }}
-        />
-
-        {registerModalOpen && currentUser?.role !== "admin" ? (
-          <MemberRegistrationModal
-            isOpen={registerModalOpen}
-            onClose={() => setRegisterModalOpen(false)}
-            onOpenTerms={() => setTermsModalOpen(true)}
-            memberToEdit={memberToEdit}
-            originatingPageName={getOriginatingPageName()}
-            onSuccess={(updatedM) => {
-              handleRefreshAll();
-              if (!currentUser || currentUser.id === updatedM.id) {
-                setCurrentUser(updatedM);
-                AppStateManager.setCurrentUser(updatedM);
-              }
-              setRegisterModalOpen(false);
+        <Suspense fallback={<ModalFallback />}>
+          <CreateEventModal
+            isOpen={createEventModalOpen}
+            onClose={() => setCreateEventModalOpen(false)}
+            currentUser={currentUser}
+            onSuccess={() => {
+              handleRefreshEvents();
+              setCreateEventModalOpen(false);
             }}
           />
+        </Suspense>
+
+        {registerModalOpen && currentUser?.role !== "admin" ? (
+          <Suspense fallback={<ModalFallback />}>
+            <MemberRegistrationModal
+              isOpen={registerModalOpen}
+              onClose={() => setRegisterModalOpen(false)}
+              onOpenTerms={() => setTermsModalOpen(true)}
+              memberToEdit={memberToEdit}
+              originatingPageName={getOriginatingPageName()}
+              onSuccess={(updatedM) => {
+                handleRefreshAll();
+                if (!currentUser || currentUser.id === updatedM.id) {
+                  setCurrentUser(updatedM);
+                  AppStateManager.setCurrentUser(updatedM);
+                }
+                setRegisterModalOpen(false);
+              }}
+            />
+          </Suspense>
         ) : signInModalOpen ? (
           <SignInModal
             isOpen={signInModalOpen}
@@ -461,26 +502,30 @@ export default function App() {
             availableMembers={members}
           />
         ) : archModalOpen ? (
-          <MicroservicesArchModal
-            isOpen={archModalOpen}
-            onClose={() => setArchModalOpen(false)}
-            originatingPageName={getOriginatingPageName()}
-          />
+          <Suspense fallback={<ModalFallback />}>
+            <MicroservicesArchModal
+              isOpen={archModalOpen}
+              onClose={() => setArchModalOpen(false)}
+              originatingPageName={getOriginatingPageName()}
+            />
+          </Suspense>
         ) : aiAssistantOpen ? (
-          <AIKnowledgeAssistant
-            isOpen={aiAssistantOpen}
-            onClose={() => setAiAssistantOpen(false)}
-            currentUser={currentUser}
-            originatingPageName={getOriginatingPageName()}
-            onNavigateTab={(tab) => {
-              if (tab === "directory") {
-                handleSetActiveTab("admin");
-              } else {
-                handleSetActiveTab(tab as any);
-              }
-              setAiAssistantOpen(false);
-            }}
-          />
+          <Suspense fallback={<ModalFallback />}>
+            <AIKnowledgeAssistant
+              isOpen={aiAssistantOpen}
+              onClose={() => setAiAssistantOpen(false)}
+              currentUser={currentUser}
+              originatingPageName={getOriginatingPageName()}
+              onNavigateTab={(tab) => {
+                if (tab === "directory") {
+                  handleSetActiveTab("admin");
+                } else {
+                  handleSetActiveTab(tab as any);
+                }
+                setAiAssistantOpen(false);
+              }}
+            />
+          </Suspense>
         ) : (
           <div className="space-y-6 sm:space-y-8">
             {/* Hero Banner & Calendar - Events page only */}
@@ -517,57 +562,65 @@ export default function App() {
 
             {/* Tab Views */}
             {activeTab === "upload" && (
-              <FullPageMediaUpload
-                events={events}
-                currentUser={currentUser}
-                onReturn={handleReturn}
-                onSuccess={(_updatedEvent) => {
-                  handleRefreshEvents();
-                  triggerBackgroundSync();
-                  handleSetActiveTab("media");
-                }}
-              />
+              <Suspense fallback={<ViewSkeleton label="Media upload" />}>
+                <FullPageMediaUpload
+                  events={events}
+                  currentUser={currentUser}
+                  onReturn={handleReturn}
+                  onSuccess={(_updatedEvent) => {
+                    handleRefreshEvents();
+                    triggerBackgroundSync();
+                    handleSetActiveTab("media");
+                  }}
+                />
+              </Suspense>
             )}
             {activeTab === "media" && (
-              <EventMediaView
-                events={events}
-                currentUser={currentUser}
-                onBackToDashboard={handleReturn}
-                originatingPageName={getOriginatingPageName()}
-                onRefreshEvents={handleRefreshEvents}
-                syncStatus={syncStatus}
-                syncAttemptCount={syncAttemptCount}
-                syncErrorMessage={syncErrorMessage}
-              />
+              <Suspense fallback={<ViewSkeleton label="Event media" />}>
+                <EventMediaView
+                  events={events}
+                  currentUser={currentUser}
+                  onBackToDashboard={handleReturn}
+                  originatingPageName={getOriginatingPageName()}
+                  onRefreshEvents={handleRefreshEvents}
+                  syncStatus={syncStatus}
+                  syncAttemptCount={syncAttemptCount}
+                  syncErrorMessage={syncErrorMessage}
+                />
+              </Suspense>
             )}
 
             {activeTab === "admin" && (
-              <AdminDashboardView
-                members={members}
-                events={events}
-                currentUser={currentUser}
-                onRefreshData={handleRefreshAll}
-                onEditMember={(m) => {
-                  setMemberToEdit(m);
-                  setRegisterModalOpen(true);
-                }}
-                onRegisterClick={() => {
-                  setMemberToEdit(null);
-                  setRegisterModalOpen(true);
-                }}
-                onReturn={handleReturn}
-              />
+              <Suspense fallback={<ViewSkeleton label="Admin dashboard" />}>
+                <AdminDashboardView
+                  members={members}
+                  events={events}
+                  currentUser={currentUser}
+                  onRefreshData={handleRefreshAll}
+                  onEditMember={(m) => {
+                    setMemberToEdit(m);
+                    setRegisterModalOpen(true);
+                  }}
+                  onRegisterClick={() => {
+                    setMemberToEdit(null);
+                    setRegisterModalOpen(true);
+                  }}
+                  onReturn={handleReturn}
+                />
+              </Suspense>
             )}
             {activeTab === "profile" && currentUser && (
-              <MyProfileView
-                currentUser={currentUser}
-                onOpenTerms={() => setTermsModalOpen(true)}
-                onUpdateSuccess={(updatedUser) => {
-                  setCurrentUser(updatedUser);
-                  AppStateManager.setCurrentUser(updatedUser);
-                  handleRefreshAll();
-                }}
-              />
+              <Suspense fallback={<ViewSkeleton label="Profile" />}>
+                <MyProfileView
+                  currentUser={currentUser}
+                  onOpenTerms={() => setTermsModalOpen(true)}
+                  onUpdateSuccess={(updatedUser) => {
+                    setCurrentUser(updatedUser);
+                    AppStateManager.setCurrentUser(updatedUser);
+                    handleRefreshAll();
+                  }}
+                />
+              </Suspense>
             )}
           </div>
         )}
@@ -600,6 +653,7 @@ export default function App() {
       />
 
       {/* Scroll to Top Button */}
+      <NetworkStatusBanner />
       {renderScrollToTopButton()}
 
       {/* Footer */}
@@ -614,7 +668,7 @@ export default function App() {
 
           {/* Right: Terms and Conditions */}
           <div className="flex items-center space-x-3 sm:space-x-4 shrink-0 text-right">
-            <button onClick={() => setTermsModalOpen(true)} className="text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300 whitespace-nowrap text-[10px] sm:text-xs md:text-sm transition-colors cursor-pointer">
+            <button onClick={() => setTermsModalOpen(true)} className="interactive text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300 whitespace-nowrap text-[10px] sm:text-xs md:text-sm transition-colors cursor-pointer">
               Terms & Conditions
             </button>
           </div>

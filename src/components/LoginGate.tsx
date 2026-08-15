@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Member } from "../types";
 import { loginMember } from "../services/apiClient";
 import { signInWithCustomToken } from "../services/firebaseService";
@@ -23,6 +23,14 @@ export const LoginGate: React.FC<LoginGateProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Load the heavy login wallpaper after first paint so it never blocks the
+  // initial render on slow connections — a cheap gradient shows instantly.
+  const [wallLoaded, setWallLoaded] = useState(false);
+  useEffect(() => {
+    const img = new Image();
+    img.src = LOGIN_WALL_BG;
+    img.onload = () => setWallLoaded(true);
+  }, []);
   const handleAdminLogin = async () => {
     setIsAdminLoading(true);
     setError(null);
@@ -113,10 +121,14 @@ export const LoginGate: React.FC<LoginGateProps> = ({
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 overflow-y-auto bg-slate-950">
       {" "}
-      {/* Background Login Wall Wallpaper */}{" "}
+      {/* Background Login Wall Wallpaper — gradient shows instantly, heavy
+          image fades in once decoded so first paint is never blocked. */}
+      <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-teal-900 to-slate-950" />
       <div
-        className="absolute inset-0 bg-cover bg-center bg-no-referrer filter brightness-95 contrast-110 scale-105 transition-all duration-700"
-        style={{ backgroundImage: `url(${LOGIN_WALL_BG})` }}
+        className={`absolute inset-0 bg-cover bg-center bg-no-referrer filter brightness-95 contrast-110 scale-105 transition-opacity duration-700 ${
+          wallLoaded ? "opacity-100" : "opacity-0"
+        }`}
+        style={wallLoaded ? { backgroundImage: `url(${LOGIN_WALL_BG})` } : undefined}
       />{" "}
       {/* Light Uniform Overlay */}{" "}
       <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" />{" "}

@@ -293,3 +293,51 @@ body {
     opacity: 0;
   }
 }
+
+/* ─── SHIMMER (skeleton loading) ─── */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.4s infinite;
+}
+
+/* ─── SOFT INTERACTION PRIMITIVES ───
+   Apply `.interactive` to buttons, chips and tappable surfaces for a
+   consistent, "soft & sweet" press + hover feel across the app. */
+@layer components {
+  .interactive {
+    @apply transition-[transform,background-color,color,box-shadow,border-color] duration-200 ease-out;
+    @apply outline-none;
+  }
+  .interactive:focus-visible {
+    @apply ring-2 ring-teal-500/70 ring-offset-2 ring-offset-white dark:ring-offset-slate-900;
+  }
+  .interactive:active {
+    @apply scale-[0.97];
+  }
+  .interactive-press {
+    @apply active:scale-95 transition-transform duration-150 ease-out;
+  }
+  .card-lift {
+    @apply transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-xl;
+  }
+}
+
+/* Respect users who prefer reduced motion: kill non-essential motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-shimmer {
+    animation: none;
+  }
+}

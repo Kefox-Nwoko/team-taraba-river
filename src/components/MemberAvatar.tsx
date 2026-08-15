@@ -1,6 +1,7 @@
 import React from "react";
 import { Member } from "../types";
 import { AppStateManager } from "../services/storage";
+import { LazyImage } from "./ui/LazyImage";
 
 export function getMemberInitials(
   member?: { firstName?: string; surname?: string; fullName?: string } | null,
@@ -84,10 +85,9 @@ export const MemberAvatar: React.FC<MemberAvatarProps> = ({
 
   if (effectivePhotoUrl && effectivePhotoStatus !== 'rejected') {
     return (
-      <img
+      <LazyImage
         src={effectivePhotoUrl}
         alt={effectiveMember?.fullName || "Member Profile"}
-        title={effectiveMember?.fullName || "Member Profile"}
         referrerPolicy="no-referrer"
         className={`${sizeClassName} rounded-full object-cover shrink-0 shadow-sm border border-slate-200 dark:border-slate-700 ${className}`}
       />

@@ -1,0 +1,19 @@
+{
+  "name": "URIP Team Taraba River — Community Portal",
+  "short_name": "Taraba River",
+  "description": "Community portal & media hub for URIP (Team Taraba River), a chapter of USOSA.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0B0E14",
+  "theme_color": "#00796B",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

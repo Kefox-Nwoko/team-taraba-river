@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useDeferredValue } from "react";
 import { Member } from "../types";
 import { adminAISearch } from "../services/apiClient";
 import { logger } from "../lib/logger";
@@ -119,14 +119,15 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
   const [isAiSearching, setIsAiSearching] = useState(false);
   const isAdmin = currentUser?.role === "admin";
 
+  const deferredSearch = useDeferredValue(searchTerm);
   const localFiltered = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
+    const term = deferredSearch.trim().toLowerCase();
     if (!term) return members;
     return members.filter((m) => {
       const searchable = getMemberSearchableText(m);
       return searchable.includes(term);
     });
-  }, [members, searchTerm]);
+  }, [members, deferredSearch]);
 
   const displayedMembers = aiResults !== null ? aiResults : localFiltered;
 
