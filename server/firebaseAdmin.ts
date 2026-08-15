@@ -1,7 +1,7 @@
 import { initializeApp, getApps, App } from 'firebase-admin/app';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
-import { cert, applicationDefault } from 'firebase-admin';
+import { cert } from 'firebase-admin';
 
 import fs from 'fs';
 import path from 'path';
@@ -45,7 +45,7 @@ if (hasCredentials && resolvedPath) {
   firestoreAvailable = true;
   serverLogger.info(`Firebase Admin SDK: initialized using credentials at ${resolvedPath}`);
 } else {
-  serverLogger.warn(`Firebase Admin SDK: credentials file not found. Searched: ${candidatePaths.join(', ')}. Firestore Admin access is disabled for this session. The app will use in-memory fallback data.`);
+  serverLogger.warn(`Firebase Admin SDK: credentials file not found. Searched: ${candidatePaths.join(', ')}. Firestore Admin access is disabled for this session.`);
   firestoreAvailable = false;
 }
 
@@ -67,15 +67,22 @@ let adminAuth: Auth = dummyDb as unknown as Auth;
 
 if (app && firestoreAvailable) {
   if (firestoreDatabaseId !== '(default)') {
-    db = getFirestore(app, firestoreDatabaseId);
+    try {
+      db = getFirestore(app, firestoreDatabaseId);
+      adminAuth = getAuth(app);
+    } catch (err) {
+      serverLogger.warn('Failed to init custom database, falling back to (default)', { error: String(err) });
+      db = getFirestore(app);
+      adminAuth = getAuth(app);
+    }
   } else {
     db = getFirestore(app);
+    adminAuth = getAuth(app);
   }
-  adminAuth = getAuth(app);
 }
 
 /**
- * Check Firestore connectivity on first call.
+ * Check Firestore connectivity on first call. Falls back to (default) DB.
  */
 export async function checkFirestoreConnection(): Promise<boolean> {
   if (!firestoreAvailable || !app) {
@@ -85,14 +92,31 @@ export async function checkFirestoreConnection(): Promise<boolean> {
   try {
     await db.collection('members').limit(1).get();
     firestoreAvailable = true;
+    serverLogger.info(`Firestore connected using database: ${firestoreDatabaseId}`);
     return true;
   } catch (err: any) {
-    if (err.message?.includes('default credentials') || err.code === 'UNAUTHENTICATED') {
-      serverLogger.warn('Firebase Admin SDK: No Application Default Credentials found. Firestore Admin access is disabled for this session. The app will use the frontend Firebase client SDK for data access. To enable full backend auth, set GOOGLE_APPLICATION_CREDENTIALS.');
-      firestoreAvailable = false;
-      return false;
+    serverLogger.error('Firestore connection test failed', {
+      message: err?.message,
+      code: err?.code,
+    });
+    // Fallback to (default) database if a custom one was configured and failed
+    if (firestoreDatabaseId !== '(default)') {
+      try {
+        serverLogger.info('Trying (default) database as fallback...');
+        db = getFirestore(app);
+        await db.collection('members').limit(1).get();
+        firestoreAvailable = true;
+        serverLogger.info('Firestore connected using (default) database');
+        return true;
+      } catch (fallbackErr: any) {
+        serverLogger.error('Fallback to (default) database also failed', {
+          message: fallbackErr?.message,
+          code: fallbackErr?.code,
+        });
+      }
     }
-    throw err;
+    firestoreAvailable = false;
+    return false;
   }
 }
 
