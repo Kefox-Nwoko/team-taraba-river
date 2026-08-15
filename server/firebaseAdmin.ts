@@ -15,30 +15,37 @@ let app: App | undefined;
 let firestoreAvailable = false;
 
 const credentialsPath = config.googleApplicationCredentials;
-const hasCredentials = !!credentialsPath || process.env.NODE_ENV === 'production';
+const candidatePaths = [
+  credentialsPath ? path.resolve(process.cwd(), credentialsPath) : null,
+  path.resolve(process.cwd(), 'service-account.json'),
+  path.resolve(process.cwd(), '..', 'service-account.json'),
+].filter(Boolean) as string[];
 
-if (hasCredentials) {
-  const resolvedPath = credentialsPath ? path.resolve(process.cwd(), credentialsPath) : null;
-  const fileExists = resolvedPath ? fs.existsSync(resolvedPath) : false;
-
-  if (fileExists) {
-    if (getApps().length === 0) {
-      const initConfig: any = {
-        projectId: firebaseConfig.projectId,
-        storageBucket: firebaseConfig.storageBucket,
-      };
-      initConfig.credential = cert(resolvedPath as string);
-      app = initializeApp(initConfig);
-    } else {
-      app = getApps()[0];
-    }
-    firestoreAvailable = true;
-  } else {
-    serverLogger.warn(`Firebase Admin SDK: credentials file not found at ${resolvedPath || 'GOOGLE_APPLICATION_CREDENTIALS'}. Firestore Admin access is disabled for this session. The app will use in-memory fallback data.`);
-    firestoreAvailable = false;
+let resolvedPath: string | null = null;
+for (const p of candidatePaths) {
+  if (fs.existsSync(p)) {
+    resolvedPath = p;
+    break;
   }
+}
+
+const hasCredentials = !!resolvedPath;
+
+if (hasCredentials && resolvedPath) {
+  if (getApps().length === 0) {
+    const initConfig: any = {
+      projectId: firebaseConfig.projectId,
+      storageBucket: firebaseConfig.storageBucket,
+    };
+    initConfig.credential = cert(resolvedPath as string);
+    app = initializeApp(initConfig);
+  } else {
+    app = getApps()[0];
+  }
+  firestoreAvailable = true;
+  serverLogger.info(`Firebase Admin SDK: initialized using credentials at ${resolvedPath}`);
 } else {
-  serverLogger.warn('Firebase Admin SDK: No GOOGLE_APPLICATION_CREDENTIALS found and not in production. Firestore Admin access is disabled for this session. The app will use in-memory fallback data.');
+  serverLogger.warn(`Firebase Admin SDK: credentials file not found. Searched: ${candidatePaths.join(', ')}. Firestore Admin access is disabled for this session. The app will use in-memory fallback data.`);
   firestoreAvailable = false;
 }
 
@@ -71,7 +78,7 @@ if (app && firestoreAvailable) {
  * Check Firestore connectivity on first call.
  */
 export async function checkFirestoreConnection(): Promise<boolean> {
-  if (!hasCredentials) {
+  if (!firestoreAvailable || !app) {
     firestoreAvailable = false;
     return false;
   }
