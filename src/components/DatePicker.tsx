@@ -149,7 +149,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, require
       {isOpen && (
         <div className="absolute top-full left-0 mt-2 z-50 bg-white dark:bg-[#1E1E1E] border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-5 min-w-[340px] select-none"
              onClick={(e) => e.stopPropagation()}
-             style={{ fontSize: '15px' }}>
+              style={{ fontSize: '0.7rem' }}>
           {/* Header */}
           <div className="flex items-center justify-between mb-4">
             <button

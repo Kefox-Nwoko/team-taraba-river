@@ -450,7 +450,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                   placeholder="Paste YouTube Video link (e.g. https://www.youtube.com/watch?v=... or https://youtu.be/...)"
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500"
                 />
-                <p className="text-[16px] text-slate-500 dark:text-slate-400">
+                <p className="text-[0.8rem] text-slate-500 dark:text-slate-400">
                   Tip: Upload videos to YouTube directly for zero file size limits, then paste the YouTube link here to embed it in event galleries.
                 </p>
               </div>
