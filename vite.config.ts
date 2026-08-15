@@ -19,5 +19,6 @@ export default defineConfig(() => {
       outDir: 'dist/public',
       emptyOutDir: true,
     },
+    envPrefix: 'VITE_',
   };
 });

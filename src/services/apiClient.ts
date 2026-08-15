@@ -6,6 +6,15 @@ import {
 } from "../types";
 import { auth } from "../lib/firebase";
 import { logger } from "../lib/logger";
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+
+function apiUrl(path: string): string {
+  if (API_BASE_URL) {
+    return `${API_BASE_URL}${path}`;
+  }
+  return path;
+}
 async function getAuthHeaders(): Promise<HeadersInit> {
   const user = auth.currentUser;
   if (!user) {
@@ -24,7 +33,7 @@ async function getAuthHeaders(): Promise<HeadersInit> {
 export async function fetchMembers(): Promise<Member[]> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch("/api/members", { headers });
+    const res = await fetch(apiUrl("/api/members"), { headers });
     if (!res.ok) return [];
     const data = await res.json();
     return data.members || [];
@@ -35,7 +44,7 @@ export async function fetchMembers(): Promise<Member[]> {
 export async function loginMember(
   credential: string
 ): Promise<{ member: Member; customToken: string }> {
-  const res = await fetch("/api/auth/login", {
+  const res = await fetch(apiUrl("/api/auth/login"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ credential }),
@@ -48,13 +57,11 @@ export async function loginGoogleAdmin(
   email: string,
   password?: string
 ): Promise<{ member: Member; token: string }> {
-  // This endpoint is no longer used — admin login goes through Google OAuth popup
-  // Kept for backward compatibility but will throw
   throw new Error("Direct admin login is no longer supported. Use Google OAuth sign-in.");
 }
 export async function registerMember(memberData: Partial<Member>): Promise<Member> {
   const headers = await getAuthHeaders();
-  const res = await fetch("/api/members", {
+  const res = await fetch(apiUrl("/api/members"), {
     method: "POST",
     headers,
     body: JSON.stringify(memberData),
@@ -68,7 +75,7 @@ export async function updateMemberProfile(
   memberData: Partial<Member>
 ): Promise<Member> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`/api/members/${id}`, {
+  const res = await fetch(apiUrl(`/api/members/${id}`), {
     method: "PUT",
     headers,
     body: JSON.stringify(memberData),
@@ -80,7 +87,7 @@ export async function updateMemberProfile(
 export async function fetchEvents(): Promise<GroupEvent[]> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch("/api/events", { headers });
+    const res = await fetch(apiUrl("/api/events"), { headers });
     if (!res.ok) return [];
     const data = await res.json();
     return data.events || [];
@@ -90,7 +97,7 @@ export async function fetchEvents(): Promise<GroupEvent[]> {
 }
 export async function createEvent(eventData: Partial<GroupEvent>): Promise<GroupEvent> {
   const headers = await getAuthHeaders();
-  const res = await fetch("/api/events", {
+  const res = await fetch(apiUrl("/api/events"), {
     method: "POST",
     headers,
     body: JSON.stringify(eventData),
@@ -102,7 +109,7 @@ export async function createEvent(eventData: Partial<GroupEvent>): Promise<Group
 
 export async function updateEvent(id: string, eventData: Partial<GroupEvent>): Promise<GroupEvent> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`/api/events/${id}`, {
+  const res = await fetch(apiUrl(`/api/events/${id}`), {
     method: "PUT",
     headers,
     body: JSON.stringify(eventData),
@@ -114,7 +121,7 @@ export async function updateEvent(id: string, eventData: Partial<GroupEvent>): P
 
 export async function deleteEvent(id: string): Promise<void> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`/api/events/${id}`, {
+  const res = await fetch(apiUrl(`/api/events/${id}`), {
     method: "DELETE",
     headers,
   });
@@ -129,7 +136,7 @@ export async function submitEventRSVP(
   status: "attending" | "maybe" | "declined"
 ): Promise<{ event: GroupEvent }> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`/api/events/${eventId}/rsvp`, {
+  const res = await fetch(apiUrl(`/api/events/${eventId}/rsvp`), {
     method: "POST",
     headers,
     body: JSON.stringify({ memberId, status }),
@@ -141,7 +148,7 @@ export async function submitEventRSVP(
 export async function fetchApprovals(): Promise<PhotoApprovalRequest[]> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch("/api/admin/approvals", { headers });
+    const res = await fetch(apiUrl("/api/admin/approvals"), { headers });
     if (!res.ok) return [];
     const data = await res.json();
     return data.approvals || [];
@@ -155,7 +162,7 @@ export async function decideApproval(
   adminNotes?: string
 ): Promise<{ approval: PhotoApprovalRequest; member?: Member }> {
   const headers = await getAuthHeaders();
-  const res = await fetch(`/api/admin/approvals/${id}/decision`, {
+  const res = await fetch(apiUrl(`/api/admin/approvals/${id}/decision`), {
     method: "POST",
     headers,
     body: JSON.stringify({ action, adminNotes }),
@@ -171,7 +178,7 @@ export async function fetchAnalytics(): Promise<{
 }> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch("/api/admin/analytics", { headers });
+    const res = await fetch(apiUrl("/api/admin/analytics"), { headers });
     if (!res.ok)
       return {
         topFiveMembers: [],
@@ -192,7 +199,7 @@ export async function queryAIAssistant(
   userContext?: any
 ): Promise<AIQueryResponse> {
   const headers = await getAuthHeaders();
-  const res = await fetch("/api/ai/query-router", {
+  const res = await fetch(apiUrl("/api/ai/query-router"), {
     method: "POST",
     headers,
     body: JSON.stringify({ userQuery, userContext }),
@@ -205,7 +212,7 @@ export async function syncGoogleDriveUrl(
   driveUrl: string
 ): Promise<{ folderId: string; syncedImages: string[] }> {
   const headers = await getAuthHeaders();
-  const res = await fetch("/api/media/drive-sync", {
+  const res = await fetch(apiUrl("/api/media/drive-sync"), {
     method: "POST",
     headers,
     body: JSON.stringify({ driveUrl }),
@@ -218,7 +225,7 @@ export async function parseYouTubeVideoUrl(
   url: string
 ): Promise<{ videoId: string; embedUrl: string; title: string }> {
   const headers = await getAuthHeaders();
-  const res = await fetch("/api/media/youtube-parse", {
+  const res = await fetch(apiUrl("/api/media/youtube-parse"), {
     method: "POST",
     headers,
     body: JSON.stringify({ url }),
@@ -230,7 +237,7 @@ export async function parseYouTubeVideoUrl(
 
 export async function triggerCloudSyncAll(direction: "reverse" | "forward" = "reverse"): Promise<{ success: boolean; events: GroupEvent[] }> {
   const headers = await getAuthHeaders();
-  const res = await fetch("/api/media/cloud-sync-all", {
+  const res = await fetch(apiUrl("/api/media/cloud-sync-all"), {
     method: "POST",
     headers,
     body: JSON.stringify({ direction }),
@@ -253,7 +260,7 @@ export async function triggerCloudSyncAll(direction: "reverse" | "forward" = "re
 
 export async function triggerYouTubeBackSync(channelId?: string, searchQuery?: string, urls?: string | string[]): Promise<{ success: boolean; message: string; syncedVideosCount: number; events: GroupEvent[] }> {
   const headers = await getAuthHeaders();
-  const res = await fetch("/api/media/youtube-back-sync", {
+  const res = await fetch(apiUrl("/api/media/youtube-back-sync"), {
     method: "POST",
     headers,
     body: JSON.stringify({ channelId, searchQuery, urls }),
@@ -271,7 +278,7 @@ export async function triggerYouTubeBackSync(channelId?: string, searchQuery?: s
 
 export async function resetSystemData(): Promise<{ success: boolean; message: string }> {
   const headers = await getAuthHeaders();
-  const res = await fetch("/api/admin/reset-data", {
+  const res = await fetch(apiUrl("/api/admin/reset-data"), {
     method: "POST",
     headers,
   });
@@ -292,7 +299,7 @@ export async function resetSystemData(): Promise<{ success: boolean; message: st
 }
 
 export async function fetchVisitMetrics(): Promise<{ totalVisits: number; lastVisitTimestamp: string; latestUniqueUser: string }> {
-  const res = await fetch("/api/system/visits", { cache: "no-store" });
+  const res = await fetch(apiUrl("/api/system/visits"), { cache: "no-store" });
   if (!res.ok) throw new Error("Failed to fetch visit metrics");
   return await res.json();
 }
@@ -314,7 +321,7 @@ export interface UsosaNewsResponse {
 
 export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> {
   try {
-    const url = force ? "/api/usosa-news?force=true" : "/api/usosa-news";
+    const url = force ? apiUrl("/api/usosa-news?force=true") : apiUrl("/api/usosa-news");
     const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return { headlines: [], fetchedAt: new Date().toISOString(), fallback: true };
     return await res.json();
@@ -333,7 +340,7 @@ export async function queryAiXplora(query: string, userName?: string): Promise<A
   try {
     const headers = await getAuthHeaders();
     const storedKey = localStorage.getItem("gemini_api_key");
-    const res = await fetch("/api/ai-xplora", {
+    const res = await fetch(apiUrl("/api/ai-xplora"), {
       method: "POST",
       headers,
       body: JSON.stringify({ query, userName, apiKey: storedKey }),
@@ -348,7 +355,7 @@ export async function queryAiXplora(query: string, userName?: string): Promise<A
 export async function adminAISearch(query: string): Promise<Member[]> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch("/api/admin/ai-search", {
+    const res = await fetch(apiUrl("/api/admin/ai-search"), {
       method: "POST",
       headers,
       body: JSON.stringify({ query }),
@@ -392,7 +399,7 @@ export async function uploadMediaItem(params: {
 }): Promise<MediaUploadResponse> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch("/api/media/upload", {
+    const res = await fetch(apiUrl("/api/media/upload"), {
       method: "POST",
       headers,
       body: JSON.stringify(params),
@@ -408,7 +415,7 @@ export async function uploadMediaItem(params: {
 export async function finalizeMediaItem(mediaId: string): Promise<MediaFinalizeResponse> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch("/api/media/finalize", {
+    const res = await fetch(apiUrl("/api/media/finalize"), {
       method: "POST",
       headers,
       body: JSON.stringify({ mediaId }),
@@ -424,7 +431,7 @@ export async function finalizeMediaItem(mediaId: string): Promise<MediaFinalizeR
 export async function getMediaItemStatus(mediaId: string): Promise<MediaStatusResponse> {
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(`/api/media/status/${encodeURIComponent(mediaId)}`, {
+    const res = await fetch(apiUrl(`/api/media/status/${encodeURIComponent(mediaId)}`), {
       headers,
     });
     const data = await res.json();

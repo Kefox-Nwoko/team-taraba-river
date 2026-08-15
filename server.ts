@@ -2521,10 +2521,4 @@ async function startServer() {
   });
 }
 
-export { app };
-export { startServer };
-
-// Only auto-start in local dev mode, not in Cloud Functions
-if (process.env.NODE_ENV !== "production" && !process.env.FUNCTIONS_EMULATOR) {
-  startServer();
-}
+startServer();

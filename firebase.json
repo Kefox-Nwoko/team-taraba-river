@@ -1,7 +1,4 @@
 {
-  "functions": {
-    "source": "functions"
-  },
   "hosting": {
     "site": "team-taraba-river",
     "public": "dist/public",
@@ -11,10 +8,6 @@
       "**/node_modules/**"
     ],
     "rewrites": [
-      {
-        "source": "/api/**",
-        "function": "api"
-      },
       {
         "source": "**",
         "destination": "/index.html"
