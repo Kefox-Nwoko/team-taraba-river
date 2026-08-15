@@ -1,0 +1,6 @@
+{
+  "name": "Team Taraba River",
+  "description": "Real-time mobile-first group member portal, event calendar with birthdays, photo moderation, analytics, and AI knowledge assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
