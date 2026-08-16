@@ -9,9 +9,18 @@ import { logger } from "../lib/logger";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
+function getRuntimeApiBaseUrl(): string {
+  try {
+    const meta = (window as any).__API_BASE_URL__;
+    if (meta) return String(meta).replace(/\/$/, "");
+  } catch {}
+  return API_BASE_URL;
+}
+
 function apiUrl(path: string): string {
-  if (API_BASE_URL) {
-    return `${API_BASE_URL}${path}`;
+  const base = getRuntimeApiBaseUrl();
+  if (base) {
+    return `${base}${path}`;
   }
   return path;
 }
@@ -404,8 +413,8 @@ export async function uploadMediaItem(params: {
       headers,
       body: JSON.stringify(params),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Media upload failed");
+    const data = await res.json().catch(() => ({ error: `Server error (${res.status}). The upload may be too large.` }));
+    if (!res.ok) throw new Error(data.error || `Upload failed with status ${res.status}`);
     return data;
   } catch (err: any) {
     throw new Error(err.message || "Media upload failed");

@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: team-taraba-river-api
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node dist/server.cjs
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: service-account.json
+      - key: OWNER_EMAIL
+        value: tarabateam@gmail.com
+      - key: ADMIN_EMAILS
+        value: tarabateam@gmail.com,kefox.nwoko@gmail.com

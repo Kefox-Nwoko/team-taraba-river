@@ -164,24 +164,33 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     else current.push(updated);
     AppStateManager.saveApprovals(current);
 
-    // Auto-sync approved media to member profile or event gallery
     const memIdx = members.findIndex((m) => m.id === req.memberId);
     if (memIdx !== -1) {
       members[memIdx].photoUrl = req.photoUrl;
       AppStateManager.saveMembers(members);
     }
 
-    // Auto-publish approved photo into active event gallery
     const allEvents = AppStateManager.getEvents();
     if (allEvents.length > 0) {
       const targetEvt = allEvents[0];
-      const existingImgs = targetEvt.driveImageUrls || [];
-      if (!existingImgs.includes(req.photoUrl)) {
-        targetEvt.driveImageUrls = [req.photoUrl, ...existingImgs];
-        AppStateManager.saveEvents(allEvents);
-        try {
-          await FirebaseSyncManager.saveEvent(targetEvt);
-        } catch (e) {}
+      if (req.type === "video") {
+        const existingVideo = targetEvt.youtubeVideoUrl || "";
+        if (!existingVideo && !targetEvt.youtubeVideoUrl) {
+          targetEvt.youtubeVideoUrl = req.photoUrl;
+          AppStateManager.saveEvents(allEvents);
+          try {
+            await FirebaseSyncManager.saveEvent(targetEvt);
+          } catch (e) {}
+        }
+      } else {
+        const existingImgs = targetEvt.driveImageUrls || [];
+        if (!existingImgs.includes(req.photoUrl)) {
+          targetEvt.driveImageUrls = [req.photoUrl, ...existingImgs];
+          AppStateManager.saveEvents(allEvents);
+          try {
+            await FirebaseSyncManager.saveEvent(targetEvt);
+          } catch (e) {}
+        }
       }
     }
 
@@ -201,6 +210,28 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     if (idx !== -1) current[idx] = updated;
     else current.push(updated);
     AppStateManager.saveApprovals(current);
+
+    if (req.type === "video") {
+      const allEvents = AppStateManager.getEvents();
+      const targetEvt = allEvents.find((e) => e.youtubeVideoUrl === req.photoUrl);
+      if (targetEvt) {
+        targetEvt.youtubeVideoUrl = "";
+        AppStateManager.saveEvents(allEvents);
+        try {
+          await FirebaseSyncManager.saveEvent(targetEvt);
+        } catch (e) {}
+      }
+    } else {
+      const allEvents = AppStateManager.getEvents();
+      const targetEvt = allEvents.find((e) => (e.driveImageUrls || []).includes(req.photoUrl));
+      if (targetEvt) {
+        targetEvt.driveImageUrls = (targetEvt.driveImageUrls || []).filter((u) => u !== req.photoUrl);
+        AppStateManager.saveEvents(allEvents);
+        try {
+          await FirebaseSyncManager.saveEvent(targetEvt);
+        } catch (e) {}
+      }
+    }
 
     setPendingApprovals((prev) => prev.filter((r) => r.id !== req.id));
     onRefreshData();
@@ -563,10 +594,20 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 font-normal">
               {pendingApprovals.map((req) => (
                 <div key={req.id} className="bg-slate-50 dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-                  <img src={req.photoUrl} alt="Pending Upload" className="w-full h-48 object-cover rounded-xl border border-slate-200 dark:border-slate-800" />
+                  <div className="w-full h-48 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-100 dark:bg-slate-900 flex items-center justify-center relative">
+                    {req.type === "video" ? (
+                      <div className="flex flex-col items-center gap-2 text-red-600 dark:text-red-400">
+                        <Video className="w-12 h-12" />
+                        <span className="text-xs font-medium">Video Submission</span>
+                      </div>
+                    ) : (
+                      <img src={req.photoUrl} alt="Pending Upload" className="w-full h-full object-cover" />
+                    )}
+                  </div>
                   <div>
                     <h4 className="text-sm text-slate-900 dark:text-white font-normal">{req.memberName}</h4>
                     <p className="text-sm text-slate-500 dark:text-slate-400">{req.memberEmail}</p>
+                    <p className="text-xs text-slate-400 mt-1 capitalize">{req.type} • {req.folderName || req.adminNotes || "Event Media"}</p>
                   </div>
                   <div className="flex items-center space-x-3 pt-2">
                     <button onClick={() => handleApprovePhoto(req)}

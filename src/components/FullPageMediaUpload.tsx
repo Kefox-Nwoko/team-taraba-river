@@ -5,6 +5,7 @@ import { GroupEvent, Member } from "../types";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import { syncGoogleDriveUrl, parseYouTubeVideoUrl, uploadMediaItem, finalizeMediaItem } from "../services/apiClient";
 import { ReturnButton } from "./ReturnButton";
+import { useToast } from "./ui/Toast";
 import {
   ArrowLeft,
   Upload,
@@ -67,8 +68,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   const [totalBatchSizeMB, setTotalBatchSizeMB] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgressText, setUploadProgressText] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
 
   const formatDateLabel = (dateStr: string) => {
     try {
@@ -185,8 +188,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     if (!isFormValid || isUploading) return;
     setIsUploading(true);
     setErrorMessage(null);
+    setUploadProgress(0);
     try {
       setUploadProgressText("Processing media files...");
+      setUploadProgress(2);
 
       const eventId = folderMode === "existing" ? selectedFolderId : `evt_folder_${Date.now()}`;
       const folderNameTitle = folderMode === "new" ? `${newDate} - ${newTitle.trim()}` : (events.find((e) => e.id === selectedFolderId)?.title || "Community Gathering");
@@ -194,10 +199,16 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
       const photoFinalUrls: string[] = [];
       const videoFinalUrls: string[] = [];
+      const approvalsToSave: Array<{ id: string; type: "photo" | "video"; url: string }> = [];
 
       for (let i = 0; i < mediaItems.length; i++) {
         const item = mediaItems[i];
+        const uploadStart = 2 + (i * 88 / mediaItems.length);
+        const finalizeStart = 2 + ((i + 0.5) * 88 / mediaItems.length);
+        const finalizeEnd = 2 + ((i + 1) * 88 / mediaItems.length);
+
         setUploadProgressText(`Uploading asset ${i + 1} of ${mediaItems.length}...`);
+        setUploadProgress(Math.round(uploadStart));
 
         let base64Data: string;
         let mimeType: string;
@@ -224,6 +235,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         });
 
         setUploadProgressText(`Finalizing asset ${i + 1} of ${mediaItems.length}...`);
+        setUploadProgress(Math.round(finalizeStart));
         const finalizeResult = await finalizeMediaItem(uploadResult.mediaId);
 
         if (finalizeResult.success && finalizeResult.finalUrl) {
@@ -232,12 +244,20 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           } else {
             videoFinalUrls.push(finalizeResult.finalUrl);
           }
+          approvalsToSave.push({
+            id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            type: item.type,
+            url: finalizeResult.finalUrl,
+          });
         } else {
           throw new Error(finalizeResult.error || `Failed to finalize ${item.type}`);
         }
+
+        setUploadProgress(Math.round(finalizeEnd));
       }
 
       setUploadProgressText(isAdmin ? "Publishing media..." : "Submitting media for Admin approval...");
+      setUploadProgress(95);
 
       let targetEvent: GroupEvent;
       if (folderMode === "existing") {
@@ -247,9 +267,9 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         }
         targetEvent = {
           ...existingEvent,
-          driveImageUrls: isAdmin ? [...(existingEvent.driveImageUrls || []), ...photoFinalUrls] : (existingEvent.driveImageUrls || []),
+          driveImageUrls: [...(existingEvent.driveImageUrls || []), ...photoFinalUrls],
           driveFolderId: existingEvent.driveFolderId || `drive_folder_${Date.now()}`,
-          youtubeVideoUrl: isAdmin ? (videoFinalUrls[0] || existingEvent.youtubeVideoUrl || "") : (existingEvent.youtubeVideoUrl || ""),
+          youtubeVideoUrl: videoFinalUrls[0] || existingEvent.youtubeVideoUrl || "",
         };
       } else {
         targetEvent = {
@@ -260,9 +280,9 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           location: newLocation.trim() || "Taraba State",
           category: newCategory,
           description: newDescription.trim() || `Archival media collection for ${folderNameTitle}.`,
-          driveImageUrls: isAdmin ? photoFinalUrls : [],
+          driveImageUrls: photoFinalUrls,
           driveFolderId: `drive_folder_${Date.now()}`,
-          youtubeVideoUrl: isAdmin ? videoFinalUrls[0] || "" : "",
+          youtubeVideoUrl: videoFinalUrls[0] || "",
           createdBy: currentUser?.fullName || "Community Member",
           createdById: currentUser?.id || "mem_guest",
           attendeeIds: currentUser ? [currentUser.id] : [],
@@ -271,26 +291,45 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         };
       }
 
-      for (const finalUrl of photoFinalUrls) {
-        const photoReq = {
-          id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      for (const approval of approvalsToSave) {
+        const req = {
+          id: approval.id,
           memberId: currentUser?.id || "mem_guest",
           memberName: currentUser?.fullName || "Community Member",
           memberEmail: currentUser?.email || "member@tarabateam.org",
-          photoUrl: finalUrl,
+          photoUrl: approval.url,
           uploadedAt: new Date().toISOString(),
           status: (isAdmin ? "approved" : "pending") as any,
           adminNotes: `Media submission for folder: ${folderNameTitle}`,
+          type: approval.type,
+          eventId: targetEvent.id,
+          folderName: folderNameTitle,
         };
-        await FirebaseSyncManager.saveApproval(photoReq);
+        await FirebaseSyncManager.saveApproval(req);
       }
 
       await FirebaseSyncManager.saveEvent(targetEvent);
+      setUploadProgress(100);
       setIsUploading(false);
+      
+      const pendingCount = approvalsToSave.filter(a => a.type === "video").length + approvalsToSave.filter(a => a.type === "photo").length;
+      toast.notify(
+        isAdmin 
+          ? `Media published successfully! ${photoFinalUrls.length} photos and ${videoFinalUrls.length} videos uploaded.`
+          : `${pendingCount} media item${pendingCount !== 1 ? 's' : ''} submitted for Admin approval. You will be notified once reviewed.`,
+        "success"
+      );
+      
       onSuccess(targetEvent);
     } catch (err) {
       logger.error("Full page media upload error", err);
-      setErrorMessage(err instanceof Error ? err.message : "Failed to upload media.");
+      const message = err instanceof Error ? err.message : "Failed to upload media.";
+      if (message.includes("NetworkError") || message.includes("fetch")) {
+        setErrorMessage("Cannot reach the server. Make sure the backend is running on http://localhost:3000 and that you are not testing on the static live site without a deployed API.");
+      } else {
+        setErrorMessage(message);
+      }
+      setUploadProgress(0);
       setIsUploading(false);
     }
   };
@@ -489,10 +528,28 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             </div>
           </div>
 
+          {isUploading && (
+            <div className="space-y-2 animate-fadeIn">
+              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-600" />
+                  {uploadProgressText}
+                </span>
+                <span className="font-mono font-semibold text-cyan-700 dark:text-cyan-300">{uploadProgress}%</span>
+              </div>
+              <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
+                <div
+                  className="h-full bg-gradient-to-r from-cyan-500 to-teal-500 rounded-full transition-all duration-300 ease-out"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-row items-center justify-end gap-4 pt-3 border-t border-slate-200 dark:border-slate-800">
             <button type="submit" disabled={!isFormValid || isUploading} className="w-full sm:w-auto px-3 py-1.5 rounded-2xl bg-teal-600 text-white text-xs disabled:opacity-50 flex items-center justify-center space-x-2" >
               <CheckCircle2 className="w-4 h-4 text-white" />
-              <span>{isUploading ? "Publishing..." : "Publish Event Now"}</span>
+              <span>{isUploading ? "Publishing..." : (currentUser?.role === "admin" ? "Publish Event Now" : "Submit for Review")}</span>
             </button>
           </div>
         </form>

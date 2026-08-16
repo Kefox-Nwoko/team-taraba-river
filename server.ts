@@ -34,7 +34,15 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '200mb' }));
+app.use(express.urlencoded({ limit: '200mb', extended: true }));
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.headers['content-length'] && parseInt(req.headers['content-length']) > 200 * 1024 * 1024) {
+    return res.status(413).json({ error: 'Request body too large. Please reduce file sizes or upload fewer items at once.' });
+  }
+  next();
+});
 
 // --- Security Headers ---
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -1830,6 +1838,10 @@ app.post("/api/media/youtube-back-sync", conditionalAuth, async (req: Request, r
   }
 });
 
+app.get("/api/health", (req: Request, res: Response) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 // 14. Media Pipeline: Upload intermediate media to Firestore
 app.post("/api/media/upload", conditionalAuth, async (req: Request, res: Response) => {
   const validation = validateBody(MediaUploadSchema, req.body);
@@ -2502,6 +2514,11 @@ async function startServer() {
         const url = req.originalUrl;
         let template = fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8');
         template = await vite.transformIndexHtml(url, template);
+        const apiBase = `${req.protocol}://${req.get('host')}`;
+        template = template.replace(
+          '<script type="module" src="/src/main.tsx"></script>',
+          `<script>window.__API_BASE_URL__="${apiBase}";</script><script type="module" src="/src/main.tsx"></script>`
+        );
         res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
       } catch (e: any) {
         vite.ssrFixStacktrace(e);
@@ -2512,7 +2529,14 @@ async function startServer() {
     const distPath = path.join(process.cwd(), 'dist/public');
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      const apiBase = `${req.protocol}://${req.get('host')}`;
+      const indexPath = path.join(distPath, 'index.html');
+      let html = fs.readFileSync(indexPath, 'utf-8');
+      html = html.replace(
+        '<script type="module" src="/src/main.tsx"></script>',
+        `<script>window.__API_BASE_URL__="${apiBase}";</script><script type="module" src="/src/main.tsx"></script>`
+      );
+      res.send(html);
     });
   }
 

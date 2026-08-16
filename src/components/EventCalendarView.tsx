@@ -105,6 +105,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
         uploadedAt: new Date().toISOString(),
         status: "approved",
         adminNotes: `Media upload for ${eventTitle || "Community Event"}`,
+        type: "photo",
       };
       try {
         await FirebaseSyncManager.saveApproval(photoReq);

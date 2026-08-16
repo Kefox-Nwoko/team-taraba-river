@@ -66,6 +66,9 @@ export interface PhotoApprovalRequest {
   status: PhotoApprovalStatus;
   adminNotes?: string;
   title?: string;
+  type: "photo" | "video";
+  eventId?: string;
+  folderName?: string;
 }
 
 export interface ActivityLog {
