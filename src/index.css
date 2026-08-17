@@ -50,28 +50,36 @@ body {
   html {
     font-family: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
       Helvetica, Arial, sans-serif;
-    /* PC/desktop baseline — retained at full size. Tablet & mobile scale down below. */
-    font-size: clamp(21px, 2vw + 15px, 26px);
+    /* PC/desktop baseline — compensated for zoom: 0.95 so rendered font is precisely -15% */
+    font-size: clamp(18.79px, 1.79vw + 13.42px, 23.26px);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     transition: background-color 0.2s ease, color 0.2s ease;
     scroll-behavior: smooth;
   }
 
+  /* ─── PC View: 5% Reduction on all UI Objects & Layout ─── */
+  @media (min-width: 768px) {
+    html {
+      zoom: 0.95;
+    }
+  }
+
   /* ─── Responsive root font scaling ───
      All Tailwind text-* utilities and rem-based spacing derive from this root
      size, so scaling it scales the entire UI proportionally (no layout breakage).
-     Desktop = baseline (unchanged). Tablet/mobile step down for smaller screens. */
+     -15% total font reduction across all breakpoints. */
   @media (max-width: 1024px) {
     html {
-      font-size: clamp(17px, 1.6vw + 12px, 21px);
+      /* Tablet font baseline (compensated for PC zoom) */
+      font-size: clamp(15.21px, 1.43vw + 10.74px, 18.79px);
     }
   }
 
   @media (max-width: 767px) {
     html {
-      /* +7% increase on all mobile font sizes (14→15px min, 17.5→18.75px max) */
-      font-size: clamp(15px, 1.45vw + 10.7px, 18.75px);
+      /* Mobile: No zoom, exact -15% font scaling */
+      font-size: clamp(12.75px, 1.23vw + 9.1px, 15.94px);
     }
   }
 
