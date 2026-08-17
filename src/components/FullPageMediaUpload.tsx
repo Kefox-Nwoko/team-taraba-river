@@ -202,7 +202,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
       const photoFinalUrls: string[] = [];
       const videoFinalUrls: string[] = [];
-      const approvalsToSave: Array<{ id: string; type: "photo" | "video"; url: string }> = [];
+      const approvalsToSave: Array<{ id: string; type: "photo" | "video"; url: string; previewDataUrl?: string }> = [];
 
       // Handle YouTube URL — parse client-side to avoid extra network round-trip
       const trimmedYtUrl = youtubeUrlInput.trim();
@@ -272,6 +272,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             type: item.type,
             url: finalizeResult.finalUrl,
+            previewDataUrl: item.type === "photo" ? base64Data : undefined,
           });
         } else {
           throw new Error(finalizeResult.error || `Failed to finalize ${item.type}`);
@@ -280,7 +281,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         setUploadProgress(Math.round(finalizeEnd));
       }
 
-      setUploadProgressText(isAdmin ? "Publishing media..." : "Submitting media for Admin approval...");
+      setUploadProgressText("Submitting media for Admin approval...");
       setUploadProgress(95);
 
       let targetEvent: GroupEvent;
@@ -313,7 +314,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         };
       }
 
-      // --- Step 4: Save approvals with full folder metadata ---
+      // --- Step 4: Save approvals with full folder metadata and instant preview ---
       const folderEventDate = folderMode === "new" ? newDate : (events.find((e) => e.id === selectedFolderId)?.date || newDate);
       const folderLocation = folderMode === "new" ? newLocation.trim() : (events.find((e) => e.id === selectedFolderId)?.location || "Taraba State");
       const folderCategory = folderMode === "new" ? newCategory : (events.find((e) => e.id === selectedFolderId)?.category || "cleanup");
@@ -326,8 +327,9 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           memberName: currentUser?.fullName || "Community Member",
           memberEmail: currentUser?.email || "member@tarabateam.org",
           photoUrl: approval.url,
+          previewDataUrl: (approval as any).previewDataUrl,
           uploadedAt: new Date().toISOString(),
-          status: (isAdmin ? "approved" : "pending") as any,
+          status: "pending",
           adminNotes: `Media submission for folder: ${folderNameTitle}`,
           type: approval.type,
           eventId: targetEvent.id,
@@ -339,23 +341,16 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         });
       }
 
-      // ONLY publish directly to the public events list if the current user is an ADMIN
-      if (isAdmin) {
-        await FirebaseSyncManager.saveEvent(targetEvent);
-      }
-
       setUploadProgress(100);
       setIsUploading(false);
       
       const totalCount = approvalsToSave.length;
       toast.notify(
-        isAdmin 
-          ? `Media published successfully!`
-          : `${totalCount} media item${totalCount !== 1 ? 's' : ''} submitted for Admin review. The folder will appear once approved by an admin.`,
+        `${totalCount} media item${totalCount !== 1 ? 's' : ''} submitted for Admin review. The folder and images will appear on the public Media page once approved by an Admin.`,
         "success"
       );
       
-      onSuccess(isAdmin ? targetEvent : undefined);
+      onSuccess(undefined);
     } catch (err) {
       logger.error("Full page media upload error", err);
       const message = err instanceof Error ? err.message : "Failed to upload media.";

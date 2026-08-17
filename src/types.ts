@@ -73,6 +73,7 @@ export interface PhotoApprovalRequest {
   location?: string;
   category?: string;
   description?: string;
+  previewDataUrl?: string;
 }
 
 export interface ActivityLog {

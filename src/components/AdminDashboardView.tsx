@@ -37,6 +37,38 @@ interface AdminDashboardViewProps {
   onReturn?: () => void;
 }
 
+function handleGoogleDriveImageError(e: React.SyntheticEvent<HTMLImageElement, Event>): void {
+  const img = e.currentTarget;
+  const currentUrl = img.src;
+  const attemptCount = parseInt((img as any).dataset?.fallbackAttempt || "0", 10);
+  if (attemptCount >= 4) return;
+  if ((img as any).dataset) (img as any).dataset.fallbackAttempt = String(attemptCount + 1);
+
+  let fileId: string | null = null;
+  const patterns = [
+    /\/d\/([a-zA-Z0-9_-]+)/,
+    /[?&]id=([a-zA-Z0-9_-]+)/,
+    /\/api\/media\/image\/([a-zA-Z0-9_-]+)/,
+    /lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/,
+  ];
+  for (const pat of patterns) {
+    const m = currentUrl.match(pat);
+    if (m && m[1].length > 8) { fileId = m[1]; break; }
+  }
+
+  if (fileId) {
+    if (attemptCount === 0) {
+      img.src = `https://lh3.googleusercontent.com/d/${fileId}`;
+    } else if (attemptCount === 1) {
+      img.src = `/api/media/image/${fileId}`;
+    } else if (attemptCount === 2) {
+      img.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+    } else if (attemptCount === 3) {
+      img.src = `https://drive.google.com/uc?export=view&id=${fileId}`;
+    }
+  }
+}
+
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   members,
   currentUser,
@@ -621,14 +653,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 font-normal">
               {pendingApprovals.map((req) => (
                 <div key={req.id} className="bg-slate-50 dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
-                  <div className="w-full h-48 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-100 dark:bg-slate-900 flex items-center justify-center relative">
+                  <div className="w-full h-48 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center relative">
                     {req.type === "video" ? (
                       <div className="flex flex-col items-center gap-2 text-red-600 dark:text-red-400">
                         <Video className="w-12 h-12" />
                         <span className="text-xs font-medium">Video Submission</span>
                       </div>
                     ) : (
-                      <img src={req.photoUrl} alt="Pending Upload" className="w-full h-full object-cover" />
+                      <img
+                        src={req.previewDataUrl || req.photoUrl}
+                        alt={req.folderName || "Pending Upload"}
+                        className="w-full h-full object-cover"
+                        onError={handleGoogleDriveImageError}
+                      />
                     )}
                   </div>
                   <div>
