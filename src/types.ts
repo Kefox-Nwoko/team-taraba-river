@@ -69,6 +69,10 @@ export interface PhotoApprovalRequest {
   type: "photo" | "video";
   eventId?: string;
   folderName?: string;
+  date?: string;
+  location?: string;
+  category?: string;
+  description?: string;
 }
 
 export interface ActivityLog {

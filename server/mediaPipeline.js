@@ -254,8 +254,8 @@ async function syncImageToDrive(item) {
     }
     // Make file publicly readable so the link works without authentication
     await setFilePublicReadable(drive, fileId);
-    // Use the thumbnail URL format which works reliably for public files
-    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1920`;
+    // Return Google UserContent CDN direct image link (works natively in <img> tags)
+    return `https://lh3.googleusercontent.com/d/${fileId}`;
 }
 
 export async function uploadVideoToDrive(item) {

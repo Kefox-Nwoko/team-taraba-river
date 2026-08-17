@@ -15,9 +15,9 @@ import {
   XCircle,
   Clock,
   Award,
-   Calendar,
-   Plus,
-   RefreshCw,
+  Calendar,
+  Plus,
+  RefreshCw,
   HelpCircle,
   UserX,
   ArrowLeft,
@@ -164,34 +164,56 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     else current.push(updated);
     AppStateManager.saveApprovals(current);
 
+    // Award activity points to the uploading member
     const memIdx = members.findIndex((m) => m.id === req.memberId);
     if (memIdx !== -1) {
-      members[memIdx].photoUrl = req.photoUrl;
+      if (members[memIdx].role !== "admin") {
+        members[memIdx].activityPoints = (members[memIdx].activityPoints || 0) + 30;
+      }
       AppStateManager.saveMembers(members);
     }
 
     const allEvents = AppStateManager.getEvents();
-    if (allEvents.length > 0) {
-      const targetEvt = allEvents[0];
+    let targetEvt = req.eventId ? allEvents.find((e) => e.id === req.eventId) : undefined;
+
+    if (targetEvt) {
+      // Event exists — add the approved photo/video to it
       if (req.type === "video") {
-        const existingVideo = targetEvt.youtubeVideoUrl || "";
-        if (!existingVideo && !targetEvt.youtubeVideoUrl) {
-          targetEvt.youtubeVideoUrl = req.photoUrl;
-          AppStateManager.saveEvents(allEvents);
-          try {
-            await FirebaseSyncManager.saveEvent(targetEvt);
-          } catch (e) {}
-        }
+        targetEvt.youtubeVideoUrl = req.photoUrl;
       } else {
         const existingImgs = targetEvt.driveImageUrls || [];
         if (!existingImgs.includes(req.photoUrl)) {
           targetEvt.driveImageUrls = [req.photoUrl, ...existingImgs];
-          AppStateManager.saveEvents(allEvents);
-          try {
-            await FirebaseSyncManager.saveEvent(targetEvt);
-          } catch (e) {}
         }
       }
+      AppStateManager.saveEvents(allEvents);
+      try {
+        await FirebaseSyncManager.saveEvent(targetEvt);
+      } catch (e) {}
+    } else {
+      // This was a new folder upload submitted by a member — create and publish the event now
+      const newEvt: GroupEvent = {
+        id: req.eventId || `evt_folder_${Date.now()}`,
+        title: req.folderName || req.title || "Community Event",
+        date: req.date || req.uploadedAt?.split("T")[0] || new Date().toISOString().split("T")[0],
+        time: "09:00",
+        location: req.location || "Taraba State",
+        category: req.category || "cleanup",
+        description: req.description || `Archival media collection for ${req.folderName || "Community Event"}.`,
+        driveImageUrls: req.type === "photo" ? [req.photoUrl] : [],
+        driveFolderId: `drive_folder_${Date.now()}`,
+        youtubeVideoUrl: req.type === "video" ? req.photoUrl : "",
+        createdBy: req.memberName || "Community Member",
+        createdById: req.memberId || "mem_guest",
+        attendeeIds: [],
+        maxCapacity: 100,
+        createdAt: req.uploadedAt || new Date().toISOString(),
+      };
+      allEvents.unshift(newEvt);
+      AppStateManager.saveEvents(allEvents);
+      try {
+        await FirebaseSyncManager.saveEvent(newEvt);
+      } catch (e) {}
     }
 
     setPendingApprovals((prev) => prev.filter((r) => r.id !== req.id));
@@ -211,21 +233,26 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     else current.push(updated);
     AppStateManager.saveApprovals(current);
 
-    if (req.type === "video") {
-      const allEvents = AppStateManager.getEvents();
-      const targetEvt = allEvents.find((e) => e.youtubeVideoUrl === req.photoUrl);
-      if (targetEvt) {
+    const allEvents = AppStateManager.getEvents();
+    let targetEvt = req.eventId
+      ? allEvents.find((e) => e.id === req.eventId)
+      : allEvents.find((e) => (e.driveImageUrls || []).includes(req.photoUrl) || e.youtubeVideoUrl === req.photoUrl);
+
+    if (targetEvt) {
+      if (req.type === "video" && targetEvt.youtubeVideoUrl === req.photoUrl) {
         targetEvt.youtubeVideoUrl = "";
-        AppStateManager.saveEvents(allEvents);
+      } else if (req.type === "photo") {
+        targetEvt.driveImageUrls = (targetEvt.driveImageUrls || []).filter((u) => u !== req.photoUrl);
+      }
+
+      // If the event now has no media and was created specifically for this upload batch, clean it up
+      if ((targetEvt.driveImageUrls || []).length === 0 && !targetEvt.youtubeVideoUrl && targetEvt.id.startsWith("evt_folder_")) {
+        const remainingEvents = allEvents.filter((e) => e.id !== targetEvt!.id);
+        AppStateManager.saveEvents(remainingEvents);
         try {
           await FirebaseSyncManager.saveEvent(targetEvt);
         } catch (e) {}
-      }
-    } else {
-      const allEvents = AppStateManager.getEvents();
-      const targetEvt = allEvents.find((e) => (e.driveImageUrls || []).includes(req.photoUrl));
-      if (targetEvt) {
-        targetEvt.driveImageUrls = (targetEvt.driveImageUrls || []).filter((u) => u !== req.photoUrl);
+      } else {
         AppStateManager.saveEvents(allEvents);
         try {
           await FirebaseSyncManager.saveEvent(targetEvt);

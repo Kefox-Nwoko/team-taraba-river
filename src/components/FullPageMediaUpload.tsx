@@ -313,6 +313,12 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         };
       }
 
+      // --- Step 4: Save approvals with full folder metadata ---
+      const folderEventDate = folderMode === "new" ? newDate : (events.find((e) => e.id === selectedFolderId)?.date || newDate);
+      const folderLocation = folderMode === "new" ? newLocation.trim() : (events.find((e) => e.id === selectedFolderId)?.location || "Taraba State");
+      const folderCategory = folderMode === "new" ? newCategory : (events.find((e) => e.id === selectedFolderId)?.category || "cleanup");
+      const folderDescription = folderMode === "new" ? newDescription.trim() : (events.find((e) => e.id === selectedFolderId)?.description || "");
+
       for (const approval of approvalsToSave) {
         await FirebaseSyncManager.saveApproval({
           id: approval.id,
@@ -326,10 +332,18 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           type: approval.type,
           eventId: targetEvent.id,
           folderName: folderNameTitle,
+          date: folderEventDate,
+          location: folderLocation,
+          category: folderCategory,
+          description: folderDescription,
         });
       }
 
-      await FirebaseSyncManager.saveEvent(targetEvent);
+      // ONLY publish directly to the public events list if the current user is an ADMIN
+      if (isAdmin) {
+        await FirebaseSyncManager.saveEvent(targetEvent);
+      }
+
       setUploadProgress(100);
       setIsUploading(false);
       
@@ -337,11 +351,11 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       toast.notify(
         isAdmin 
           ? `Media published successfully!`
-          : `${totalCount} media item${totalCount !== 1 ? 's' : ''} submitted for Admin approval.`,
+          : `${totalCount} media item${totalCount !== 1 ? 's' : ''} submitted for Admin review. The folder will appear once approved by an admin.`,
         "success"
       );
       
-      onSuccess(targetEvent);
+      onSuccess(isAdmin ? targetEvent : undefined);
     } catch (err) {
       logger.error("Full page media upload error", err);
       const message = err instanceof Error ? err.message : "Failed to upload media.";

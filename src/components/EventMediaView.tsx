@@ -61,10 +61,8 @@ function handleGoogleDriveImageError(e: React.SyntheticEvent<HTMLImageElement, E
   const img = e.currentTarget;
   const currentUrl = img.src;
 
-  // Prevent infinite error loop — stop after 3 fallback attempts
   const attemptCount = parseInt((img as any).dataset?.fallbackAttempt || "0", 10);
-  if (attemptCount >= 3) {
-    img.style.display = "none";
+  if (attemptCount >= 4) {
     return;
   }
   if ((img as any).dataset) (img as any).dataset.fallbackAttempt = String(attemptCount + 1);
@@ -75,25 +73,26 @@ function handleGoogleDriveImageError(e: React.SyntheticEvent<HTMLImageElement, E
   const patterns = [
     /\/d\/([a-zA-Z0-9_-]+)/,
     /[?&]id=([a-zA-Z0-9_-]+)/,
+    /\/api\/media\/image\/([a-zA-Z0-9_-]+)/,
     /lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/,
   ];
   for (const pat of patterns) {
     const m = currentUrl.match(pat);
-    if (m) { fileId = m[1]; break; }
+    if (m && m[1].length > 8) { fileId = m[1]; break; }
   }
 
   if (fileId) {
-    if (currentUrl.includes("sz=w1920") || currentUrl.includes("sz=w800")) {
-      // New thumbnail format fallback: try direct UC export
-      img.src = `https://drive.google.com/uc?export=view&id=${fileId}`;
-    } else if (currentUrl.includes("uc?export=view")) {
-      // UC export failed: try lh3 content host
+    if (attemptCount === 0) {
+      // Tier 1: Google UserContent CDN host
       img.src = `https://lh3.googleusercontent.com/d/${fileId}`;
-    } else if (currentUrl.includes("googleusercontent.com")) {
-      // lh3 failed: try smaller thumbnail
-      img.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w800`;
-    } else if (currentUrl.includes("drive.google.com/thumbnail")) {
-      // Thumbnail failed: try direct view
+    } else if (attemptCount === 1) {
+      // Tier 2: Authenticated backend streaming proxy
+      img.src = `/api/media/image/${fileId}`;
+    } else if (attemptCount === 2) {
+      // Tier 3: Drive thumbnail
+      img.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+    } else if (attemptCount === 3) {
+      // Tier 4: Direct UC export
       img.src = `https://drive.google.com/uc?export=view&id=${fileId}`;
     }
   }

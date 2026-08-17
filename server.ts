@@ -1899,6 +1899,39 @@ app.get("/api/media/status/:mediaId", conditionalAuth, async (req: Request, res:
   }
 });
 
+// 14d. Media Pipeline: Stream/Proxy Image directly from Google Drive
+app.get("/api/media/image/:fileId", async (req: Request, res: Response) => {
+  const { fileId } = req.params;
+  try {
+    const { google } = await import('googleapis');
+    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || 'service-account.json';
+    const resolvedPath = path.resolve(process.cwd(), credentialsPath);
+    if (fs.existsSync(resolvedPath)) {
+      const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf-8'));
+      const auth = new google.auth.JWT({
+        email: serviceAccount.client_email,
+        key: serviceAccount.private_key,
+        scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      });
+      const drive = google.drive({ version: 'v3', auth });
+
+      const driveRes = await drive.files.get(
+        { fileId, alt: 'media' },
+        { responseType: 'stream' }
+      );
+
+      res.setHeader('Content-Type', 'image/webp');
+      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=43200');
+      driveRes.data.pipe(res);
+      return;
+    }
+    res.redirect(`https://lh3.googleusercontent.com/d/${fileId}`);
+  } catch (error: any) {
+    serverLogger.warn(`[Image Proxy] Could not stream file ${fileId}, redirecting to CDN`, { error: error?.message || error });
+    res.redirect(`https://lh3.googleusercontent.com/d/${fileId}`);
+  }
+});
+
 async function checkAdminRole(req: Request): Promise<boolean> {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) return false;
