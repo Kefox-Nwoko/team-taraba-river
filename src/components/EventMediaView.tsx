@@ -61,24 +61,39 @@ function handleGoogleDriveImageError(e: React.SyntheticEvent<HTMLImageElement, E
   const img = e.currentTarget;
   const currentUrl = img.src;
 
+  // Prevent infinite error loop — stop after 3 fallback attempts
+  const attemptCount = parseInt((img as any).dataset?.fallbackAttempt || "0", 10);
+  if (attemptCount >= 3) {
+    img.style.display = "none";
+    return;
+  }
+  if ((img as any).dataset) (img as any).dataset.fallbackAttempt = String(attemptCount + 1);
+
   let fileId: string | null = null;
-  
-  const dMatch = currentUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
-  if (dMatch) {
-    fileId = dMatch[1];
-  } else {
-    const idMatch = currentUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if (idMatch) {
-      fileId = idMatch[1];
-    }
+
+  // Extract file ID from various Drive URL formats
+  const patterns = [
+    /\/d\/([a-zA-Z0-9_-]+)/,
+    /[?&]id=([a-zA-Z0-9_-]+)/,
+    /lh3\.googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/,
+  ];
+  for (const pat of patterns) {
+    const m = currentUrl.match(pat);
+    if (m) { fileId = m[1]; break; }
   }
 
   if (fileId) {
-    if (currentUrl.includes("googleusercontent.com")) {
-      // Fallback 1: Google Drive preview thumbnail
+    if (currentUrl.includes("sz=w1920") || currentUrl.includes("sz=w800")) {
+      // New thumbnail format fallback: try direct UC export
+      img.src = `https://drive.google.com/uc?export=view&id=${fileId}`;
+    } else if (currentUrl.includes("uc?export=view")) {
+      // UC export failed: try lh3 content host
+      img.src = `https://lh3.googleusercontent.com/d/${fileId}`;
+    } else if (currentUrl.includes("googleusercontent.com")) {
+      // lh3 failed: try smaller thumbnail
       img.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w800`;
     } else if (currentUrl.includes("drive.google.com/thumbnail")) {
-      // Fallback 2: Direct view URL
+      // Thumbnail failed: try direct view
       img.src = `https://drive.google.com/uc?export=view&id=${fileId}`;
     }
   }

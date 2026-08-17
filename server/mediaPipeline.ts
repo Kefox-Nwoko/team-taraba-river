@@ -4,11 +4,15 @@ import { serverLogger } from './logger';
 import { google } from 'googleapis';
 import fs from 'fs';
 import path from 'path';
+import { Readable } from 'stream';
 import { config } from './config';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
 
 ffmpeg.setFfmpegPath(ffmpegPath as string);
+
+// In-memory fallback store for media items when Firestore is unavailable
+const inMemoryMediaStore = new Map<string, MediaItem>();
 
 const MEDIA_COLLECTION = 'mediaItems';
 
@@ -53,6 +57,10 @@ export async function uploadIntermediateMedia(req: Request, res: Response): Prom
 
     if (isFirestoreAvailable()) {
       await db.collection(MEDIA_COLLECTION).doc(id).set(item);
+    } else {
+      // Fallback: store in memory so finalize can still retrieve it
+      inMemoryMediaStore.set(id, item);
+      serverLogger.warn(`[MediaPipeline] Firestore unavailable — stored media ${id} in memory for processing.`);
     }
 
     res.json({ success: true, mediaId: id, status: 'pending' });
@@ -75,30 +83,37 @@ export async function finalizeMedia(req: Request, res: Response): Promise<void> 
 
     if (isFirestoreAvailable()) {
       const doc = await db.collection(MEDIA_COLLECTION).doc(mediaId).get();
-      if (!doc.exists) {
-        res.status(404).json({ error: 'Media item not found' });
-        return;
+      if (doc.exists) {
+        item = doc.data() as MediaItem;
       }
-      item = doc.data() as MediaItem;
-    } else {
-      res.status(503).json({ error: 'Firestore not available for media processing' });
-      return;
+    }
+
+    // Fallback: retrieve from in-memory store if Firestore not available or doc missing
+    if (!item) {
+      item = inMemoryMediaStore.get(mediaId) || null;
     }
 
     if (!item) {
-      res.status(404).json({ error: 'Media item not found' });
+      res.status(404).json({ error: 'Media item not found. It may have expired or not been uploaded yet.' });
       return;
     }
 
-    if (item.status === 'synced') {
+    if (item.status === 'synced' && item.finalUrl) {
       res.json({ success: true, mediaId: item.id, finalUrl: item.finalUrl, status: item.status });
       return;
     }
 
-    await db.collection(MEDIA_COLLECTION).doc(mediaId).update({
-      status: 'processing',
-      updatedAt: new Date().toISOString(),
-    });
+    // Update status to processing
+    item.status = 'processing';
+    item.updatedAt = new Date().toISOString();
+    if (isFirestoreAvailable()) {
+      await db.collection(MEDIA_COLLECTION).doc(mediaId).update({
+        status: 'processing',
+        updatedAt: item.updatedAt,
+      });
+    } else {
+      inMemoryMediaStore.set(mediaId, item);
+    }
 
     let finalUrl = '';
 
@@ -118,25 +133,41 @@ export async function finalizeMedia(req: Request, res: Response): Promise<void> 
         }
       }
 
-      await db.collection(MEDIA_COLLECTION).doc(mediaId).update({
-        status: 'synced',
-        finalUrl,
-        updatedAt: new Date().toISOString(),
-      });
+      // Update item to synced
+      item.status = 'synced';
+      item.finalUrl = finalUrl;
+      item.updatedAt = new Date().toISOString();
+
+      if (isFirestoreAvailable()) {
+        await db.collection(MEDIA_COLLECTION).doc(mediaId).update({
+          status: 'synced',
+          finalUrl,
+          updatedAt: item.updatedAt,
+        });
+      } else {
+        inMemoryMediaStore.set(mediaId, item);
+      }
 
       res.json({ success: true, mediaId: item.id, finalUrl, status: 'synced' });
     } catch (processError: any) {
       const errorMessage = processError instanceof Error ? processError.message : String(processError);
-      await db.collection(MEDIA_COLLECTION).doc(mediaId).update({
-        status: 'failed',
-        error: errorMessage,
-        updatedAt: new Date().toISOString(),
-      });
+      item.status = 'failed';
+      item.error = errorMessage;
+      item.updatedAt = new Date().toISOString();
+      if (isFirestoreAvailable()) {
+        await db.collection(MEDIA_COLLECTION).doc(mediaId).update({
+          status: 'failed',
+          error: errorMessage,
+          updatedAt: item.updatedAt,
+        });
+      } else {
+        inMemoryMediaStore.set(mediaId, item);
+      }
       serverLogger.error('Media finalize error', processError);
-      res.status(500).json({ error: `Media processing failed: ${errorMessage}` });
+      res.status(500).json({ success: false, error: `Media processing failed: ${errorMessage}` });
     }
   } catch (error) {
-    serverLogger.error('Finalize media error', error);
+    serverLogger.error('Finalize media outer error', error);
     res.status(500).json({ error: 'Failed to finalize media.' });
   }
 }
@@ -150,19 +181,24 @@ export async function getMediaStatus(req: Request, res: Response): Promise<void>
       return;
     }
 
-    if (!isFirestoreAvailable()) {
-      res.status(503).json({ error: 'Firestore not available' });
+    // Try Firestore first, then fall back to in-memory store
+    if (isFirestoreAvailable()) {
+      const doc = await db.collection(MEDIA_COLLECTION).doc(mediaId).get();
+      if (doc.exists) {
+        const data = doc.data();
+        res.json({ mediaId: doc.id, ...data });
+        return;
+      }
+    }
+
+    // Fallback to in-memory store
+    const memItem = inMemoryMediaStore.get(mediaId);
+    if (memItem) {
+      res.json({ mediaId: memItem.id, ...memItem });
       return;
     }
 
-    const doc = await db.collection(MEDIA_COLLECTION).doc(mediaId).get();
-    if (!doc.exists) {
-      res.status(404).json({ error: 'Media item not found' });
-      return;
-    }
-
-    const data = doc.data();
-    res.json({ mediaId: doc.id, ...data });
+    res.status(404).json({ error: 'Media item not found' });
   } catch (error) {
     serverLogger.error('Get media status error', error);
     res.status(500).json({ error: 'Failed to get media status.' });
@@ -189,6 +225,31 @@ async function getServiceAccountPath(): Promise<string> {
   return resolvedPath;
 }
 
+async function getDriveRootFolderId(): Promise<string | null> {
+  const folderIdFromEnv = config.googleDriveFolderId;
+  if (folderIdFromEnv && folderIdFromEnv.length > 10 && !folderIdFromEnv.includes('1a2b3c')) {
+    return folderIdFromEnv;
+  }
+  // Try to extract from the default Drive URL
+  const defaultUrl = 'https://drive.google.com/drive/folders/19UcHi6ItJBeOAENfsOCM69K05NHc_13D';
+  const match = defaultUrl.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  return match ? match[1] : null;
+}
+
+async function setFilePublicReadable(drive: any, fileId: string): Promise<void> {
+  try {
+    await drive.permissions.create({
+      fileId,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone',
+      },
+    });
+  } catch (permErr: any) {
+    serverLogger.warn(`[Drive] Could not set public permission on file ${fileId}: ${permErr?.message || permErr}`);
+  }
+}
+
 async function syncImageToDrive(item: MediaItem): Promise<string> {
   const { google } = await import('googleapis');
   
@@ -204,9 +265,13 @@ async function syncImageToDrive(item: MediaItem): Promise<string> {
   const drive = google.drive({ version: 'v3', auth });
 
   const buffer = await base64ToBuffer(item.base64Data);
+
+  // Target the configured root folder so files are organized correctly
+  const rootFolderId = await getDriveRootFolderId();
   const fileMetadata: any = {
     name: item.fileName || `photo_${item.id}.webp`,
     mimeType: item.mimeType || 'image/webp',
+    ...(rootFolderId ? { parents: [rootFolderId] } : {}),
   };
 
   const mediaBody = {
@@ -225,10 +290,11 @@ async function syncImageToDrive(item: MediaItem): Promise<string> {
     throw new Error('Drive upload succeeded but returned no file ID');
   }
 
-  const webViewLink = response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
-  const directLink = `https://drive.google.com/uc?export=view&id=${fileId}`;
+  // Make file publicly readable so the link works without authentication
+  await setFilePublicReadable(drive, fileId);
 
-  return directLink || webViewLink;
+  // Use the thumbnail URL format which works reliably for public files
+  return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1920`;
 }
 
 export async function uploadVideoToDrive(item: MediaItem): Promise<string> {
@@ -261,9 +327,12 @@ export async function uploadVideoToDrive(item: MediaItem): Promise<string> {
     serverLogger.warn(`[Drive Sync] Video compression failed, uploading original: ${compressionError?.message || compressionError}`);
   }
 
+  // Target the configured root folder
+  const rootFolderId = await getDriveRootFolderId();
   const fileMetadata: any = {
     name: fileName,
     mimeType: mimeType,
+    ...(rootFolderId ? { parents: [rootFolderId] } : {}),
   };
 
   const mediaBody = {
@@ -281,6 +350,9 @@ export async function uploadVideoToDrive(item: MediaItem): Promise<string> {
   if (!fileId) {
     throw new Error('Drive upload succeeded but returned no file ID');
   }
+
+  // Make video publicly accessible
+  await setFilePublicReadable(drive, fileId);
 
   const webViewLink = response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
   return webViewLink;
@@ -350,14 +422,15 @@ export async function uploadVideoToYouTube(item: MediaItem): Promise<string> {
   const youtube = google.youtube({ version: 'v3', auth });
 
   const buffer = await base64ToBuffer(item.base64Data);
-  const bufferStream = require('stream').Readable.from(buffer);
+  // Use top-level import instead of require() to avoid ESM/CJS incompatibility
+  const bufferStream = Readable.from(buffer);
 
   const requestBody: any = {
     snippet: {
       title: item.fileName || `Team Taraba River Video ${new Date().toLocaleDateString()}`,
       description: 'Video uploaded via Team Taraba River Community Portal',
-      tags: ['Team Taraba River', 'Community', 'Event'],
-      categoryId: '17', // Sports
+      tags: ['Team Taraba River', 'Community', 'URIP', 'USOSA', 'Event'],
+      categoryId: '22', // People & Blogs (more appropriate; Sports is 17)
     },
     status: {
       privacyStatus: 'unlisted',

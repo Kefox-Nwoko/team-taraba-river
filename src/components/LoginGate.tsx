@@ -133,7 +133,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
       {/* Light Uniform Overlay */}{" "}
       <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" />{" "}
       {/* Main Login Card */}{" "}
-      <div className="relative z-10 w-full max-w-md bg-slate-950/40 p-5 sm:p-6 backdrop-blur-2xl space-y-5">
+      <div className="login-card-pc-scale relative z-10 w-full max-w-md bg-slate-950/40 p-5 sm:p-6 backdrop-blur-2xl space-y-5">
         {" "}
         {/* Crest Logo & Brand Header */}{" "}
         <div className="text-center space-y-2.5">

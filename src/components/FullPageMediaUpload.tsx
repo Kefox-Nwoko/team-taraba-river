@@ -189,9 +189,12 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     setIsUploading(true);
     setErrorMessage(null);
     setUploadProgress(0);
+    
+    const timeout = (ms: number) => new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out - please check your connection and try again.")), ms));
+
     try {
-      setUploadProgressText("Processing media files...");
-      setUploadProgress(2);
+      setUploadProgressText("Processing request...");
+      setUploadProgress(10);
 
       const eventId = folderMode === "existing" ? selectedFolderId : `evt_folder_${Date.now()}`;
       const folderNameTitle = folderMode === "new" ? `${newDate} - ${newTitle.trim()}` : (events.find((e) => e.id === selectedFolderId)?.title || "Community Gathering");
@@ -201,11 +204,28 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       const videoFinalUrls: string[] = [];
       const approvalsToSave: Array<{ id: string; type: "photo" | "video"; url: string }> = [];
 
+      // Handle YouTube URL — parse client-side to avoid extra network round-trip
+      const trimmedYtUrl = youtubeUrlInput.trim();
+      if (trimmedYtUrl) {
+        const ytMatch = trimmedYtUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([a-zA-Z0-9_-]{11})/);
+        if (!ytMatch) {
+          throw new Error("Invalid YouTube URL. Please paste a valid YouTube watch, short, or share link (e.g. https://youtu.be/xxxxx or https://www.youtube.com/watch?v=xxxxx).");
+        }
+        const cleanYtUrl = `https://www.youtube.com/watch?v=${ytMatch[1]}`;
+        videoFinalUrls.unshift(cleanYtUrl);
+        approvalsToSave.push({
+          id: `req_yt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          type: "video",
+          url: cleanYtUrl,
+        });
+      }
+
       for (let i = 0; i < mediaItems.length; i++) {
         const item = mediaItems[i];
-        const uploadStart = 2 + (i * 88 / mediaItems.length);
-        const finalizeStart = 2 + ((i + 0.5) * 88 / mediaItems.length);
-        const finalizeEnd = 2 + ((i + 1) * 88 / mediaItems.length);
+        const progressBase = 10;
+        const totalSteps = 80;
+        const uploadStart = progressBase + (i * totalSteps / mediaItems.length);
+        const finalizeEnd = progressBase + ((i + 1) * totalSteps / mediaItems.length);
 
         setUploadProgressText(`Uploading asset ${i + 1} of ${mediaItems.length}...`);
         setUploadProgress(Math.round(uploadStart));
@@ -225,18 +245,22 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           fileName = item.file.name || `video_${eventId}_${i + 1}.mp4`;
         }
 
-        const uploadResult = await uploadMediaItem({
-          eventId,
-          type: item.type,
-          base64Data,
-          mimeType,
-          fileName,
-          storageTarget: item.type === "video" ? "youtube" : "drive",
-        });
+        const uploadResult = await Promise.race([
+          uploadMediaItem({
+            eventId,
+            type: item.type,
+            base64Data,
+            mimeType,
+            fileName,
+            storageTarget: item.type === "video" ? "youtube" : "drive",
+          }),
+          timeout(60000)
+        ]) as any;
 
-        setUploadProgressText(`Finalizing asset ${i + 1} of ${mediaItems.length}...`);
-        setUploadProgress(Math.round(finalizeStart));
-        const finalizeResult = await finalizeMediaItem(uploadResult.mediaId);
+        const finalizeResult = await Promise.race([
+          finalizeMediaItem(uploadResult.mediaId),
+          timeout(30000)
+        ]) as any;
 
         if (finalizeResult.success && finalizeResult.finalUrl) {
           if (item.type === "photo") {
@@ -262,9 +286,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       let targetEvent: GroupEvent;
       if (folderMode === "existing") {
         const existingEvent = events.find((e) => e.id === selectedFolderId);
-        if (!existingEvent) {
-          throw new Error("Selected existing event folder not found.");
-        }
+        if (!existingEvent) throw new Error("Selected existing event folder not found.");
         targetEvent = {
           ...existingEvent,
           driveImageUrls: [...(existingEvent.driveImageUrls || []), ...photoFinalUrls],
@@ -292,7 +314,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       }
 
       for (const approval of approvalsToSave) {
-        const req = {
+        await FirebaseSyncManager.saveApproval({
           id: approval.id,
           memberId: currentUser?.id || "mem_guest",
           memberName: currentUser?.fullName || "Community Member",
@@ -304,19 +326,18 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           type: approval.type,
           eventId: targetEvent.id,
           folderName: folderNameTitle,
-        };
-        await FirebaseSyncManager.saveApproval(req);
+        });
       }
 
       await FirebaseSyncManager.saveEvent(targetEvent);
       setUploadProgress(100);
       setIsUploading(false);
       
-      const pendingCount = approvalsToSave.filter(a => a.type === "video").length + approvalsToSave.filter(a => a.type === "photo").length;
+      const totalCount = approvalsToSave.length;
       toast.notify(
         isAdmin 
-          ? `Media published successfully! ${photoFinalUrls.length} photos and ${videoFinalUrls.length} videos uploaded.`
-          : `${pendingCount} media item${pendingCount !== 1 ? 's' : ''} submitted for Admin approval. You will be notified once reviewed.`,
+          ? `Media published successfully!`
+          : `${totalCount} media item${totalCount !== 1 ? 's' : ''} submitted for Admin approval.`,
         "success"
       );
       
@@ -324,11 +345,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     } catch (err) {
       logger.error("Full page media upload error", err);
       const message = err instanceof Error ? err.message : "Failed to upload media.";
-      if (message.includes("NetworkError") || message.includes("fetch")) {
-        setErrorMessage("Cannot reach the server. Make sure the backend is running on http://localhost:3000 and that you are not testing on the static live site without a deployed API.");
-      } else {
-        setErrorMessage(message);
-      }
+      setErrorMessage(message.includes("NetworkError") ? "Check internet connection or server status." : message);
       setUploadProgress(0);
       setIsUploading(false);
     }

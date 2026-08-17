@@ -70,7 +70,8 @@ body {
 
   @media (max-width: 767px) {
     html {
-      font-size: clamp(14px, 1.35vw + 10px, 17.5px);
+      /* +7% increase on all mobile font sizes (14→15px min, 17.5→18.75px max) */
+      font-size: clamp(15px, 1.45vw + 10.7px, 18.75px);
     }
   }
 
@@ -106,6 +107,21 @@ body {
 
   * {
     box-sizing: border-box;
+  }
+}
+
+/* ─── LOGIN CARD: PC / DESKTOP SCALE (-10%) ───
+   Shrinks the entire login card — including all fonts, padding, spacing,
+   icons and the logo — by 10% on desktop screens only.
+   transform-origin: center top keeps it anchored at the top of the flex
+   container so it doesn't drift visually. Mobile is completely unaffected. */
+.login-card-pc-scale {
+  /* Mobile / small tablet — full size, no scaling */
+}
+@media (min-width: 768px) {
+  .login-card-pc-scale {
+    transform: scale(0.9);
+    transform-origin: center top;
   }
 }
 

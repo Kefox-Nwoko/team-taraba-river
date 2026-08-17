@@ -1,12 +1,19 @@
-import { db, isFirestoreAvailable } from './firebaseAdmin';
-import { serverLogger } from './logger';
+import { db, isFirestoreAvailable } from './firebaseAdmin.js';
+import { serverLogger } from './logger.js';
 import fs from 'fs';
 import path from 'path';
-import { config } from './config';
+import { Readable } from 'stream';
+import { config } from './config.js';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegPath from 'ffmpeg-static';
+
 ffmpeg.setFfmpegPath(ffmpegPath);
+
+// In-memory fallback store for media items when Firestore is unavailable
+const inMemoryMediaStore = new Map();
+
 const MEDIA_COLLECTION = 'mediaItems';
+
 export async function uploadIntermediateMedia(req, res) {
     try {
         const { eventId, type, base64Data, mimeType, fileName, storageTarget } = req.body;
@@ -30,6 +37,10 @@ export async function uploadIntermediateMedia(req, res) {
         };
         if (isFirestoreAvailable()) {
             await db.collection(MEDIA_COLLECTION).doc(id).set(item);
+        } else {
+            // Fallback: store in memory so finalize can still retrieve it
+            inMemoryMediaStore.set(id, item);
+            serverLogger.warn(`[MediaPipeline] Firestore unavailable — stored media ${id} in memory for processing.`);
         }
         res.json({ success: true, mediaId: id, status: 'pending' });
     }
@@ -38,6 +49,7 @@ export async function uploadIntermediateMedia(req, res) {
         res.status(500).json({ error: 'Failed to upload media.' });
     }
 }
+
 export async function finalizeMedia(req, res) {
     try {
         const { mediaId } = req.body;
@@ -48,28 +60,33 @@ export async function finalizeMedia(req, res) {
         let item = null;
         if (isFirestoreAvailable()) {
             const doc = await db.collection(MEDIA_COLLECTION).doc(mediaId).get();
-            if (!doc.exists) {
-                res.status(404).json({ error: 'Media item not found' });
-                return;
+            if (doc.exists) {
+                item = doc.data();
             }
-            item = doc.data();
         }
-        else {
-            res.status(503).json({ error: 'Firestore not available for media processing' });
-            return;
+        // Fallback: retrieve from in-memory store if Firestore not available or doc missing
+        if (!item) {
+            item = inMemoryMediaStore.get(mediaId) || null;
         }
         if (!item) {
-            res.status(404).json({ error: 'Media item not found' });
+            res.status(404).json({ error: 'Media item not found. It may have expired or not been uploaded yet.' });
             return;
         }
-        if (item.status === 'synced') {
+        if (item.status === 'synced' && item.finalUrl) {
             res.json({ success: true, mediaId: item.id, finalUrl: item.finalUrl, status: item.status });
             return;
         }
-        await db.collection(MEDIA_COLLECTION).doc(mediaId).update({
-            status: 'processing',
-            updatedAt: new Date().toISOString(),
-        });
+        // Update status to processing
+        item.status = 'processing';
+        item.updatedAt = new Date().toISOString();
+        if (isFirestoreAvailable()) {
+            await db.collection(MEDIA_COLLECTION).doc(mediaId).update({
+                status: 'processing',
+                updatedAt: item.updatedAt,
+            });
+        } else {
+            inMemoryMediaStore.set(mediaId, item);
+        }
         let finalUrl = '';
         try {
             if (item.type === 'photo') {
@@ -89,29 +106,45 @@ export async function finalizeMedia(req, res) {
                     finalUrl = await uploadVideoToDrive(item);
                 }
             }
-            await db.collection(MEDIA_COLLECTION).doc(mediaId).update({
-                status: 'synced',
-                finalUrl,
-                updatedAt: new Date().toISOString(),
-            });
+            // Update item to synced
+            item.status = 'synced';
+            item.finalUrl = finalUrl;
+            item.updatedAt = new Date().toISOString();
+            if (isFirestoreAvailable()) {
+                await db.collection(MEDIA_COLLECTION).doc(mediaId).update({
+                    status: 'synced',
+                    finalUrl,
+                    updatedAt: item.updatedAt,
+                });
+            } else {
+                inMemoryMediaStore.set(mediaId, item);
+            }
             res.json({ success: true, mediaId: item.id, finalUrl, status: 'synced' });
         }
         catch (processError) {
             const errorMessage = processError instanceof Error ? processError.message : String(processError);
-            await db.collection(MEDIA_COLLECTION).doc(mediaId).update({
-                status: 'failed',
-                error: errorMessage,
-                updatedAt: new Date().toISOString(),
-            });
+            item.status = 'failed';
+            item.error = errorMessage;
+            item.updatedAt = new Date().toISOString();
+            if (isFirestoreAvailable()) {
+                await db.collection(MEDIA_COLLECTION).doc(mediaId).update({
+                    status: 'failed',
+                    error: errorMessage,
+                    updatedAt: item.updatedAt,
+                });
+            } else {
+                inMemoryMediaStore.set(mediaId, item);
+            }
             serverLogger.error('Media finalize error', processError);
-            res.status(500).json({ error: `Media processing failed: ${errorMessage}` });
+            res.status(500).json({ success: false, error: `Media processing failed: ${errorMessage}` });
         }
     }
     catch (error) {
-        serverLogger.error('Finalize media error', error);
+        serverLogger.error('Finalize media outer error', error);
         res.status(500).json({ error: 'Failed to finalize media.' });
     }
 }
+
 export async function getMediaStatus(req, res) {
     try {
         const { mediaId } = req.params;
@@ -119,23 +152,29 @@ export async function getMediaStatus(req, res) {
             res.status(400).json({ error: 'mediaId is required' });
             return;
         }
-        if (!isFirestoreAvailable()) {
-            res.status(503).json({ error: 'Firestore not available' });
+        // Try Firestore first, then fall back to in-memory store
+        if (isFirestoreAvailable()) {
+            const doc = await db.collection(MEDIA_COLLECTION).doc(mediaId).get();
+            if (doc.exists) {
+                const data = doc.data();
+                res.json({ mediaId: doc.id, ...data });
+                return;
+            }
+        }
+        // Fallback to in-memory store
+        const memItem = inMemoryMediaStore.get(mediaId);
+        if (memItem) {
+            res.json({ mediaId: memItem.id, ...memItem });
             return;
         }
-        const doc = await db.collection(MEDIA_COLLECTION).doc(mediaId).get();
-        if (!doc.exists) {
-            res.status(404).json({ error: 'Media item not found' });
-            return;
-        }
-        const data = doc.data();
-        res.json({ mediaId: doc.id, ...data });
+        res.status(404).json({ error: 'Media item not found' });
     }
     catch (error) {
         serverLogger.error('Get media status error', error);
         res.status(500).json({ error: 'Failed to get media status.' });
     }
 }
+
 export async function base64ToBuffer(base64) {
     const matches = base64.match(/^data:([A-Za-z0-9-+\/]+);base64,(.+)$/);
     if (!matches || matches.length !== 3) {
@@ -143,6 +182,7 @@ export async function base64ToBuffer(base64) {
     }
     return Buffer.from(matches[2], 'base64');
 }
+
 async function getServiceAccountPath() {
     const credentialsPath = config.googleApplicationCredentials;
     if (!credentialsPath) {
@@ -154,6 +194,33 @@ async function getServiceAccountPath() {
     }
     return resolvedPath;
 }
+
+async function getDriveRootFolderId() {
+    const folderIdFromEnv = config.googleDriveFolderId;
+    if (folderIdFromEnv && folderIdFromEnv.length > 10 && !folderIdFromEnv.includes('1a2b3c')) {
+        return folderIdFromEnv;
+    }
+    // Try to extract from the default Drive URL
+    const defaultUrl = 'https://drive.google.com/drive/folders/19UcHi6ItJBeOAENfsOCM69K05NHc_13D';
+    const match = defaultUrl.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    return match ? match[1] : null;
+}
+
+async function setFilePublicReadable(drive, fileId) {
+    try {
+        await drive.permissions.create({
+            fileId,
+            requestBody: {
+                role: 'reader',
+                type: 'anyone',
+            },
+        });
+    }
+    catch (permErr) {
+        serverLogger.warn(`[Drive] Could not set public permission on file ${fileId}: ${permErr?.message || permErr}`);
+    }
+}
+
 async function syncImageToDrive(item) {
     const { google } = await import('googleapis');
     const serviceAccountPath = await getServiceAccountPath();
@@ -165,9 +232,12 @@ async function syncImageToDrive(item) {
     });
     const drive = google.drive({ version: 'v3', auth });
     const buffer = await base64ToBuffer(item.base64Data);
+    // Target the configured root folder so files are organized correctly
+    const rootFolderId = await getDriveRootFolderId();
     const fileMetadata = {
         name: item.fileName || `photo_${item.id}.webp`,
         mimeType: item.mimeType || 'image/webp',
+        ...(rootFolderId ? { parents: [rootFolderId] } : {}),
     };
     const mediaBody = {
         mimeType: item.mimeType || 'image/webp',
@@ -182,10 +252,12 @@ async function syncImageToDrive(item) {
     if (!fileId) {
         throw new Error('Drive upload succeeded but returned no file ID');
     }
-    const webViewLink = response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
-    const directLink = `https://drive.google.com/uc?export=view&id=${fileId}`;
-    return directLink || webViewLink;
+    // Make file publicly readable so the link works without authentication
+    await setFilePublicReadable(drive, fileId);
+    // Use the thumbnail URL format which works reliably for public files
+    return `https://drive.google.com/thumbnail?id=${fileId}&sz=w1920`;
 }
+
 export async function uploadVideoToDrive(item) {
     const { google } = await import('googleapis');
     const serviceAccountPath = await getServiceAccountPath();
@@ -211,9 +283,12 @@ export async function uploadVideoToDrive(item) {
     catch (compressionError) {
         serverLogger.warn(`[Drive Sync] Video compression failed, uploading original: ${compressionError?.message || compressionError}`);
     }
+    // Target the configured root folder
+    const rootFolderId = await getDriveRootFolderId();
     const fileMetadata = {
         name: fileName,
         mimeType: mimeType,
+        ...(rootFolderId ? { parents: [rootFolderId] } : {}),
     };
     const mediaBody = {
         mimeType: mimeType,
@@ -228,9 +303,12 @@ export async function uploadVideoToDrive(item) {
     if (!fileId) {
         throw new Error('Drive upload succeeded but returned no file ID');
     }
+    // Make video publicly accessible
+    await setFilePublicReadable(drive, fileId);
     const webViewLink = response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
     return webViewLink;
 }
+
 export async function compressVideoForDrive(originalBuffer, originalName) {
     const inputPath = path.join(process.cwd(), `tmp_input_${Date.now()}.mp4`);
     const outputPath = path.join(process.cwd(), `tmp_compressed_${Date.now()}.mp4`);
@@ -264,16 +342,15 @@ export async function compressVideoForDrive(originalBuffer, originalName) {
     }
     finally {
         try {
-            if (fs.existsSync(inputPath))
-                fs.unlinkSync(inputPath);
-            if (fs.existsSync(outputPath))
-                fs.unlinkSync(outputPath);
+            if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+            if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
         }
         catch (cleanupError) {
             serverLogger.warn(`[Drive Sync] Temporary file cleanup warning: ${cleanupError?.message || cleanupError}`);
         }
     }
 }
+
 export async function uploadVideoToYouTube(item) {
     const { google } = await import('googleapis');
     const serviceAccountPath = await getServiceAccountPath();
@@ -285,13 +362,14 @@ export async function uploadVideoToYouTube(item) {
     });
     const youtube = google.youtube({ version: 'v3', auth });
     const buffer = await base64ToBuffer(item.base64Data);
-    const bufferStream = require('stream').Readable.from(buffer);
+    // Use top-level import instead of require() to avoid ESM/CJS incompatibility
+    const bufferStream = Readable.from(buffer);
     const requestBody = {
         snippet: {
             title: item.fileName || `Team Taraba River Video ${new Date().toLocaleDateString()}`,
             description: 'Video uploaded via Team Taraba River Community Portal',
-            tags: ['Team Taraba River', 'Community', 'Event'],
-            categoryId: '17', // Sports
+            tags: ['Team Taraba River', 'Community', 'URIP', 'USOSA', 'Event'],
+            categoryId: '22', // People & Blogs
         },
         status: {
             privacyStatus: 'unlisted',
