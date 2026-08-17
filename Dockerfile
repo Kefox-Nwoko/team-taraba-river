@@ -1,28 +1,19 @@
-FROM node:20-slim AS base
-WORKDIR /app
-RUN npm ci --omit=dev
+FROM node:22-slim
 
-FROM node:20-slim AS builder
 WORKDIR /app
+
+ENV PUPPETEER_SKIP_DOWNLOAD=1
+ENV CI=1
+ENV NODE_ENV=production
+
 COPY package*.json ./
-RUN npm ci
+
+RUN npm ci --ignore-scripts=false
+
 COPY . .
+
 RUN npm run build
 
-FROM node:20-slim AS runner
-WORKDIR /app
-
-ENV NODE_ENV=production
-ENV PORT=8080
-
-COPY --from=builder /app/dist/ ./dist/
-COPY --from=builder /app/server.ts /app/server.ts
-COPY --from=builder /app/server/ /app/server/
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/tsconfig.json ./
-
-RUN npm ci --omit=dev
-
-EXPOSE 8080
+EXPOSE 10000
 
 CMD ["node", "dist/server.cjs"]
