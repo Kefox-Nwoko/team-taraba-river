@@ -217,6 +217,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     });
   };
 
+  const isFormValid =
+    (folderMode === "existing" ? !!selectedFolderId : !!newFolderTitle.trim() && !!newDate) &&
+    (mediaItems.length > 0 || !!youtubeUrlInput.trim());
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mediaItems.length === 0 && !youtubeUrlInput.trim()) {
