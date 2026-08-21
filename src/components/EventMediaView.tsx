@@ -517,25 +517,41 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     if (onRefreshEvents) onRefreshEvents();
   };
 
-  // Strictly accessible to Admin, Member Kefox Nwoko (primary uploader), or original author
+  // Strictly accessible to Admin or the exact uploader of the media
   const canEditOrDeleteFolder = (folder?: GroupEvent | null): boolean => {
     if (!folder || !currentUser) return false;
-    // 1. Admin access
+    // 1. Admin has administrative management rights
     if (currentUser.role === "admin") return true;
-    // 2. Member Kefox Nwoko full media ownership
+
+    // 2. Exact uploader match by Member ID
+    if (folder.createdById && folder.createdById === currentUser.id) return true;
+
+    // 3. Exact uploader match by Member Full Name or Email
+    if (folder.createdBy) {
+      const creator = folder.createdBy.trim().toLowerCase();
+      if (currentUser.fullName && creator === currentUser.fullName.trim().toLowerCase()) return true;
+      if (currentUser.email && creator === currentUser.email.trim().toLowerCase()) return true;
+    }
+
+    // 4. Legacy archival media uploaded by Kefox Nwoko (unassigned/guest historical tags)
     const isKefoxUser =
       currentUser.fullName?.toLowerCase().includes("kefox") ||
       currentUser.email?.toLowerCase().includes("kefox") ||
       currentUser.id === "mem_1";
-    if (isKefoxUser) return true;
-    // 3. Exact uploader match by Member ID
-    if (folder.createdById && folder.createdById === currentUser.id) return true;
-    // 4. Exact uploader match by Member Name or Email
-    if (folder.createdBy) {
-      const creator = folder.createdBy.trim().toLowerCase();
-      if (currentUser.fullName && creator.includes(currentUser.fullName.trim().toLowerCase())) return true;
-      if (currentUser.email && creator === currentUser.email.trim().toLowerCase()) return true;
+
+    if (isKefoxUser) {
+      const isLegacyOrOwnUpload =
+        !folder.createdById ||
+        folder.createdById === "mem_1" ||
+        folder.createdById === "mem_guest" ||
+        !folder.createdBy ||
+        folder.createdBy.toLowerCase() === "community member" ||
+        folder.createdBy.toLowerCase().includes("kefox");
+
+      if (isLegacyOrOwnUpload) return true;
     }
+
+    // Strict isolation: Another member's upload will NOT be controlled
     return false;
   };
 
