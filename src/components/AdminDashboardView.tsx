@@ -221,7 +221,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         title: req.folderName || req.title || "Community Event",
         date: req.date || req.uploadedAt?.split("T")[0] || new Date().toISOString().split("T")[0],
         time: "09:00",
-        location: req.location || "Taraba State",
+        location: req.location || "",
         category: req.category || "cleanup",
         description: req.description || `Archival media collection for ${req.folderName || "Community Event"}.`,
         driveImageUrls: req.type === "photo" ? [req.photoUrl] : [],

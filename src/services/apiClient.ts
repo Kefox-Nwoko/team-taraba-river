@@ -201,7 +201,7 @@ export async function createEvent(eventData: Partial<GroupEvent>): Promise<Group
     title: eventData.title || "Community Event",
     date: eventData.date || new Date().toISOString().split("T")[0],
     time: eventData.time || "09:00",
-    location: eventData.location || "Taraba State",
+    location: eventData.location || "",
     category: eventData.category || "cleanup",
     description: eventData.description || "",
     driveImageUrls: eventData.driveImageUrls || [],

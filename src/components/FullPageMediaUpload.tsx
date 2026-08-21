@@ -55,9 +55,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   );
   const [selectedFolderId, setSelectedFolderId] = useState<string>(initialFolderId || (events && events.length > 0 ? events[0].id : ""));
   const [newFolderTitle, setNewFolderTitle] = useState("");
-  const [newDate, setNewDate] = useState(new Date().toISOString().split("T")[0]);
-  const [newLocation, setNewLocation] = useState("Taraba State");
-  const [newCategory, setNewCategory] = useState<"cleanup" | "workshop" | "celebration" | "outreach" | "general">("cleanup");
+  const [newLocation, setNewLocation] = useState("");
   const [newDescription, setNewDescription] = useState("");
 
   const [youtubeUrlInput, setYoutubeUrlInput] = useState("");
@@ -327,7 +325,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           title: folderNameTitle,
           date: newDate,
           time: "09:00",
-          location: newLocation.trim() || "Taraba State",
+          location: newLocation.trim(),
           category: newCategory,
           description: newDescription.trim() || `Archival media collection for ${folderNameTitle}.`,
           driveImageUrls: photoFinalUrls,
@@ -343,7 +341,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
       // --- Step 4: Save approvals with full folder metadata and instant preview ---
       const folderEventDate = folderMode === "new" ? newDate : (events.find((e) => e.id === selectedFolderId)?.date || newDate);
-      const folderLocation = folderMode === "new" ? newLocation.trim() : (events.find((e) => e.id === selectedFolderId)?.location || "Taraba State");
+      const folderLocation = folderMode === "new" ? newLocation.trim() : (events.find((e) => e.id === selectedFolderId)?.location || "");
       const folderCategory = folderMode === "new" ? newCategory : (events.find((e) => e.id === selectedFolderId)?.category || "cleanup");
       const folderDescription = folderMode === "new" ? newDescription.trim() : (events.find((e) => e.id === selectedFolderId)?.description || "");
 

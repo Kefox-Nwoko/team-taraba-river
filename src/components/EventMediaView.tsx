@@ -586,6 +586,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       ...selectedFolder,
       title: editTitle.trim(),
       date: editDate,
+      location: editLocation.trim(),
     };
 
     try {
@@ -680,18 +681,17 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                   )}
                 </div>
               )}
-               {(currentUser?.role === "admin") && (
-                 <button
-                   onClick={() => {
-                     setUploadFolderId(undefined);
-                     setIsFullPageUploadOpen(true);
-                   }}
-                   className="shrink-0 px-3.5 py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center space-x-2 font-medium cursor-pointer min-h-[40px] bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
-                 >
-                   <Upload className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-cyan-400" />
-                   <span className="whitespace-nowrap">Upload Media</span>
-                 </button>
-               )}
+              {/* Upload Media Button */}
+              <button
+                onClick={() => {
+                  setUploadFolderId(undefined);
+                  setIsFullPageUploadOpen(true);
+                }}
+                className="shrink-0 px-3.5 py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center space-x-2 font-medium cursor-pointer min-h-[40px] bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white shadow-xs"
+              >
+                <Upload className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-white" />
+                <span className="whitespace-nowrap font-medium">Upload Media</span>
+              </button>
               {onBackToDashboard && (
                 <button onClick={onBackToDashboard} className="p-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-full transition shadow-sm flex items-center justify-center cursor-pointer">
                   <ChevronLeft className="w-5 h-5" />
@@ -728,76 +728,111 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
             <div className="py-16 text-center text-slate-500 dark:text-slate-400 text-sm">No completed event folders match your search filter.</div>
           ) : viewMode === "grid" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredFolders.map((event) => (
-                <div key={event.id} onClick={() => setSelectedFolder(event)} className="group py-6 border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-900/50 transition-colors cursor-pointer">
-                  <div className="relative rounded-xl bg-slate-100 dark:bg-slate-950 mb-4 overflow-hidden aspect-square shadow-xs">
-                    <FolderCollagePreview images={event.driveImageUrls || []} youtubeVideoUrl={event.youtubeVideoUrl} eventTitle={event.title} />
-                  </div>
-                  <h3 className="text-sm sm:text-sm text-slate-900 dark:text-slate-100 line-clamp-2">{event.title}</h3>
-                  <div className="mt-2.5 flex items-center justify-between">
-                    <p className="text-slate-600 dark:text-slate-400 text-xs sm:text-sm">
-                      {formatDateLabel(event.date)}
-                      {sanitizeUIField(event.location) ? ` • ${sanitizeUIField(event.location)}` : ""}
-                    </p>
-                    <div className="flex items-center space-x-3 text-xs text-slate-500 font-medium shrink-0 ml-4">
-                      <div className="flex items-center space-x-1"><FileImage className="w-3.5 h-3.5" /><span>{event.driveImageUrls?.length || 0}</span></div>
-                      <div className="flex items-center space-x-1"><Video className="w-3.5 h-3.5" /><span>{event.youtubeVideoUrl ? 1 : 0}</span></div>
+              {filteredFolders.map((folder) => {
+                const mediaCount = (folder.driveImageUrls?.length || 0) + (folder.youtubeVideoUrl ? 1 : 0);
+                return (
+                  <div
+                    key={folder.id}
+                    onClick={() => setSelectedFolder(folder)}
+                    className="group relative bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 shadow-sm hover:shadow-md transition cursor-pointer flex flex-col justify-between space-y-4"
+                  >
+                    <div className="space-y-3">
+                      <div className="aspect-video w-full overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800 relative">
+                        <FolderCollagePreview
+                          images={folder.driveImageUrls || []}
+                          youtubeVideoUrl={folder.youtubeVideoUrl}
+                          eventTitle={folder.title}
+                          heightClass="h-full w-full"
+                        />
+                        <div className="absolute top-2.5 right-2.5 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg text-white text-[11px] font-medium flex items-center gap-1">
+                          <FileImage className="w-3.5 h-3.5" />
+                          <span>{mediaCount} items</span>
+                        </div>
+                      </div>
+                      <div>
+                        <h3 className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white group-hover:text-cyan-600 transition truncate">
+                          {folder.title}
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5" />
+                          <span>{formatDateLabel(folder.date)}</span>
+                          {sanitizeUIField(folder.location) ? (
+                            <>
+                              <span>•</span>
+                              <span className="truncate">{sanitizeUIField(folder.location)}</span>
+                            </>
+                          ) : null}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <div className="transition-colors overflow-hidden">
-              {filteredFolders.map((event) => (
-                <div key={event.id} onClick={() => setSelectedFolder(event)} className="py-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-900/50">
-                  <div className="flex items-center space-x-4">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 rounded-xl overflow-hidden aspect-square">
-                      <FolderCollagePreview images={event.driveImageUrls || []} youtubeVideoUrl={event.youtubeVideoUrl} eventTitle={event.title} />
+            <div className="space-y-3">
+              {filteredFolders.map((folder) => {
+                const mediaCount = (folder.driveImageUrls?.length || 0) + (folder.youtubeVideoUrl ? 1 : 0);
+                return (
+                  <div
+                    key={folder.id}
+                    onClick={() => setSelectedFolder(folder)}
+                    className="p-4 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl flex items-center justify-between hover:border-cyan-500 transition cursor-pointer"
+                  >
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0">
+                        <FolderCollagePreview
+                          images={folder.driveImageUrls || []}
+                          youtubeVideoUrl={folder.youtubeVideoUrl}
+                          eventTitle={folder.title}
+                          heightClass="w-full h-full"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-medium text-sm text-slate-900 dark:text-white truncate">{folder.title}</h4>
+                        <p className="text-xs text-slate-500">{formatDateLabel(folder.date)} • {mediaCount} items</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-sm font-normal text-slate-900 dark:text-white">{event.title}</h3>
-                      <p className="text-slate-500 text-xs sm:text-sm">
-                        {formatDateLabel(event.date)}
-                        {sanitizeUIField(event.location) ? ` • ${sanitizeUIField(event.location)}` : ""}
-                      </p>
-                    </div>
+                    <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />
                   </div>
-                  <div className="flex items-center space-x-4 sm:space-x-6">
-                    <div className="flex items-center space-x-3 text-xs text-slate-500 font-medium shrink-0">
-                      <div className="flex items-center space-x-1"><FileImage className="w-3.5 h-3.5" /><span>{event.driveImageUrls?.length || 0}</span></div>
-                      <div className="flex items-center space-x-1"><Video className="w-3.5 h-3.5" /><span>{event.youtubeVideoUrl ? 1 : 0}</span></div>
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-slate-400" />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       ) : (
-        /* Folder Details View - Return Button Below Last Card on Left & Font Normal */
-        <div className="space-y-8 animate-fadeIn font-normal">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        /* Folder Details View */
+        <div className="space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800 pb-5">
             {isEditingFolderInfo ? (
-              <div className="flex-1 w-full space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="flex-1 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Folder Title</label>
+                    <label className="text-xs text-slate-500 font-normal">Folder Title</label>
                     <input
                       type="text"
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
-                      className="w-full px-3 py-2 text-base rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white font-normal"
+                      className="w-full mt-1 px-3 py-1.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                      placeholder="Folder title"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Event Date</label>
-                    <div className="relative w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between text-base font-normal text-slate-900 dark:text-white cursor-pointer select-none">
-                      <span>{formatDateLabel(editDate)}</span>
-                      <div className="flex items-center space-x-1 text-slate-400 dark:text-slate-500 shrink-0">
-                        <Calendar className="w-5 h-5" />
-                        <ChevronDown className="w-5 h-5 text-cyan-500 font-bold" />
+                    <label className="text-xs text-slate-500 font-normal">Location (optional)</label>
+                    <input
+                      type="text"
+                      value={editLocation}
+                      onChange={(e) => setEditLocation(e.target.value)}
+                      className="w-full mt-1 px-3 py-1.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                      placeholder="Event location"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="text-xs text-slate-500 font-normal">Date</label>
+                    <div className="relative mt-1">
+                      <div className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between text-xs cursor-pointer">
+                        <span>{formatDateLabel(editDate)}</span>
+                        <ChevronDown className="w-4 h-4 text-cyan-500 font-bold" />
                       </div>
                       <DatePicker
                         value={editDate}
@@ -824,7 +859,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
             ) : (
               <div className="flex-1 w-full">
                 <div className="flex items-center gap-2.5">
-                  <h1 className="text-sm sm:text-sm font-normal text-slate-900 dark:text-white tracking-tight">{selectedFolder.title}</h1>
+                  <h1 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white tracking-tight">{selectedFolder.title}</h1>
                   {(currentUser?.role === "admin" || (currentUser && selectedFolder.createdById === currentUser.id)) && (
                     <button
                       onClick={startEditingFolder}
@@ -841,16 +876,29 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                 </p>
               </div>
             )}
-            {!isEditingFolderInfo && (currentUser?.role === "admin" || (currentUser && selectedFolder.createdById === currentUser.id)) && (
-              <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 shrink-0 w-full md:w-auto">
+            {!isEditingFolderInfo && (
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0 w-full sm:w-auto">
                 <button
-                  onClick={(e) => handleDeleteFolder(selectedFolder.id, e)}
-                  className="w-full md:w-auto px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-normal rounded-xl transition flex items-center justify-center space-x-2 cursor-pointer shadow-sm"
-                  title="Delete entire media folder"
+                  onClick={() => {
+                    setUploadFolderId(selectedFolder.id);
+                    setIsFullPageUploadOpen(true);
+                  }}
+                  className="px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-xs font-medium rounded-xl transition flex items-center justify-center space-x-2 cursor-pointer shadow-xs"
+                  title="Upload more photos or videos to this folder"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  <span>Delete Folder</span>
+                  <Upload className="w-4 h-4" />
+                  <span>Update / Add Media</span>
                 </button>
+                {(currentUser?.role === "admin" || (currentUser && selectedFolder.createdById === currentUser.id)) && (
+                  <button
+                    onClick={(e) => handleDeleteFolder(selectedFolder.id, e)}
+                    className="px-3.5 py-2 bg-red-600/90 hover:bg-red-700 text-white text-xs font-normal rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
+                    title="Delete entire media folder"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete Folder</span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -858,7 +906,19 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
           <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
             <h2 className="text-sm sm:text-sm font-normal text-slate-900 dark:text-white">Event Media Gallery ({galleryItems.length} Media Assets)</h2>
             {galleryItems.length === 0 ? (
-              <p className="text-slate-500 dark:text-slate-400 text-sm font-normal py-8 text-center">No photos or videos uploaded for this event folder yet.</p>
+              <div className="py-12 text-center space-y-3">
+                <p className="text-slate-500 dark:text-slate-400 text-sm font-normal">No photos or videos uploaded for this event folder yet.</p>
+                <button
+                  onClick={() => {
+                    setUploadFolderId(selectedFolder.id);
+                    setIsFullPageUploadOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-xs font-medium transition cursor-pointer shadow-xs"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Upload Media to this Folder</span>
+                </button>
+              </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
                 {galleryItems.map((item, i) => (
