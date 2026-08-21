@@ -681,17 +681,6 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                   )}
                 </div>
               )}
-              {/* Upload Media Button */}
-              <button
-                onClick={() => {
-                  setUploadFolderId(undefined);
-                  setIsFullPageUploadOpen(true);
-                }}
-                className="shrink-0 px-3.5 py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center space-x-2 font-medium cursor-pointer min-h-[40px] bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white shadow-xs"
-              >
-                <Upload className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-white" />
-                <span className="whitespace-nowrap font-medium">Upload Media</span>
-              </button>
               {onBackToDashboard && (
                 <button onClick={onBackToDashboard} className="p-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-full transition shadow-sm flex items-center justify-center cursor-pointer">
                   <ChevronLeft className="w-5 h-5" />

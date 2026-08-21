@@ -455,8 +455,8 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                       type="text"
                       required
                       placeholder="e.g. URIP Sports Activity"
-                      value={newTitle}
-                      onChange={(e) => setNewTitle(e.target.value)}
+                      value={newFolderTitle}
+                      onChange={(e) => setNewFolderTitle(e.target.value)}
                       className="w-full px-3 py-2 text-sm rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
                     />
                   </div>
@@ -474,6 +474,18 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                         required
                       />
                     </div>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm text-slate-700 dark:text-slate-300 mb-1.5">
+                      Location (optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Lagos"
+                      value={newLocation}
+                      onChange={(e) => setNewLocation(e.target.value)}
+                      className="w-full px-3 py-2 text-sm rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                    />
                   </div>
                 </div>
               </div>
