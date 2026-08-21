@@ -1,0 +1,10 @@
+{
+  "css.lint.unknownAtRules": "ignore",
+  "css.lint.emptyRules": "ignore",
+  "css.lint.vendorPrefix": "ignore",
+  "css.validate": true,
+  "tailwindCSS.includeLanguages": {
+    "typescript": "javascript",
+    "typescriptreact": "javascript"
+  }
+}

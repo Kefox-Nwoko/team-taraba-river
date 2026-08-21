@@ -181,6 +181,7 @@ const FolderCollagePreview: React.FC<{ images: string[]; youtubeVideoUrl?: strin
             className="w-full h-full object-cover"
             onError={handleGoogleDriveImageError}
             loading="lazy"
+            decoding="async"
           />
           {previewItems[0].isVideo && (
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
@@ -232,6 +233,7 @@ const FolderCollagePreview: React.FC<{ images: string[]; youtubeVideoUrl?: strin
             className="w-full h-full object-cover"
             onError={handleGoogleDriveImageError}
             loading="lazy"
+            decoding="async"
           />
           {previewItems[0].isVideo && (
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
@@ -250,6 +252,7 @@ const FolderCollagePreview: React.FC<{ images: string[]; youtubeVideoUrl?: strin
             className="w-full h-full object-cover"
             onError={handleGoogleDriveImageError}
             loading="lazy"
+            decoding="async"
           />
           {previewItems[1].isVideo && (
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
@@ -268,6 +271,7 @@ const FolderCollagePreview: React.FC<{ images: string[]; youtubeVideoUrl?: strin
             className="w-full h-full object-cover"
             onError={handleGoogleDriveImageError}
             loading="lazy"
+            decoding="async"
           />
           {previewItems[2].isVideo && (
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
@@ -292,6 +296,7 @@ const FolderCollagePreview: React.FC<{ images: string[]; youtubeVideoUrl?: strin
             className="w-full h-full object-cover"
             onError={handleGoogleDriveImageError}
             loading="lazy"
+            decoding="async"
           />
           {item.isVideo && (
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
