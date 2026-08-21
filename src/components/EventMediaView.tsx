@@ -491,6 +491,22 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     if (onRefreshEvents) onRefreshEvents();
   };
 
+  // Strictly accessible ONLY to Admin and the exact uploader of the media
+  const canEditOrDeleteFolder = (folder?: GroupEvent | null): boolean => {
+    if (!folder || !currentUser) return false;
+    // 1. Admin access
+    if (currentUser.role === "admin") return true;
+    // 2. Exact uploader match by Member ID
+    if (folder.createdById && folder.createdById === currentUser.id) return true;
+    // 3. Exact uploader match by Member Name or Email
+    if (folder.createdBy) {
+      const creator = folder.createdBy.trim().toLowerCase();
+      if (currentUser.fullName && creator === currentUser.fullName.trim().toLowerCase()) return true;
+      if (currentUser.email && creator === currentUser.email.trim().toLowerCase()) return true;
+    }
+    return false;
+  };
+
   const handleDeleteFolder = async (folderId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!window.confirm("Are you sure you want to permanently delete this media folder and all attached content?")) return;
@@ -756,7 +772,17 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                           eventTitle={folder.title}
                           heightClass="h-full w-full"
                         />
-                        <div className="absolute top-2.5 right-2.5 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg text-white text-[11px] font-medium flex items-center gap-1">
+                        {canDeleteFolder(folder) && (
+                          <button
+                            onClick={(e) => handleDeleteFolder(folder.id, e)}
+                            className="absolute top-2.5 left-2.5 bg-red-600 hover:bg-red-700 p-1.5 rounded-lg text-white text-xs font-medium flex items-center justify-center shadow-md transition cursor-pointer z-20"
+                            title="Delete this folder"
+                            aria-label="Delete this folder"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <div className="absolute top-2.5 right-2.5 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg text-white text-[11px] font-medium flex items-center gap-1 z-10">
                           <FileImage className="w-3.5 h-3.5" />
                           <span>{mediaCount} items</span>
                         </div>
@@ -805,7 +831,19 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                         <p className="text-xs text-slate-500">{formatDateLabel(folder.date)} • {mediaCount} items</p>
                       </div>
                     </div>
-                    <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />
+                    <div className="flex items-center gap-2 shrink-0">
+                      {canDeleteFolder(folder) && (
+                        <button
+                          onClick={(e) => handleDeleteFolder(folder.id, e)}
+                          className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-xl transition cursor-pointer"
+                          title="Delete this folder"
+                          aria-label="Delete this folder"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />
+                    </div>
                   </div>
                 );
               })}
@@ -872,7 +910,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               <div className="flex-1 w-full">
                 <div className="flex items-center gap-2.5">
                   <h1 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white tracking-tight">{(activeFolder || selectedFolder).title}</h1>
-                  {(currentUser?.role === "admin" || (currentUser && (activeFolder || selectedFolder).createdById === currentUser.id)) && (
+                  {canEditOrDeleteFolder(activeFolder || selectedFolder) && (
                     <button
                       onClick={startEditingFolder}
                       className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-cyan-600 transition cursor-pointer"
@@ -889,22 +927,22 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               </div>
             )}
             {!isEditingFolderInfo && (
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0 w-full sm:w-auto">
+              <div className="flex flex-row items-center gap-2.5 shrink-0 w-full sm:w-auto flex-wrap">
                 <button
                   onClick={() => {
                     setUploadFolderId(selectedFolder.id);
                     setIsFullPageUploadOpen(true);
                   }}
-                  className="px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-xs font-medium rounded-xl transition flex items-center justify-center space-x-2 cursor-pointer shadow-xs"
+                  className="flex-1 sm:flex-initial px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-xs font-medium rounded-xl transition flex items-center justify-center space-x-2 cursor-pointer shadow-xs whitespace-nowrap"
                   title="Upload more photos or videos to this folder"
                 >
                   <Upload className="w-4 h-4" />
                   <span>Update / Add Media</span>
                 </button>
-                {(currentUser?.role === "admin" || (currentUser && selectedFolder.createdById === currentUser.id)) && (
+                {canEditOrDeleteFolder(selectedFolder) && (
                   <button
                     onClick={(e) => handleDeleteFolder(selectedFolder.id, e)}
-                    className="px-3.5 py-2 bg-red-600/90 hover:bg-red-700 text-white text-xs font-normal rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
+                    className="flex-1 sm:flex-initial px-3.5 py-2 bg-red-600/90 hover:bg-red-700 text-white text-xs font-normal rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
                     title="Delete entire media folder"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -918,18 +956,29 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
           <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
             <h2 className="text-sm sm:text-sm font-normal text-slate-900 dark:text-white">Event Media Gallery ({galleryItems.length} Media Assets)</h2>
             {galleryItems.length === 0 ? (
-              <div className="py-12 text-center space-y-3">
+              <div className="py-12 text-center space-y-4">
                 <p className="text-slate-500 dark:text-slate-400 text-sm font-normal">No photos or videos uploaded for this event folder yet.</p>
-                <button
-                  onClick={() => {
-                    setUploadFolderId(selectedFolder.id);
-                    setIsFullPageUploadOpen(true);
-                  }}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-xs font-medium transition cursor-pointer shadow-xs"
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>Upload Media to this Folder</span>
-                </button>
+                <div className="flex items-center justify-center gap-3 flex-wrap">
+                  <button
+                    onClick={() => {
+                      setUploadFolderId(selectedFolder.id);
+                      setIsFullPageUploadOpen(true);
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-xs font-medium transition cursor-pointer shadow-xs"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Upload Media to this Folder</span>
+                  </button>
+                  {canEditOrDeleteFolder(selectedFolder) && (
+                    <button
+                      onClick={(e) => handleDeleteFolder(selectedFolder.id, e)}
+                      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-red-600/90 hover:bg-red-700 text-white text-xs font-normal transition cursor-pointer shadow-xs"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Delete Empty Folder</span>
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
@@ -1012,7 +1061,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                   <span>Transfer Image to Folder</span>
                 </button>
               )}
-              {(currentUser?.role === "admin" || (currentUser && selectedFolder?.createdById === currentUser.id)) && (
+              {canEditOrDeleteFolder(selectedFolder) && (
                 <button
                   onClick={(e) => handleDeleteSingleAsset(galleryItems[lightboxIndex].url, e)}
                   className="px-3 py-1 rounded-xl bg-red-600/80 hover:bg-red-600 text-white text-xs font-normal transition flex items-center space-x-1.5 cursor-pointer"
