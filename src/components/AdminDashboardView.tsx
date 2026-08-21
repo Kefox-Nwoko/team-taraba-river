@@ -337,6 +337,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     setIsBatchProcessing(false);
   };
 
+  const getMemberName = (id: string) => {
+    const member = members.find((m) => m.id === id);
+    return member ? member.fullName : "Member";
+  };
+
   const handleResetSystemData = async () => {
     const confirmed = window.confirm(
       "⚠️ WARNING: This will permanently reset all member activity points to 0 and clear all activity logs. This cannot be undone.\n\nAre you sure you want to proceed?"
@@ -359,11 +364,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     .filter((m) => (m.activityPoints || 0) > 0)
     .sort((a, b) => (b.activityPoints || 0) - (a.activityPoints || 0))
     .slice(0, 5);
-
-  const getMemberName = (id: string): string => {
-    const m = members.find((mem) => mem.id === id);
-    return m ? m.fullName : id;
-  };
 
   return (
     <div className="space-y-6 font-sans font-normal">
@@ -493,116 +493,106 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             </div>
           </div>
 
-          {/* Section 2: Member RSVP/Attendance Board */}
-          <div className="py-6 sm:py-8 space-y-6">
-            <div className="border-b border-slate-100 dark:border-slate-800 pb-4">
-              <h2 className="text-sm sm:text-sm text-slate-900 dark:text-white font-normal">
-                Member RSVP/Attendance Board</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 font-normal">
-                Real-time tracking of member responses (Yes, Maybe, No) per event</p>
+          {/* Section 2: Member RSVP/Attendance Board (Combined Single Master Card) */}
+          <div className="py-6 sm:py-8 space-y-4">
+            <div className="border-b border-slate-100 dark:border-slate-800 pb-3">
+              <h2 className="text-sm sm:text-base text-slate-900 dark:text-white font-semibold flex items-center gap-2">
+                <Users className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+                <span>Member RSVP & Attendance Board</span>
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5 font-normal">
+                Real-time tracking of member responses (Yes, Maybe, No) per event
+              </p>
             </div>
 
             {(() => {
               const today = new Date();
               const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-              const activeEvents = events.filter(evt => evt.date >= todayStr);
+              const activeEvents = events.filter((evt) => evt.date >= todayStr);
 
               if (activeEvents.length === 0) {
                 return (
-                  <div className="p-12 text-center text-slate-500 dark:text-slate-400 text-sm font-normal">
+                  <div className="p-12 text-center text-slate-500 dark:text-slate-400 text-sm font-normal rounded-3xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
                     No active events currently published.
                   </div>
                 );
               }
 
               return (
-                <div className="space-y-8 font-normal">
-                  {activeEvents.map((evt) => {
+                <div className="bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-3 font-normal shadow-xs">
+                  {activeEvents.map((evt, idx) => {
                     const yesIds = evt.attendeeIds || [];
-                  const maybeIds = evt.maybeIds || [];
-                  const noIds = evt.declinedIds || [];
+                    const maybeIds = evt.maybeIds || [];
+                    const noIds = evt.declinedIds || [];
 
-                  return (
-                    <div
-                      key={evt.id}
-                      className="bg-slate-50 dark:bg-slate-950 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-6 font-normal"
-                    >
-                      <div className="border-b border-slate-200 dark:border-slate-800/80 pb-4">
-                        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {evt.title}
-                        </h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                          {evt.date} • {evt.time} • {evt.location}
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-normal">
-                        {/* Yes Column */}
-                        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-emerald-200 dark:border-emerald-900/50 space-y-3">
-                          <div className="flex items-center space-x-2 text-emerald-700 dark:text-emerald-400 border-b border-slate-100 dark:border-slate-800 pb-2">
-                            <CheckCircle2 className="w-5 h-5" />
-                            <span className="text-sm font-normal">Yes ({yesIds.length})</span>
+                    return (
+                      <div
+                        key={evt.id}
+                        className="bg-white dark:bg-slate-900/90 rounded-2xl p-4 border border-slate-200/80 dark:border-slate-800/80 hover:border-cyan-500/50 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs"
+                      >
+                        {/* Event Title & Metadata */}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="w-6 h-6 rounded-full bg-cyan-100 dark:bg-cyan-950/80 text-cyan-700 dark:text-cyan-400 text-xs font-bold flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white truncate">
+                              {evt.title}
+                            </h3>
+                            {evt.category && (
+                              <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[11px] font-medium shrink-0">
+                                {evt.category}
+                              </span>
+                            )}
                           </div>
-                          {yesIds.length === 0 ? (
-                            <p className="text-sm text-slate-400 italic">No responses yet.</p>
-                          ) : (
-                            <ul className="space-y-1.5 text-sm text-slate-800 dark:text-slate-200">
-                              {yesIds.map((id) => (
-                                <li key={id} className="flex items-center space-x-2">
-                                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                                  <span>{getMemberName(id)}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
+                          <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap">
+                            <span>{evt.date} • {evt.time}</span>
+                            <span>•</span>
+                            <span className="truncate">{evt.location}</span>
+                          </p>
                         </div>
 
-                        {/* Maybe Column */}
-                        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-amber-200 dark:border-amber-900/50 space-y-3">
-                          <div className="flex items-center space-x-2 text-amber-700 dark:text-amber-400 border-b border-slate-100 dark:border-slate-800 pb-2">
-                            <HelpCircle className="w-5 h-5" />
-                            <span className="text-sm font-normal">Maybe ({maybeIds.length})</span>
+                        {/* RSVP Stats & Attendees (Straight row on desktop, flex/card on mobile) */}
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 shrink-0 pt-3 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800/60">
+                          {/* Yes Pill */}
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 text-xs text-emerald-800 dark:text-emerald-300">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span className="font-semibold">Yes ({yesIds.length})</span>
+                            {yesIds.length > 0 && (
+                              <span className="text-[11px] text-emerald-700 dark:text-emerald-400 truncate max-w-[160px]" title={yesIds.map(getMemberName).join(", ")}>
+                                : {yesIds.map(getMemberName).join(", ")}
+                              </span>
+                            )}
                           </div>
-                          {maybeIds.length === 0 ? (
-                            <p className="text-sm text-slate-400 italic">No responses yet.</p>
-                          ) : (
-                            <ul className="space-y-1.5 text-sm text-slate-800 dark:text-slate-200">
-                              {maybeIds.map((id) => (
-                                <li key={id} className="flex items-center space-x-2">
-                                  <span className="w-2 h-2 rounded-full bg-amber-500" />
-                                  <span>{getMemberName(id)}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </div>
 
-                        {/* No Column */}
-                        <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-red-200 dark:border-red-900/50 space-y-3">
-                          <div className="flex items-center space-x-2 text-red-700 dark:text-red-400 border-b border-slate-100 dark:border-slate-800 pb-2">
-                            <UserX className="w-5 h-5" />
-                            <span className="text-sm font-normal">No ({noIds.length})</span>
+                          {/* Maybe Pill */}
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-300">
+                            <HelpCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span className="font-semibold">Maybe ({maybeIds.length})</span>
+                            {maybeIds.length > 0 && (
+                              <span className="text-[11px] text-amber-700 dark:text-amber-400 truncate max-w-[160px]" title={maybeIds.map(getMemberName).join(", ")}>
+                                : {maybeIds.map(getMemberName).join(", ")}
+                              </span>
+                            )}
                           </div>
-                          {noIds.length === 0 ? (
-                            <p className="text-sm text-slate-400 italic">No responses yet.</p>
-                          ) : (
-                            <ul className="space-y-1.5 text-sm text-slate-800 dark:text-slate-200">
-                              {noIds.map((id) => (
-                                <li key={id} className="flex items-center space-x-2">
-                                  <span className="w-2 h-2 rounded-full bg-red-500" />
-                                  <span>{getMemberName(id)}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          )}
+
+                          {/* No Pill */}
+                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800/60 text-xs text-red-800 dark:text-red-300">
+                            <UserX className="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                            <span className="font-semibold">No ({noIds.length})</span>
+                            {noIds.length > 0 && (
+                              <span className="text-[11px] text-red-700 dark:text-red-400 truncate max-w-[160px]" title={noIds.map(getMemberName).join(", ")}>
+                                : {noIds.map(getMemberName).join(", ")}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
