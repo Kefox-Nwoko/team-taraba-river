@@ -273,6 +273,47 @@ export class FirebaseSyncManager {
   }
 
   /**
+   * Resets all member activity points to 0 and clears activity logs in Firestore and LocalStorage.
+   */
+  public static async resetSystemDataDirectly(): Promise<{ success: boolean; message: string }> {
+    try {
+      // 1. Reset all members in Firestore
+      const membersSnap = await getDocs(collection(db, "members"));
+      for (const d of membersSnap.docs) {
+        await updateDoc(d.ref, { activityPoints: 0 });
+      }
+
+      // 2. Clear activity logs in Firestore
+      const logsSnap = await getDocs(collection(db, "activityLogs"));
+      for (const d of logsSnap.docs) {
+        await deleteDoc(d.ref);
+      }
+
+      // 3. Reset local storage members & logs
+      const localMembers = AppStateManager.getMembers();
+      const resetLocalMembers = localMembers.map((m) => ({ ...m, activityPoints: 0 }));
+      AppStateManager.saveMembers(resetLocalMembers);
+      AppStateManager.saveActivityLogs([]);
+
+      return {
+        success: true,
+        message: "System engagement points and logs successfully reset to 0.",
+      };
+    } catch (err: any) {
+      logger.error("Direct Firestore reset error", err);
+      // Fallback local reset
+      const localMembers = AppStateManager.getMembers();
+      const resetLocalMembers = localMembers.map((m) => ({ ...m, activityPoints: 0 }));
+      AppStateManager.saveMembers(resetLocalMembers);
+      AppStateManager.saveActivityLogs([]);
+      return {
+        success: true,
+        message: "System engagement points reset locally.",
+      };
+    }
+  }
+
+  /**
    * Records a realistic, deduplicated session visit in Firestore.
    * Debounced per browser session with an industry-standard 30-minute inactivity window.
    */

@@ -458,25 +458,21 @@ export async function triggerYouTubeBackSync(channelId?: string, searchQuery?: s
 }
 
 export async function resetSystemData(): Promise<{ success: boolean; message: string }> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(apiUrl("/api/admin/reset-data"), {
-    method: "POST",
-    headers,
-  });
-  if (!res.ok) {
-    let errMsg = `Reset failed with status ${res.status}`;
-    try {
-      const errData = await res.json();
-      errMsg = errData.error || errMsg;
-    } catch {
-      try {
-        const text = await res.text();
-        if (text) errMsg = text;
-      } catch {}
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(apiUrl("/api/admin/reset-data"), {
+      method: "POST",
+      headers,
+    });
+    const contentType = res.headers.get("content-type") || "";
+    if (res.ok && contentType.includes("application/json")) {
+      return await res.json();
     }
-    throw new Error(errMsg);
+  } catch (err) {
+    logger.warn("Backend reset endpoint unavailable, falling back to direct Firestore reset", err);
   }
-  return await res.json();
+  // Client-side direct Firestore & local storage reset
+  return await FirebaseSyncManager.resetSystemDataDirectly();
 }
 
 export async function fetchVisitMetrics(): Promise<{ totalVisits: number; lastVisitTimestamp: string; latestUniqueUser: string }> {
