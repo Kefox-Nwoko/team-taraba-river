@@ -19,6 +19,7 @@ const MEDIA_COLLECTION = 'mediaItems';
 export interface MediaItem {
   id: string;
   eventId: string;
+  folderName?: string;
   type: 'photo' | 'video';
   base64Data: string;
   mimeType: string;
@@ -33,7 +34,7 @@ export interface MediaItem {
 
 export async function uploadIntermediateMedia(req: Request, res: Response): Promise<void> {
   try {
-    const { eventId, type, base64Data, mimeType, fileName, storageTarget } = req.body;
+    const { eventId, folderName, type, base64Data, mimeType, fileName, storageTarget } = req.body;
 
     if (!eventId || !type || !base64Data || !mimeType) {
       res.status(400).json({ error: 'eventId, type, base64Data, and mimeType are required' });
@@ -45,6 +46,7 @@ export async function uploadIntermediateMedia(req: Request, res: Response): Prom
     const item: MediaItem = {
       id,
       eventId,
+      folderName: folderName || undefined,
       type: type === 'video' ? 'video' : 'photo',
       base64Data,
       mimeType,
@@ -236,6 +238,38 @@ async function getDriveRootFolderId(): Promise<string | null> {
   return match ? match[1] : null;
 }
 
+async function findOrCreateDriveFolder(drive: any, folderName: string, parentRootFolderId: string): Promise<string> {
+  const safeName = folderName.replace(/'/g, "\\'");
+  try {
+    const listRes = await drive.files.list({
+      q: `name = '${safeName}' and '${parentRootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: 'files(id, name)',
+      spaces: 'drive',
+    });
+
+    if (listRes.data.files && listRes.data.files.length > 0) {
+      return listRes.data.files[0].id;
+    }
+
+    const createRes = await drive.files.create({
+      requestBody: {
+        name: folderName,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [parentRootFolderId],
+      },
+      fields: 'id',
+    });
+
+    const folderId = createRes.data.id;
+    await setFilePublicReadable(drive, folderId);
+    serverLogger.info(`[Drive Sync] Created new Google Drive subfolder "${folderName}" (${folderId}) in Team Taraba River`);
+    return folderId;
+  } catch (err: any) {
+    serverLogger.warn(`[Drive Sync] Subfolder lookup/creation for "${folderName}" failed, defaulting to root: ${err?.message || err}`);
+    return parentRootFolderId;
+  }
+}
+
 async function setFilePublicReadable(drive: any, fileId: string): Promise<void> {
   try {
     await drive.permissions.create({
@@ -266,12 +300,17 @@ async function syncImageToDrive(item: MediaItem): Promise<string> {
 
   const buffer = await base64ToBuffer(item.base64Data);
 
-  // Target the configured root folder so files are organized correctly
+  // Target the configured root folder and resolve/create the event's subfolder
   const rootFolderId = await getDriveRootFolderId();
+  let targetFolderId = rootFolderId;
+  if (rootFolderId && item.folderName) {
+    targetFolderId = await findOrCreateDriveFolder(drive, item.folderName, rootFolderId);
+  }
+
   const fileMetadata: any = {
     name: item.fileName || `photo_${item.id}.webp`,
     mimeType: item.mimeType || 'image/webp',
-    ...(rootFolderId ? { parents: [rootFolderId] } : {}),
+    ...(targetFolderId ? { parents: [targetFolderId] } : {}),
   };
 
   const mediaBody = {
@@ -327,12 +366,17 @@ export async function uploadVideoToDrive(item: MediaItem): Promise<string> {
     serverLogger.warn(`[Drive Sync] Video compression failed, uploading original: ${compressionError?.message || compressionError}`);
   }
 
-  // Target the configured root folder
+  // Target the configured root folder and resolve/create the event's subfolder
   const rootFolderId = await getDriveRootFolderId();
+  let targetFolderId = rootFolderId;
+  if (rootFolderId && item.folderName) {
+    targetFolderId = await findOrCreateDriveFolder(drive, item.folderName, rootFolderId);
+  }
+
   const fileMetadata: any = {
     name: fileName,
     mimeType: mimeType,
-    ...(rootFolderId ? { parents: [rootFolderId] } : {}),
+    ...(targetFolderId ? { parents: [targetFolderId] } : {}),
   };
 
   const mediaBody = {

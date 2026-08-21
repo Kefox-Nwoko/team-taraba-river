@@ -273,25 +273,64 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         let finalUrl = "";
         if (item.type === "photo") {
           const webpDataUrl = await compressAndConvertToWebp(item.file);
-          // Try Firebase Storage with 2s timeout fallback
+          // Primary: Google Drive subfolder upload pipeline
           try {
-            const webpBlob = await compressAndConvertToWebpBlob(item.file);
-            const storageRef = ref(storage, `events/${eventId}/${Date.now()}_${i + 1}.webp`);
-            const uploadPromise = uploadBytes(storageRef, webpBlob, { contentType: "image/webp" }).then(() => getDownloadURL(storageRef));
-            const timeoutPromise = new Promise<string>((_, reject) => setTimeout(() => reject(new Error("Storage timeout")), 2000));
-            finalUrl = await Promise.race([uploadPromise, timeoutPromise]);
+            const uploadRes = await uploadMediaItem({
+              eventId,
+              folderName: folderNameTitle,
+              type: "photo",
+              base64Data: webpDataUrl,
+              mimeType: "image/webp",
+              fileName: `${folderNameTitle}_photo_${i + 1}.webp`,
+              storageTarget: "drive",
+            });
+            if (uploadRes?.mediaId) {
+              const finalizeRes = await finalizeMediaItem(uploadRes.mediaId);
+              if (finalizeRes?.finalUrl) {
+                finalUrl = finalizeRes.finalUrl;
+              }
+            }
           } catch {
-            finalUrl = webpDataUrl;
+            // Secondary Fallback: Cloud Storage
+            try {
+              const webpBlob = await compressAndConvertToWebpBlob(item.file);
+              const storageRef = ref(storage, `events/${eventId}/${Date.now()}_${i + 1}.webp`);
+              const uploadPromise = uploadBytes(storageRef, webpBlob, { contentType: "image/webp" }).then(() => getDownloadURL(storageRef));
+              const timeoutPromise = new Promise<string>((_, reject) => setTimeout(() => reject(new Error("Storage timeout")), 3000));
+              finalUrl = await Promise.race([uploadPromise, timeoutPromise]);
+            } catch {
+              finalUrl = webpDataUrl;
+            }
           }
         } else {
           const videoDataUrl = await readVideoAsDataUrl(item.file);
+          // Primary: YouTube upload first, with automatic Google Drive subfolder fallback if rejected
           try {
-            const storageRef = ref(storage, `events/${eventId}/${Date.now()}_${item.file.name || "video.mp4"}`);
-            const uploadPromise = uploadBytes(storageRef, item.file, { contentType: item.file.type || "video/mp4" }).then(() => getDownloadURL(storageRef));
-            const timeoutPromise = new Promise<string>((_, reject) => setTimeout(() => reject(new Error("Storage timeout")), 3000));
-            finalUrl = await Promise.race([uploadPromise, timeoutPromise]);
+            const uploadRes = await uploadMediaItem({
+              eventId,
+              folderName: folderNameTitle,
+              type: "video",
+              base64Data: videoDataUrl,
+              mimeType: item.file.type || "video/mp4",
+              fileName: item.file.name || `${folderNameTitle}_video_${i + 1}.mp4`,
+              storageTarget: "youtube",
+            });
+            if (uploadRes?.mediaId) {
+              const finalizeRes = await finalizeMediaItem(uploadRes.mediaId);
+              if (finalizeRes?.finalUrl) {
+                finalUrl = finalizeRes.finalUrl;
+              }
+            }
           } catch {
-            finalUrl = videoDataUrl;
+            // Secondary Fallback: Cloud Storage
+            try {
+              const storageRef = ref(storage, `events/${eventId}/${Date.now()}_${item.file.name || "video.mp4"}`);
+              const uploadPromise = uploadBytes(storageRef, item.file, { contentType: item.file.type || "video/mp4" }).then(() => getDownloadURL(storageRef));
+              const timeoutPromise = new Promise<string>((_, reject) => setTimeout(() => reject(new Error("Storage timeout")), 4000));
+              finalUrl = await Promise.race([uploadPromise, timeoutPromise]);
+            } catch {
+              finalUrl = videoDataUrl;
+            }
           }
         }
 

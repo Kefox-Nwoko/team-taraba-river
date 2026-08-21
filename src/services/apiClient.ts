@@ -987,6 +987,7 @@ export interface MediaStatusResponse {
 
 export async function uploadMediaItem(params: {
   eventId: string;
+  folderName?: string;
   type: "photo" | "video";
   base64Data: string;
   mimeType: string;
