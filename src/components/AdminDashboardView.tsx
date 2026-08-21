@@ -392,66 +392,66 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Navigation Sub-Tabs Bar - Mobile-First Flexbox Horizontal Scroll / Wrap */}
-      <div className="flex flex-nowrap overflow-x-auto sm:flex-wrap items-center gap-2 pb-2 sm:pb-0 w-full no-scrollbar font-normal border-b border-slate-100 dark:border-slate-800/60 sm:border-0">
+      {/* Navigation Sub-Tabs Bar - Responsive Grid on Mobile, Flex on Desktop */}
+      <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-2.5 w-full font-normal">
         <button onClick={() => setActiveTab("directory")}
-          className={`shrink-0 px-3.5 py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center space-x-2 font-medium cursor-pointer min-h-[40px] ${
+          className={`px-3 py-2.5 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer min-h-[42px] ${
             activeTab === "directory"
               ? "bg-teal-700 text-white shadow-md shadow-teal-700/20"
               : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
           }`}
         >
-          <Users className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
-          <span className="whitespace-nowrap">Members Directory</span>
+          <Users className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+          <span className="truncate">Members Directory</span>
         </button>
 
         <button onClick={() => setActiveTab("rsvps")}
-          className={`shrink-0 px-3.5 py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center space-x-2 font-medium cursor-pointer min-h-[40px] ${
+          className={`px-3 py-2.5 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer min-h-[42px] ${
             activeTab === "rsvps"
               ? "bg-teal-700 text-white shadow-md shadow-teal-700/20"
               : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
           }`}
         >
-          <Calendar className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
-          <span className="whitespace-nowrap">Events</span>
+          <Calendar className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+          <span className="truncate">Events</span>
         </button>
 
         <button onClick={() => setActiveTab("analytics")}
-          className={`shrink-0 px-3.5 py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center space-x-2 font-medium cursor-pointer min-h-[40px] ${
+          className={`px-3 py-2.5 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer min-h-[42px] ${
             activeTab === "analytics"
-              ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20"
+              ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-semibold"
               : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
           }`}
         >
-          <Award className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
-          <span className="whitespace-nowrap">Top Engagement</span>
+          <Award className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+          <span className="truncate">Top Engagement</span>
         </button>
 
         <button onClick={() => setActiveTab("moderation")}
-          className={`shrink-0 relative px-3.5 py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center space-x-2 font-medium cursor-pointer min-h-[40px] ${
+          className={`relative px-3 py-2.5 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer min-h-[42px] ${
             activeTab === "moderation"
-              ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20"
+              ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-semibold"
               : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
           }`}
         >
-          <Clock className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
-          <span className="whitespace-nowrap">Media Moderation</span>
+          <Clock className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+          <span className="truncate">Media Moderation</span>
           {pendingApprovals.length > 0 && (
-            <span className="bg-red-500 text-white text-[11px] px-2 py-0.5 rounded-full font-bold ml-1">
+            <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1">
               {pendingApprovals.length}
             </span>
           )}
         </button>
 
         <button onClick={() => setActiveTab("cloud_settings")}
-          className={`shrink-0 px-3.5 py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center space-x-2 font-medium cursor-pointer min-h-[40px] ${
+          className={`col-span-2 sm:col-span-1 px-3 py-2.5 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer min-h-[42px] ${
             activeTab === "cloud_settings"
               ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/20"
               : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
           }`}
         >
-          <FolderOpen className="w-4 h-4 sm:w-5 sm:h-5 shrink-0 text-cyan-400" />
-          <span className="whitespace-nowrap">Cloud Media Integration</span>
+          <FolderOpen className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 text-cyan-400" />
+          <span className="truncate">Cloud Media Integration</span>
         </button>
       </div>
 
