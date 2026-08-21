@@ -272,7 +272,6 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             type: item.type,
             url: finalizeResult.finalUrl,
-            previewDataUrl: item.type === "photo" ? base64Data : undefined,
           });
         } else {
           throw new Error(finalizeResult.error || `Failed to finalize ${item.type}`);
@@ -327,7 +326,6 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           memberName: currentUser?.fullName || "Community Member",
           memberEmail: currentUser?.email || "member@tarabateam.org",
           photoUrl: approval.url,
-          previewDataUrl: (approval as any).previewDataUrl,
           uploadedAt: new Date().toISOString(),
           status: "pending",
           adminNotes: `Media submission for folder: ${folderNameTitle}`,

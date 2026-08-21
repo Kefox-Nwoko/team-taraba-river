@@ -282,7 +282,11 @@ async function getEvents(): Promise<GroupEvent[]> {
 async function getApprovals(): Promise<PhotoApprovalRequest[]> {
   if (!isFirestoreAvailable()) return fallbackApprovals;
   const snapshot = await db.collection(COLLECTIONS.photoRequests).get();
-  return snapshot.docs.map(doc => doc.data() as PhotoApprovalRequest);
+  return snapshot.docs.map(doc => {
+    const data = doc.data() as PhotoApprovalRequest;
+    delete data.previewDataUrl;
+    return data;
+  });
 }
 
 async function addActivityLog(log: ActivityLog): Promise<void> {
@@ -1128,6 +1132,22 @@ app.post("/api/admin/approvals/:id/decision", conditionalAuth, conditionalRequir
   } catch (error) {
     serverLogger.error("Approval decision error", error);
     res.status(500).json({ error: 'Approval decision failed.' });
+  }
+});
+
+// 11b. Admin Service: Delete Approval Request (Zero-residue purge)
+app.delete("/api/admin/approvals/:id", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    if (isFirestoreAvailable()) {
+      await db.collection(COLLECTIONS.photoRequests).doc(id).delete();
+    } else {
+      fallbackApprovals = fallbackApprovals.filter((a) => a.id !== id);
+    }
+    res.json({ success: true, message: "Approval request removed." });
+  } catch (error) {
+    serverLogger.error("Delete approval error", error);
+    res.status(500).json({ error: "Failed to delete approval request." });
   }
 });
 

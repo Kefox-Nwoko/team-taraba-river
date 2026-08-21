@@ -46,6 +46,35 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
   const [selectedHeadline, setSelectedHeadline] = useState<NewsHeadline | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string>("");
 
+  const isAdmin = currentUser?.role === "admin";
+  const userReadStorageKey = `usosa_news_read_v1_${currentUser?.id || "guest"}`;
+
+  // Track read article IDs per member
+  const [readArticleKeys, setReadArticleKeys] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(userReadStorageKey);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const handleOpenHeadline = (h: NewsHeadline) => {
+    setSelectedHeadline(h);
+    // Mark as read for regular members so bolding is removed
+    if (!isAdmin) {
+      const key = (h.url || h.title).trim();
+      setReadArticleKeys((prev) => {
+        const next = new Set(prev);
+        next.add(key);
+        try {
+          localStorage.setItem(userReadStorageKey, JSON.stringify(Array.from(next)));
+        } catch {}
+        return next;
+      });
+    }
+  };
+
   // ---------- AI Xplora state ----------
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputQuery, setInputQuery] = useState("");
@@ -168,11 +197,11 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
             </div>
             <div>
               <h3 className="text-sm sm:text-base font-medium text-slate-900 dark:text-white tracking-tight">
-                USOSA News Update
+                USOSA & Unity Colleges News
               </h3>
               {fetchedAt && activeTab === "Headlines" && (
                 <p className="text-xs sm:text-sm font-normal text-slate-500 dark:text-slate-400 mt-0.5">
-                  Updated {formatFetchedAt(fetchedAt)}
+                  Latest 15 Stories · Updated {formatFetchedAt(fetchedAt)}
                 </p>
               )}
             </div>
@@ -209,17 +238,15 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
               </button>
             ))}
           </div>
-
-          {/* Tab Content */}
         </div>
 
         {/* ── Tab: Headlines ── */}
         {activeTab === "Headlines" && (
-          <div className="p-4 sm:p-5 space-y-2.5 h-[420px] sm:h-[460px] overflow-y-auto">
+          <div className="p-4 sm:p-5 space-y-2 h-[440px] sm:h-[480px] overflow-y-auto">
             {newsLoading && (
               <div className="flex flex-col items-center justify-center py-12 space-y-3 text-slate-400">
                 <Loader2 className="w-7 h-7 animate-spin text-amber-500" />
-                <p className="text-sm">Fetching USOSA news…</p>
+                <p className="text-sm">Gathering latest 15 stories across Unity Colleges…</p>
               </div>
             )}
 
@@ -230,25 +257,53 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
               </div>
             )}
 
-            {!newsLoading && headlines.map((h, idx) => (
-              <button
-                key={idx}
-                onClick={() => setSelectedHeadline(h)}
-                className="w-full text-left group flex items-center justify-between gap-3 px-4 py-3 rounded-xl hover:bg-white dark:hover:bg-slate-800/60 transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <div className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-                  <p className="text-sm sm:text-base font-normal text-slate-800 dark:text-slate-100 truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors flex-1 min-w-0">
-                    {h.title}
-                  </p>
-                </div>
-                {h.publishedAt && (
-                  <span className="text-xs sm:text-sm font-normal text-slate-500 dark:text-slate-400 shrink-0 ml-2">
-                    · {h.publishedAt}
-                  </span>
-                )}
-              </button>
-            ))}
+            {!newsLoading &&
+              headlines.map((h, idx) => {
+                const articleKey = (h.url || h.title).trim();
+                const isUnread = !isAdmin && !readArticleKeys.has(articleKey);
+
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => handleOpenHeadline(h)}
+                    className={`w-full text-left group flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl transition-all border cursor-pointer ${
+                      isUnread
+                        ? "bg-amber-50/60 dark:bg-amber-950/20 border-amber-300/50 dark:border-amber-800/40 hover:bg-amber-100/70"
+                        : "hover:bg-white dark:hover:bg-slate-800/60 border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div
+                        className={`w-2 h-2 rounded-full shrink-0 transition-transform ${
+                          isUnread
+                            ? "bg-amber-500 scale-125 shadow-xs shadow-amber-500"
+                            : "bg-slate-300 dark:bg-slate-700"
+                        }`}
+                      />
+                      <p
+                        className={`text-sm sm:text-base truncate transition-colors flex-1 min-w-0 ${
+                          isUnread
+                            ? "font-bold text-slate-950 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400"
+                            : "font-normal text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white"
+                        }`}
+                      >
+                        {h.title}
+                      </p>
+                    </div>
+                    {h.publishedAt && (
+                      <span
+                        className={`text-xs sm:text-sm shrink-0 ml-2 ${
+                          isUnread
+                            ? "font-semibold text-amber-700 dark:text-amber-400"
+                            : "font-normal text-slate-400 dark:text-slate-500"
+                        }`}
+                      >
+                        · {h.publishedAt}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
 
             {!newsLoading && !newsError && headlines.length === 0 && newsFetched && (
               <div className="py-8 text-center text-slate-400 text-sm">

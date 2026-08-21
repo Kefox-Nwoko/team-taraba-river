@@ -91,22 +91,22 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [syncDirection, setSyncDirection] = useState<"reverse" | "forward">("forward");
 
-  const fetchApprovals = async () => {
-    try {
-      const local = AppStateManager.getApprovals();
-      setPendingApprovals(local.filter((r) => r.status === "pending"));
-    } catch (e) {
-      logger.warn("Admin fetch approvals notice", { error: e });
-    }
-  };
-
   React.useEffect(() => {
-    fetchApprovals();
+    // Real-time live stream for media moderation approvals
+    const unsubscribe = FirebaseSyncManager.subscribeApprovals((list) => {
+      setPendingApprovals(list.filter((r) => r.status === "pending"));
+    });
+    return () => {
+      unsubscribe();
+    };
   }, []);
+
+  const fetchApprovals = async () => {
+    // Real-time onSnapshot handles live updates automatically
+  };
 
   const handleManualRefresh = async () => {
     setIsRefreshing(true);
-    await fetchApprovals();
     onRefreshData();
     setTimeout(() => setIsRefreshing(false), 800);
   };
@@ -184,27 +184,19 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   };
 
   const handleApprovePhoto = async (req: PhotoApprovalRequest) => {
-    const updated: PhotoApprovalRequest = { ...req, status: "approved" };
-    try {
-      await FirebaseSyncManager.saveApproval(updated);
-    } catch (e) {
-      logger.warn("Admin fetch approvals notice", { error: e });
-    }
-    const current = AppStateManager.getApprovals();
-    const idx = current.findIndex((r) => r.id === req.id);
-    if (idx !== -1) current[idx] = updated;
-    else current.push(updated);
-    AppStateManager.saveApprovals(current);
-
-    // Award activity points to the uploading member
+    // 1. Award activity points to the uploading member
     const memIdx = members.findIndex((m) => m.id === req.memberId);
     if (memIdx !== -1) {
       if (members[memIdx].role !== "admin") {
         members[memIdx].activityPoints = (members[memIdx].activityPoints || 0) + 30;
       }
       AppStateManager.saveMembers(members);
+      try {
+        await FirebaseSyncManager.saveMember(members[memIdx]);
+      } catch (e) {}
     }
 
+    // 2. Attach media to target event
     const allEvents = AppStateManager.getEvents();
     let targetEvt = req.eventId ? allEvents.find((e) => e.id === req.eventId) : undefined;
 
@@ -248,23 +240,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       } catch (e) {}
     }
 
+    // 3. Zero-residue: Delete approval request document from Firestore immediately
+    try {
+      await FirebaseSyncManager.deleteApproval(req.id);
+    } catch (e) {
+      logger.warn("Admin delete approval notice", { error: e });
+    }
+
     setPendingApprovals((prev) => prev.filter((r) => r.id !== req.id));
     onRefreshData();
   };
 
   const handleRejectPhoto = async (req: PhotoApprovalRequest) => {
-    const updated: PhotoApprovalRequest = { ...req, status: "rejected" };
-    try {
-      await FirebaseSyncManager.saveApproval(updated);
-    } catch (e) {
-      logger.warn("Admin fetch approvals notice", { error: e });
-    }
-    const current = AppStateManager.getApprovals();
-    const idx = current.findIndex((r) => r.id === req.id);
-    if (idx !== -1) current[idx] = updated;
-    else current.push(updated);
-    AppStateManager.saveApprovals(current);
-
     const allEvents = AppStateManager.getEvents();
     let targetEvt = req.eventId
       ? allEvents.find((e) => e.id === req.eventId)
@@ -282,7 +269,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         const remainingEvents = allEvents.filter((e) => e.id !== targetEvt!.id);
         AppStateManager.saveEvents(remainingEvents);
         try {
-          await FirebaseSyncManager.saveEvent(targetEvt);
+          await FirebaseSyncManager.deleteEvent(targetEvt.id);
         } catch (e) {}
       } else {
         AppStateManager.saveEvents(allEvents);
@@ -290,6 +277,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           await FirebaseSyncManager.saveEvent(targetEvt);
         } catch (e) {}
       }
+    }
+
+    // Zero-residue: Delete rejected approval request document from Firestore immediately
+    try {
+      await FirebaseSyncManager.deleteApproval(req.id);
+    } catch (e) {
+      logger.warn("Admin delete approval notice", { error: e });
     }
 
     setPendingApprovals((prev) => prev.filter((r) => r.id !== req.id));

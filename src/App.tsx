@@ -243,7 +243,6 @@ export default function App() {
     const unsubscribe = AppStateManager.subscribe(() => {
       setMembers(AppStateManager.getMembers());
       setEvents(AppStateManager.getEvents());
-      setApprovals(AppStateManager.getApprovals());
       const u = AppStateManager.getCurrentUser();
       setCurrentUser(u);
       setSessionCount(AppStateManager.getSessionCount());
@@ -253,7 +252,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Sync from Firestore & backend server on mount
+  // Sync from Firestore & backend server on mount + real-time listeners
   useEffect(() => {
     async function initData() {
       try {
@@ -261,12 +260,9 @@ export default function App() {
         setMembers(seededMembers);
         AppStateManager.saveMembers(seededMembers);
 
-        const [fetchedE, fetchedA] = await Promise.all([fetchEvents(), fetchApprovals()]);
+        const fetchedE = await fetchEvents();
         setEvents(fetchedE);
         AppStateManager.saveEvents(fetchedE);
-
-        setApprovals(fetchedA);
-        AppStateManager.saveApprovals(fetchedA);
       } catch (err) {
         logger.warn("Backend/Firestore sync warning, using cached local data", { error: err });
       }
@@ -279,8 +275,27 @@ export default function App() {
         AppStateManager.saveMembers(updatedList);
       }
     });
+
+    const unsubApprovals = FirebaseSyncManager.subscribeApprovals((updatedList) => {
+      if (updatedList) {
+        setApprovals(updatedList);
+      }
+    });
+
+    // Auto-sync whenever the app comes into focus / active tab / phone unlock
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        handleRefreshAll();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("online", handleVisibilityChange);
+
     return () => {
       unsubMembers();
+      unsubApprovals();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("online", handleVisibilityChange);
     };
   }, []);
 
@@ -296,17 +311,14 @@ export default function App() {
 
   const handleRefreshAll = async () => {
     try {
-      const [m, e, a] = await Promise.all([fetchMembers(), fetchEvents(), fetchApprovals()]);
+      const [m, e] = await Promise.all([fetchMembers(), fetchEvents()]);
       setMembers(m);
       AppStateManager.saveMembers(m);
       setEvents(e);
       AppStateManager.saveEvents(e);
-      setApprovals(a);
-      AppStateManager.saveApprovals(a);
     } catch (err) {
       setMembers(AppStateManager.getMembers());
       setEvents(AppStateManager.getEvents());
-      setApprovals(AppStateManager.getApprovals());
     }
   };
 

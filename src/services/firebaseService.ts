@@ -194,11 +194,38 @@ export class FirebaseSyncManager {
         logger.warn("AppStateManager delete error", e);
     }
   }
+  public static subscribeApprovals(onUpdate: (approvals: PhotoApprovalRequest[]) => void) {
+    try {
+      const colRef = collection(db, "photoRequests");
+      return onSnapshot(colRef, (snapshot) => {
+        const list: PhotoApprovalRequest[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push(docSnap.data() as PhotoApprovalRequest);
+        });
+        onUpdate(list);
+      });
+    } catch (err) {
+      logger.warn("Firestore subscribeApprovals fallback", { error: err });
+      return () => {};
+    }
+  }
+
   public static async saveApproval(approval: PhotoApprovalRequest): Promise<void> {
     try {
-      await setDoc(doc(db, "photoRequests", approval.id), approval);
+      // Lightweight clean copy: Ensure no base64 dataUrl is sent into Firestore
+      const cleanApproval: PhotoApprovalRequest = { ...approval };
+      delete cleanApproval.previewDataUrl;
+      await setDoc(doc(db, "photoRequests", approval.id), cleanApproval);
     } catch (err) {
       logger.error("Failed to save approval to Firestore", err);
+    }
+  }
+
+  public static async deleteApproval(id: string): Promise<void> {
+    try {
+      await deleteDoc(doc(db, "photoRequests", id));
+    } catch (err) {
+      logger.error("Failed to delete approval from Firestore", err);
     }
   }
   public static async addActivityLog(log: ActivityLog): Promise<void> {

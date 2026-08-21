@@ -132,19 +132,18 @@ export class AppStateManager {
     this.notify();
   }
   public static getApprovals(): PhotoApprovalRequest[] {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY_APPROVALS);
-    if (!raw) {
-      localStorage.setItem(LOCAL_STORAGE_KEY_APPROVALS, JSON.stringify([]));
-      return [];
-    }
+    // Purge any legacy base64-laden approvals from localStorage to keep storage clean
     try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
+      localStorage.removeItem(LOCAL_STORAGE_KEY_APPROVALS);
+    } catch {}
+    return [];
   }
-  public static saveApprovals(approvals: PhotoApprovalRequest[]) {
-    localStorage.setItem(LOCAL_STORAGE_KEY_APPROVALS, JSON.stringify(approvals));
+  public static saveApprovals(_approvals: PhotoApprovalRequest[]) {
+    // Zero-residue policy: We intentionally do NOT persist approvals in localStorage.
+    // Live approvals exist strictly in Firestore and are streamed via real-time listeners.
+    try {
+      localStorage.removeItem(LOCAL_STORAGE_KEY_APPROVALS);
+    } catch {}
     this.notify();
   }
   public static getActivityLogs(): ActivityLog[] {
