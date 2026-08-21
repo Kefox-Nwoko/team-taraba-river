@@ -315,16 +315,26 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       setUploadProgressText("Registering media in Event Gallery & Admin review...");
       setUploadProgress(92);
 
+      const isAdmin = currentUser?.role === "admin";
+
       let targetEvent: GroupEvent;
       if (folderMode === "existing") {
         const existingEvent = events.find((e) => e.id === selectedFolderId);
         if (!existingEvent) throw new Error("Selected existing event folder not found.");
         targetEvent = {
           ...existingEvent,
-          driveImageUrls: [...(existingEvent.driveImageUrls || []), ...photoFinalUrls],
+          driveImageUrls: isAdmin
+            ? [...(existingEvent.driveImageUrls || []), ...photoFinalUrls]
+            : (existingEvent.driveImageUrls || []),
           driveFolderId: existingEvent.driveFolderId || `drive_folder_${Date.now()}`,
-          youtubeVideoUrl: videoFinalUrls[0] || existingEvent.youtubeVideoUrl || "",
+          youtubeVideoUrl: isAdmin
+            ? (videoFinalUrls[0] || existingEvent.youtubeVideoUrl || "")
+            : (existingEvent.youtubeVideoUrl || ""),
         };
+        // Only publish changes directly if user is Admin
+        if (isAdmin) {
+          await FirebaseSyncManager.saveEvent(targetEvent);
+        }
       } else {
         targetEvent = {
           id: eventId,
@@ -334,21 +344,22 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           location: newLocation.trim(),
           category: newCategory,
           description: newDescription.trim() || `Archival media collection for ${folderNameTitle}.`,
-          driveImageUrls: photoFinalUrls,
+          driveImageUrls: isAdmin ? photoFinalUrls : [],
           driveFolderId: `drive_folder_${Date.now()}`,
-          youtubeVideoUrl: videoFinalUrls[0] || "",
+          youtubeVideoUrl: isAdmin ? (videoFinalUrls[0] || "") : "",
           createdBy: currentUser?.fullName || "Community Member",
           createdById: currentUser?.id || "mem_guest",
           attendeeIds: currentUser ? [currentUser.id] : [],
           maxCapacity: 100,
           createdAt: new Date().toISOString(),
         };
+        // Only publish new event folder directly if user is Admin
+        if (isAdmin) {
+          await FirebaseSyncManager.saveEvent(targetEvent);
+        }
       }
 
-      // Save / update event in Firestore
-      await FirebaseSyncManager.saveEvent(targetEvent);
-
-      // Save approvals with full folder metadata
+      // Save approvals with full folder metadata into Firestore photoRequests
       const folderEventDate = folderMode === "new" ? newDate : (events.find((e) => e.id === selectedFolderId)?.date || newDate);
       const folderLocation = folderMode === "new" ? newLocation.trim() : (events.find((e) => e.id === selectedFolderId)?.location || "");
       const folderCategory = folderMode === "new" ? newCategory : (events.find((e) => e.id === selectedFolderId)?.category || "cleanup");
@@ -362,7 +373,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           memberEmail: currentUser?.email || "member@tarabateam.org",
           photoUrl: approval.url,
           uploadedAt: new Date().toISOString(),
-          status: currentUser?.role === "admin" ? "approved" : "pending",
+          status: isAdmin ? "approved" : "pending",
           adminNotes: `Media submission for folder: ${folderNameTitle}`,
           type: approval.type,
           eventId: targetEvent.id,
@@ -379,7 +390,9 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       
       const totalCount = approvalsToSave.length;
       toast.notify(
-        `${totalCount} media item${totalCount !== 1 ? 's' : ''} submitted successfully! The folder and media are saved in the event gallery.`,
+        isAdmin
+          ? `${totalCount} media item${totalCount !== 1 ? 's' : ''} published successfully to the Event Gallery.`
+          : `${totalCount} media item${totalCount !== 1 ? 's' : ''} submitted for Admin review. They will become visible on the public Media page once approved by an Admin.`,
         "success"
       );
 
