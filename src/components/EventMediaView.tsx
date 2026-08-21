@@ -372,8 +372,14 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     return { completedEvents: completed };
   }, [mappedEvents]);
 
+  // Derive live folder from mappedEvents so Firestore updates and approvals reflect in real-time
+  const activeFolder = useMemo(() => {
+    if (!selectedFolder) return null;
+    return mappedEvents.find((e) => e.id === selectedFolder.id) || selectedFolder;
+  }, [mappedEvents, selectedFolder]);
+
   const galleryItems = useMemo(() => {
-    if (!selectedFolder) return [];
+    if (!activeFolder) return [];
     const items: Array<{
       type: "photo" | "video";
       url: string;
@@ -381,26 +387,26 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       title: string;
     }> = [];
 
-    const ytThumb = getYouTubeThumbnail(selectedFolder.youtubeVideoUrl);
-    if (selectedFolder.youtubeVideoUrl && ytThumb) {
+    const ytThumb = getYouTubeThumbnail(activeFolder.youtubeVideoUrl);
+    if (activeFolder.youtubeVideoUrl && ytThumb) {
       items.push({
         type: "video",
         url: ytThumb,
-        videoUrl: selectedFolder.youtubeVideoUrl,
-        title: selectedFolder.youtubeTitle || `${selectedFolder.title} Video Highlights`,
+        videoUrl: activeFolder.youtubeVideoUrl,
+        title: activeFolder.youtubeTitle || `${activeFolder.title} Video Highlights`,
       });
     }
 
-    (selectedFolder.driveImageUrls || []).forEach((imgUrl, i) => {
+    (activeFolder.driveImageUrls || []).forEach((imgUrl, i) => {
       items.push({
         type: "photo",
         url: imgUrl,
-        title: `${selectedFolder.title} Photo ${i + 1}`,
+        title: `${activeFolder.title} Photo ${i + 1}`,
       });
     });
 
     return items;
-  }, [selectedFolder]);
+  }, [activeFolder]);
 
   // Autoplay timer cleanup
   useEffect(() => {
@@ -848,8 +854,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
             ) : (
               <div className="flex-1 w-full">
                 <div className="flex items-center gap-2.5">
-                  <h1 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white tracking-tight">{selectedFolder.title}</h1>
-                  {(currentUser?.role === "admin" || (currentUser && selectedFolder.createdById === currentUser.id)) && (
+                  <h1 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white tracking-tight">{(activeFolder || selectedFolder).title}</h1>
+                  {(currentUser?.role === "admin" || (currentUser && (activeFolder || selectedFolder).createdById === currentUser.id)) && (
                     <button
                       onClick={startEditingFolder}
                       className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-cyan-600 transition cursor-pointer"
@@ -860,8 +866,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                   )}
                 </div>
                 <p className="text-sm font-normal text-slate-500 mt-1">
-                  {formatDateLabel(selectedFolder.date)}
-                  {sanitizeUIField(selectedFolder.location) ? ` • ${sanitizeUIField(selectedFolder.location)}` : ""}
+                  {formatDateLabel((activeFolder || selectedFolder).date)}
+                  {sanitizeUIField((activeFolder || selectedFolder).location) ? ` • ${sanitizeUIField((activeFolder || selectedFolder).location)}` : ""}
                 </p>
               </div>
             )}

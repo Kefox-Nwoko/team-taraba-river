@@ -382,6 +382,23 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         `${totalCount} media item${totalCount !== 1 ? 's' : ''} submitted successfully! The folder and media are saved in the event gallery.`,
         "success"
       );
+
+      // Cleanly reset upload form state so items do not persist on the upload page
+      mediaItems.forEach((it) => {
+        try {
+          URL.revokeObjectURL(it.previewUrl);
+        } catch {}
+      });
+      setMediaItems([]);
+      setYoutubeUrlInput("");
+      setNewFolderTitle("");
+      setNewLocation("");
+      setNewDescription("");
+      setNewDate(() => new Date().toISOString().split("T")[0]);
+      setSelectedFolderId(initialFolderId || "");
+      setFolderMode(initialFolderId ? "existing" : "new");
+      setUploadProgress(0);
+      setErrorMessage(null);
       
       onSuccess(targetEvent);
     } catch (err) {
