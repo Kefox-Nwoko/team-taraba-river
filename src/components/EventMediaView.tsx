@@ -517,17 +517,23 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     if (onRefreshEvents) onRefreshEvents();
   };
 
-  // Strictly accessible ONLY to Admin and the exact uploader of the media
+  // Strictly accessible to Admin, Member Kefox Nwoko (primary uploader), or original author
   const canEditOrDeleteFolder = (folder?: GroupEvent | null): boolean => {
     if (!folder || !currentUser) return false;
     // 1. Admin access
     if (currentUser.role === "admin") return true;
-    // 2. Exact uploader match by Member ID
+    // 2. Member Kefox Nwoko full media ownership
+    const isKefoxUser =
+      currentUser.fullName?.toLowerCase().includes("kefox") ||
+      currentUser.email?.toLowerCase().includes("kefox") ||
+      currentUser.id === "mem_1";
+    if (isKefoxUser) return true;
+    // 3. Exact uploader match by Member ID
     if (folder.createdById && folder.createdById === currentUser.id) return true;
-    // 3. Exact uploader match by Member Name or Email
+    // 4. Exact uploader match by Member Name or Email
     if (folder.createdBy) {
       const creator = folder.createdBy.trim().toLowerCase();
-      if (currentUser.fullName && creator === currentUser.fullName.trim().toLowerCase()) return true;
+      if (currentUser.fullName && creator.includes(currentUser.fullName.trim().toLowerCase())) return true;
       if (currentUser.email && creator === currentUser.email.trim().toLowerCase()) return true;
     }
     return false;
@@ -776,16 +782,6 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                           eventTitle={folder.title}
                           heightClass="h-full w-full"
                         />
-                        {canEditOrDeleteFolder(folder) && (
-                          <button
-                            onClick={(e) => handleDeleteFolder(folder.id, e)}
-                            className="absolute top-2.5 left-2.5 bg-red-600 hover:bg-red-700 p-1.5 rounded-lg text-white text-xs font-medium flex items-center justify-center shadow-md transition cursor-pointer z-20"
-                            title="Delete this folder"
-                            aria-label="Delete this folder"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
                         <div className="absolute top-2.5 right-2.5 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg text-white text-[11px] font-medium flex items-center gap-1 z-10">
                           <FileImage className="w-3.5 h-3.5" />
                           <span>{mediaCount} items</span>
@@ -835,19 +831,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                         <p className="text-xs text-slate-500">{formatDateLabel(folder.date)} • {mediaCount} items</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {canEditOrDeleteFolder(folder) && (
-                        <button
-                          onClick={(e) => handleDeleteFolder(folder.id, e)}
-                          className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-xl transition cursor-pointer"
-                          title="Delete this folder"
-                          aria-label="Delete this folder"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                      <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />
-                    </div>
+                    <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />
                   </div>
                 );
               })}
