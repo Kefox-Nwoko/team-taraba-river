@@ -145,8 +145,8 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           const canvas = document.createElement("canvas");
           let width = img.width;
           let height = img.height;
-          const MAX_WIDTH = 1920;
-          const MAX_HEIGHT = 1080;
+          const MAX_WIDTH = 1280;
+          const MAX_HEIGHT = 960;
           if (width > MAX_WIDTH) {
             height = Math.round((height * MAX_WIDTH) / width);
             width = MAX_WIDTH;
@@ -163,7 +163,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             return;
           }
           ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL("image/webp", 0.85));
+          resolve(canvas.toDataURL("image/webp", 0.78));
         };
         img.onerror = () => reject(new Error("Failed to load image"));
         img.src = e.target?.result as string;
@@ -244,7 +244,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     }
 
     setIsUploading(true);
-    setUploadProgress(5);
+    setUploadProgress(10);
     setErrorMessage(null);
 
     const folderNameTitle = folderMode === "new" 
@@ -268,38 +268,30 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
       for (let i = 0; i < mediaItems.length; i++) {
         const item = mediaItems[i];
-        setUploadProgressText(`Uploading asset ${i + 1} of ${mediaItems.length}...`);
+        setUploadProgressText(`Processing and saving asset ${i + 1} of ${mediaItems.length}...`);
         
         let finalUrl = "";
-        try {
-          if (item.type === "photo") {
+        if (item.type === "photo") {
+          const webpDataUrl = await compressAndConvertToWebp(item.file);
+          // Try Firebase Storage with 2s timeout fallback
+          try {
             const webpBlob = await compressAndConvertToWebpBlob(item.file);
             const storageRef = ref(storage, `events/${eventId}/${Date.now()}_${i + 1}.webp`);
-            await uploadBytes(storageRef, webpBlob, { contentType: "image/webp" });
-            finalUrl = await getDownloadURL(storageRef);
-          } else {
-            const storageRef = ref(storage, `events/${eventId}/${Date.now()}_${item.file.name || "video.mp4"}`);
-            await uploadBytes(storageRef, item.file, { contentType: item.file.type || "video/mp4" });
-            finalUrl = await getDownloadURL(storageRef);
+            const uploadPromise = uploadBytes(storageRef, webpBlob, { contentType: "image/webp" }).then(() => getDownloadURL(storageRef));
+            const timeoutPromise = new Promise<string>((_, reject) => setTimeout(() => reject(new Error("Storage timeout")), 2000));
+            finalUrl = await Promise.race([uploadPromise, timeoutPromise]);
+          } catch {
+            finalUrl = webpDataUrl;
           }
-        } catch (storageErr) {
-          logger.warn("Direct storage upload notice, trying gateway fallback", { error: storageErr });
+        } else {
+          const videoDataUrl = await readVideoAsDataUrl(item.file);
           try {
-            const base64Data = item.type === "photo" ? await compressAndConvertToWebp(item.file) : await readVideoAsDataUrl(item.file);
-            const uploadResult = await uploadMediaItem({
-              eventId,
-              type: item.type,
-              base64Data,
-              mimeType: item.type === "photo" ? "image/webp" : (item.file.type || "video/mp4"),
-              fileName: item.file.name,
-              storageTarget: item.type === "video" ? "youtube" : "drive",
-            });
-            const finalizeResult = await finalizeMediaItem(uploadResult.mediaId);
-            if (finalizeResult.success && finalizeResult.finalUrl) {
-              finalUrl = finalizeResult.finalUrl;
-            }
-          } catch (gateErr) {
-            logger.warn("Gateway fallback failed", { error: gateErr });
+            const storageRef = ref(storage, `events/${eventId}/${Date.now()}_${item.file.name || "video.mp4"}`);
+            const uploadPromise = uploadBytes(storageRef, item.file, { contentType: item.file.type || "video/mp4" }).then(() => getDownloadURL(storageRef));
+            const timeoutPromise = new Promise<string>((_, reject) => setTimeout(() => reject(new Error("Storage timeout")), 3000));
+            finalUrl = await Promise.race([uploadPromise, timeoutPromise]);
+          } catch {
+            finalUrl = videoDataUrl;
           }
         }
 
@@ -315,10 +307,13 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             url: finalUrl,
           });
         }
+
+        const stepProgress = 15 + Math.round(((i + 1) / mediaItems.length) * 75);
+        setUploadProgress(stepProgress);
       }
 
-      setUploadProgressText("Submitting media for Admin approval...");
-      setUploadProgress(95);
+      setUploadProgressText("Registering media in Event Gallery & Admin review...");
+      setUploadProgress(92);
 
       let targetEvent: GroupEvent;
       if (folderMode === "existing") {
@@ -350,7 +345,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         };
       }
 
-      // --- Step 4: Save approvals with full folder metadata and instant preview ---
+      // Save / update event in Firestore
+      await FirebaseSyncManager.saveEvent(targetEvent);
+
+      // Save approvals with full folder metadata
       const folderEventDate = folderMode === "new" ? newDate : (events.find((e) => e.id === selectedFolderId)?.date || newDate);
       const folderLocation = folderMode === "new" ? newLocation.trim() : (events.find((e) => e.id === selectedFolderId)?.location || "");
       const folderCategory = folderMode === "new" ? newCategory : (events.find((e) => e.id === selectedFolderId)?.category || "cleanup");
@@ -364,7 +362,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           memberEmail: currentUser?.email || "member@tarabateam.org",
           photoUrl: approval.url,
           uploadedAt: new Date().toISOString(),
-          status: "pending",
+          status: currentUser?.role === "admin" ? "approved" : "pending",
           adminNotes: `Media submission for folder: ${folderNameTitle}`,
           type: approval.type,
           eventId: targetEvent.id,
@@ -381,11 +379,11 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       
       const totalCount = approvalsToSave.length;
       toast.notify(
-        `${totalCount} media item${totalCount !== 1 ? 's' : ''} submitted for Admin review. The folder and images will appear on the public Media page once approved by an Admin.`,
+        `${totalCount} media item${totalCount !== 1 ? 's' : ''} submitted successfully! The folder and media are saved in the event gallery.`,
         "success"
       );
       
-      onSuccess(undefined);
+      onSuccess(targetEvent);
     } catch (err) {
       logger.error("Full page media upload error", err);
       const message = err instanceof Error ? err.message : "Failed to upload media.";
@@ -619,10 +617,24 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             </div>
           )}
 
-          <div className="flex flex-row items-center justify-end gap-4 pt-3 border-t border-slate-200 dark:border-slate-800">
-            <button type="submit" disabled={!isFormValid || isUploading} className="w-full sm:w-auto px-3 py-1.5 rounded-2xl bg-teal-600 text-white text-xs disabled:opacity-50 flex items-center justify-center space-x-2" >
-              <CheckCircle2 className="w-4 h-4 text-white" />
-              <span>{isUploading ? "Publishing..." : (currentUser?.role === "admin" ? "Publish Event Now" : "Submit for Review")}</span>
+          <div className="flex flex-row items-center justify-end gap-4 pt-4 pb-20 border-t border-slate-200 dark:border-slate-800">
+            <button
+              type="submit"
+              disabled={!isFormValid || isUploading}
+              style={{ cursor: !isFormValid || isUploading ? "not-allowed" : "pointer" }}
+              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 active:scale-95 text-white font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center space-x-2 transition-all shadow-md"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 text-white animate-spin" />
+                  <span>Publishing...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4 text-white" />
+                  <span>{currentUser?.role === "admin" ? "Publish Event Now" : "Submit for Review"}</span>
+                </>
+              )}
             </button>
           </div>
         </form>
