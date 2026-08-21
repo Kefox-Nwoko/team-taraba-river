@@ -527,33 +527,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       key={evt.id}
                       className="bg-slate-50 dark:bg-slate-950 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-6 font-normal"
                     >
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800/80 pb-4">
-                        <div className="w-full md:w-auto md:flex-1 order-1 md:order-none">
-                          <h3 className="text-sm font-normal text-slate-900 dark:text-white">
-                            {evt.title}
-                          </h3>
-                          {/* Desktop details position */}
-                          <p className="hidden md:block text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-                            {evt.date} • {evt.time} • {evt.location}
-                          </p>
-                        </div>
-                        <div className="flex items-center justify-center gap-4 sm:gap-6 md:gap-3 text-sm font-normal w-full md:w-auto py-1 md:py-0 order-2 md:order-none">
-                          <span className="px-6 md:px-3.5 py-1.5 md:py-1 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 text-center flex-1 md:flex-none shadow-sm md:shadow-none">
-                            Yes: {yesIds.length}
-                          </span>
-                          <span className="px-6 md:px-3.5 py-1.5 md:py-1 rounded-xl bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 text-center flex-1 md:flex-none shadow-sm md:shadow-none">
-                            Maybe: {maybeIds.length}
-                          </span>
-                          <span className="px-6 md:px-3.5 py-1.5 md:py-1 rounded-xl bg-red-100 dark:bg-red-950 text-red-800 dark:text-red-300 border border-red-300 dark:border-red-800 text-center flex-1 md:flex-none shadow-sm md:shadow-none">
-                            No: {noIds.length}
-                          </span>
-                        </div>
-                        {/* Mobile details position */}
-                        <div className="w-full md:hidden order-3">
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
-                            {evt.date} • {evt.time} • {evt.location}
-                          </p>
-                        </div>
+                      <div className="border-b border-slate-200 dark:border-slate-800/80 pb-4">
+                        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {evt.title}
+                        </h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                          {evt.date} • {evt.time} • {evt.location}
+                        </p>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 font-normal">
