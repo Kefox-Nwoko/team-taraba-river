@@ -119,25 +119,30 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
     if (e.target) e.target.value = "";
   };
 
-  const getDaysUntilEvent = (dateStr: string): number | null => {
-    if (!dateStr) return null;
+  const getDaysUntilEvent = (dateStr?: string): number | null => {
+    if (!dateStr || typeof dateStr !== "string") return null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const parts = dateStr.split("-");
     if (parts.length !== 3) return null;
     const eventDateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    if (isNaN(eventDateObj.getTime())) return null;
     eventDateObj.setHours(0, 0, 0, 0);
     const diffTime = eventDateObj.getTime() - today.getTime();
     return Math.round(diffTime / (1000 * 60 * 60 * 24));
   };
 
-  const formatDateLabel = (dateStr: string) => {
+  const formatDateLabel = (dateStr?: string) => {
+    if (!dateStr || typeof dateStr !== "string") return "";
     try {
-      const [year, month, day] = dateStr.split("-");
+      const parts = dateStr.split("-");
+      if (parts.length < 3) return dateStr;
+      const [year, month, day] = parts;
       const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      if (isNaN(date.getTime())) return dateStr;
       return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     } catch {
-      return dateStr;
+      return dateStr || "";
     }
   };
 
