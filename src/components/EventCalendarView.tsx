@@ -302,16 +302,51 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
     }
   };
 
-  const isAdmin = currentUser?.role === "admin";
-
   const handleRSVP = async (eventId: string, status: "attending" | "maybe" | "declined") => {
-    if (!currentUser || isAdmin) return;
-    try {
-      await submitEventRSVP(eventId, currentUser.id, status);
-      onRefreshEvents();
-    } catch (err) {
-      logger.error("Event create error", err);
+    if (!currentUser) return;
+    const memberId = currentUser.id;
+
+    // 1. Optimistic Real-Time Local & Firestore Sync
+    const currentEvents = AppStateManager.getEvents();
+    const evtIndex = currentEvents.findIndex((e) => e.id === eventId);
+    if (evtIndex !== -1) {
+      const evt = currentEvents[evtIndex];
+      const newAttendeeIds = (evt.attendeeIds || []).filter((id) => id !== memberId);
+      const newMaybeIds = (evt.maybeIds || []).filter((id) => id !== memberId);
+      const newDeclinedIds = (evt.declinedIds || []).filter((id) => id !== memberId);
+
+      if (status === "attending") {
+        newAttendeeIds.push(memberId);
+      } else if (status === "maybe") {
+        newMaybeIds.push(memberId);
+      } else if (status === "declined") {
+        newDeclinedIds.push(memberId);
+      }
+
+      const updatedEvt: GroupEvent = {
+        ...evt,
+        attendeeIds: newAttendeeIds,
+        maybeIds: newMaybeIds,
+        declinedIds: newDeclinedIds,
+      };
+
+      currentEvents[evtIndex] = updatedEvt;
+      AppStateManager.saveEvents(currentEvents);
+      try {
+        await FirebaseSyncManager.saveEvent(updatedEvt);
+      } catch (e) {
+        logger.warn("Firebase RSVP sync notice", { error: e });
+      }
     }
+
+    // 2. Also notify backend API
+    try {
+      await submitEventRSVP(eventId, memberId, status);
+    } catch (err) {
+      logger.error("Event RSVP API sync", err);
+    }
+
+    onRefreshEvents();
   };
   const handleStartEditEvent = (evt: GroupEvent) => {
     setEventTitle(evt.title);
@@ -538,7 +573,10 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                 </div>
               ) : (
                 filteredEvents.map((event) => {
-                  const isAttending = currentUser ? event.attendeeIds.includes(currentUser.id) : false;
+                  const isAttending = currentUser ? (event.attendeeIds || []).includes(currentUser.id) : false;
+                  const isMaybe = currentUser ? (event.maybeIds || []).includes(currentUser.id) : false;
+                  const isDeclined = currentUser ? (event.declinedIds || []).includes(currentUser.id) : false;
+                  const isAdmin = currentUser?.role === "admin";
                   const daysUntil = getDaysUntilEvent(event.date);
                   const isWithin7Days = daysUntil !== null && daysUntil >= 0 && daysUntil <= 7;
                   const isPastWithin7Days = daysUntil !== null && daysUntil < 0 && daysUntil >= -7;
@@ -563,47 +601,50 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                           <span className="text-2xl sm:text-sm sm:text-base text-slate-900 dark:text-white tracking-tight leading-none mt-2 font-normal">
                             {new Date(event.date).getDate()}
                           </span>
+                          <span className="text-xs text-slate-400 dark:text-slate-500 mt-1 font-normal">
+                            {new Date(event.date).getFullYear()}
+                          </span>
                         </div>
                         
-                        <div className="flex-1 w-full">
-                          <h3 className="text-lg sm:text-2xl text-slate-900 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition leading-snug font-normal break-words">
-                            {event.title}
-                          </h3>
-                        </div>
-                      </div>
+                        {/* Title & Details */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-4">
+                            <h3 className="text-sm sm:text-base text-slate-900 dark:text-white group-hover:text-cyan-700 dark:group-hover:text-cyan-400 transition font-normal truncate">
+                              {event.title}
+                            </h3>
+                          </div>
 
-                      {/* Lower Text Block */}
-                      <div className="mt-5 sm:mt-6 w-full font-normal">
-                        <div className="flex flex-wrap items-center gap-6 text-sm text-slate-600 dark:text-slate-300 font-normal">
-                          <span className="flex items-center gap-2 text-cyan-700 dark:text-cyan-300">
-                            <Clock className="w-5 h-5 text-cyan-600 shrink-0" />
-                            <span>{event.time}</span>
-                          </span>
-                          <span className="flex items-center gap-2">
-                            <MapPin className="w-5 h-5 text-slate-400 shrink-0" />
-                            <span>{event.location}</span>
-                          </span>
+                          <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-500 dark:text-slate-400 font-normal">
+                            <span className="flex items-center gap-2">
+                              <Clock className="w-5 h-5 text-slate-400 shrink-0" />
+                              <span>{event.time}</span>
+                            </span>
+                            <span className="flex items-center gap-2">
+                              <MapPin className="w-5 h-5 text-slate-400 shrink-0" />
+                              <span>{event.location}</span>
+                            </span>
+                          </div>
+                          {event.description && (
+                            <p className="mt-4 text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-normal whitespace-pre-wrap break-words">
+                              {event.description}
+                            </p>
+                          )}
                         </div>
-                        {event.description && (
-                          <p className="mt-4 text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-normal whitespace-pre-wrap break-words">
-                            {event.description}
-                          </p>
-                        )}
                       </div>
 
                       {/* Footer */}
-                      <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-4 text-sm px-1 font-normal">
+                      <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-4 text-sm px-1 font-normal w-full">
                         <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                           <span className="inline-flex items-center px-3 py-1 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/40 text-xs font-normal shrink-0">
                             {event.category}
                           </span>
-                          {currentUser && !isAdmin && (
+                          {currentUser && (
                             <div className="flex items-center space-x-2 sm:space-x-3">
                               <button
                                 onClick={() => handleRSVP(event.id, "attending")}
                                 className={`px-3 py-1.5 rounded-2xl text-xs sm:text-xs transition font-normal cursor-pointer ${
                                   isAttending
-                                    ? "bg-emerald-600 text-white shadow-sm"
+                                    ? "bg-emerald-600 text-white shadow-sm font-medium"
                                     : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
                                 }`}
                               >
@@ -612,8 +653,8 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                               <button
                                 onClick={() => handleRSVP(event.id, "maybe")}
                                 className={`px-3 py-1.5 rounded-2xl text-xs sm:text-xs transition font-normal cursor-pointer ${
-                                  (event.maybeIds || []).includes(currentUser.id)
-                                    ? "bg-amber-500 text-slate-950 shadow-sm font-normal"
+                                  isMaybe
+                                    ? "bg-amber-500 text-slate-950 shadow-sm font-medium"
                                     : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-amber-50 dark:hover:bg-amber-950/40"
                                 }`}
                               >
@@ -622,8 +663,8 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                               <button
                                 onClick={() => handleRSVP(event.id, "declined")}
                                 className={`px-3 py-1.5 rounded-2xl text-xs sm:text-xs transition font-normal cursor-pointer ${
-                                  (event.declinedIds || []).includes(currentUser.id)
-                                    ? "bg-red-600 text-white shadow-sm"
+                                  isDeclined
+                                    ? "bg-red-600 text-white shadow-sm font-medium"
                                     : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-red-950/40"
                                 }`}
                               >
