@@ -150,7 +150,8 @@ const FolderCollagePreview: React.FC<{ images: string[]; youtubeVideoUrl?: strin
   if (videoThumb) {
     mediaList.push({ src: videoThumb, isVideo: true });
   }
-  images.forEach((img) => {
+  (images || []).forEach((img) => {
+    if (!img || typeof img !== "string") return;
     const isDirectVideo = img.startsWith("data:video") || img.endsWith(".mp4") || img.endsWith(".webm") || (img.includes("/events%2F") && img.includes(".mp4"));
     if (isDirectVideo) {
       mediaList.push({ src: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80", isVideo: true });
@@ -379,6 +380,30 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     return { completedEvents: completed };
   }, [mappedEvents]);
 
+  const filteredFolders = useMemo(() => {
+    return completedEvents
+      .filter((folder) => {
+        if (!folder) return false;
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+          folder.title.toLowerCase().includes(q) ||
+          (folder.location && folder.location.toLowerCase().includes(q)) ||
+          (folder.description && folder.description.toLowerCase().includes(q))
+        );
+      })
+      .sort((a, b) => {
+        if (sortBy === "oldest") return (a.date || "").localeCompare(b.date || "");
+        if (sortBy === "name") return (a.title || "").localeCompare(b.title || "");
+        if (sortBy === "mediaCount") {
+          const countA = (a.driveImageUrls?.length || 0) + (a.youtubeVideoUrl ? 1 : 0);
+          const countB = (b.driveImageUrls?.length || 0) + (b.youtubeVideoUrl ? 1 : 0);
+          return countB - countA;
+        }
+        return (b.date || "").localeCompare(a.date || "");
+      });
+  }, [completedEvents, searchQuery, sortBy]);
+
   // Derive live folder from mappedEvents so Firestore updates and approvals reflect in real-time
   const activeFolder = useMemo(() => {
     if (!selectedFolder) return null;
@@ -405,6 +430,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     }
 
     (activeFolder.driveImageUrls || []).forEach((imgUrl, i) => {
+      if (!imgUrl || typeof imgUrl !== "string") return;
       const isDirectVideo = imgUrl.startsWith("data:video") || imgUrl.endsWith(".mp4") || imgUrl.endsWith(".webm") || (imgUrl.includes("/events%2F") && imgUrl.includes(".mp4"));
       if (isDirectVideo) {
         items.push({
@@ -649,28 +675,6 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     setIsEditingFolderInfo(false);
     if (onRefreshEvents) onRefreshEvents();
   };
-
-  const filteredFolders = completedEvents
-    .filter((event) => {
-      const q = searchQuery.toLowerCase();
-      const matchesSearch =
-        (event.title || "").toLowerCase().includes(q) ||
-        (event.location || "").toLowerCase().includes(q) ||
-        (event.date || "").includes(q) ||
-        (event.description && event.description.toLowerCase().includes(q));
-      return matchesSearch;
-    })
-    .sort((a, b) => {
-      if (sortBy === "newest") return (b.date || "").localeCompare(a.date || "");
-      if (sortBy === "oldest") return (a.date || "").localeCompare(b.date || "");
-      if (sortBy === "name") return (a.title || "").localeCompare(b.title || "");
-      if (sortBy === "mediaCount") {
-        const countA = (a.driveImageUrls?.length || 0) + (a.youtubeVideoUrl ? 1 : 0);
-        const countB = (b.driveImageUrls?.length || 0) + (b.youtubeVideoUrl ? 1 : 0);
-        return countB - countA;
-      }
-      return 0;
-    });
 
   const formatDateLabel = (dateStr: string) => {
     try {
