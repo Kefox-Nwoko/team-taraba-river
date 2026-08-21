@@ -158,6 +158,12 @@ export class AppStateManager {
       return [];
     }
   }
+  public static saveActivityLogs(logs: ActivityLog[]) {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY_LOGS, JSON.stringify(logs.slice(0, 50)));
+    } catch {}
+    this.notify();
+  }
   public static addActivityLog(log: ActivityLog) {
     const logs = this.getActivityLogs();
     logs.unshift(log);
