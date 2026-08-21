@@ -78,8 +78,8 @@ body {
 
   @media (max-width: 767px) {
     html {
-      /* Mobile: No zoom, exact -15% font scaling */
-      font-size: clamp(12.75px, 1.23vw + 9.1px, 15.94px);
+      /* Mobile: +30% font scale across ALL UI elements, text, buttons, and headings */
+      font-size: clamp(16.58px, 1.6vw + 11.83px, 20.72px);
     }
   }
 
