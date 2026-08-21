@@ -218,7 +218,17 @@ export class FirebaseSyncManager {
 
   public static async deleteEvent(id: string): Promise<void> {
     try {
+      // 1. Delete main event document in Firestore
       await deleteDoc(doc(db, "events", id));
+
+      // 2. Cascade delete any associated photo approvals for this event in Firestore
+      const approvalsSnap = await getDocs(collection(db, "photoRequests"));
+      for (const d of approvalsSnap.docs) {
+        const data = d.data();
+        if (data.eventId === id) {
+          await deleteDoc(d.ref);
+        }
+      }
     } catch (err) {
       logger.error("Failed to delete event from Firestore", err);
     }
@@ -226,8 +236,12 @@ export class FirebaseSyncManager {
       const localEvents = AppStateManager.getEvents();
       const clean = localEvents.filter((e) => e.id !== id);
       AppStateManager.saveEvents(clean);
+
+      const localApprovals = AppStateManager.getApprovals();
+      const cleanApprovals = localApprovals.filter((a) => a.eventId !== id);
+      AppStateManager.saveApprovals(cleanApprovals);
     } catch (e) {
-        logger.warn("AppStateManager delete error", e);
+      logger.warn("AppStateManager delete error", e);
     }
   }
   public static subscribeApprovals(onUpdate: (approvals: PhotoApprovalRequest[]) => void) {
