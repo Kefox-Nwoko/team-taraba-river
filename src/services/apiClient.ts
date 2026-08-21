@@ -6,6 +6,8 @@ import {
 } from "../types";
 import { auth } from "../lib/firebase";
 import { logger } from "../lib/logger";
+import { FirebaseSyncManager } from "./firebaseService";
+import { AppStateManager } from "./storage";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
@@ -43,12 +45,22 @@ export async function fetchMembers(): Promise<Member[]> {
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(apiUrl("/api/members"), { headers });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.members || [];
-  } catch {
-    return [];
-  }
+    const contentType = res.headers.get("content-type") || "";
+    if (res.ok && contentType.includes("application/json")) {
+      const data = await res.json();
+      if (Array.isArray(data.members) && data.members.length > 0) {
+        return data.members;
+      }
+    }
+  } catch {}
+
+  // Direct Firestore fallback
+  try {
+    const firestoreMembers = await FirebaseSyncManager.seedCSVDataIfNeeded();
+    if (firestoreMembers.length > 0) return firestoreMembers;
+  } catch {}
+
+  return AppStateManager.getMembers();
 }
 export async function loginMember(
   credential: string
@@ -97,12 +109,22 @@ export async function fetchEvents(): Promise<GroupEvent[]> {
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(apiUrl("/api/events"), { headers });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.events || [];
-  } catch {
-    return [];
-  }
+    const contentType = res.headers.get("content-type") || "";
+    if (res.ok && contentType.includes("application/json")) {
+      const data = await res.json();
+      if (Array.isArray(data.events) && data.events.length > 0) {
+        return data.events;
+      }
+    }
+  } catch {}
+
+  // Direct Firestore fallback
+  try {
+    const firestoreEvents = await FirebaseSyncManager.fetchEventsFromFirestore();
+    if (firestoreEvents.length > 0) return firestoreEvents;
+  } catch {}
+
+  return AppStateManager.getEvents();
 }
 export async function createEvent(eventData: Partial<GroupEvent>): Promise<GroupEvent> {
   const headers = await getAuthHeaders();

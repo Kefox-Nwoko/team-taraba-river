@@ -276,6 +276,13 @@ export default function App() {
       }
     });
 
+    const unsubEvents = FirebaseSyncManager.subscribeEvents((updatedEvents) => {
+      if (updatedEvents) {
+        setEvents(updatedEvents);
+        AppStateManager.saveEvents(updatedEvents);
+      }
+    });
+
     const unsubApprovals = FirebaseSyncManager.subscribeApprovals((updatedList) => {
       if (updatedList) {
         setApprovals(updatedList);
@@ -293,6 +300,7 @@ export default function App() {
 
     return () => {
       unsubMembers();
+      unsubEvents();
       unsubApprovals();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("online", handleVisibilityChange);

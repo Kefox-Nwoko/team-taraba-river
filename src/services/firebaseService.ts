@@ -153,6 +153,39 @@ export class FirebaseSyncManager {
       return () => {};
     }
   }
+  public static async fetchEventsFromFirestore(): Promise<GroupEvent[]> {
+    try {
+      const colRef = collection(db, "events");
+      const snapshot = await getDocs(colRef);
+      const firestoreEvents: GroupEvent[] = [];
+      snapshot.forEach((d) => {
+        firestoreEvents.push(d.data() as GroupEvent);
+      });
+      return firestoreEvents;
+    } catch (err) {
+      logger.warn("Firestore events fetch fallback", { error: err });
+      return [];
+    }
+  }
+
+  public static subscribeEvents(onUpdate: (events: GroupEvent[]) => void) {
+    try {
+      const colRef = collection(db, "events");
+      return onSnapshot(colRef, (snapshot) => {
+        const list: GroupEvent[] = [];
+        snapshot.forEach((docSnap) => {
+          list.push(docSnap.data() as GroupEvent);
+        });
+        if (list.length > 0) {
+          onUpdate(list);
+        }
+      });
+    } catch (err) {
+      logger.warn("Firestore subscribeEvents fallback", { error: err });
+      return () => {};
+    }
+  }
+
   public static async saveMember(member: Member): Promise<void> {
     try {
       await setDoc(doc(db, "members", member.id), member);
@@ -176,7 +209,7 @@ export class FirebaseSyncManager {
       }
       AppStateManager.saveEvents(localEvents);
     } catch (e) {
-        logger.warn("AppStateManager fallback update error", e);
+      logger.warn("AppStateManager fallback update error", e);
     }
   }
 
