@@ -222,6 +222,8 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     });
   };
 
+  const totalBatchSizeMB = mediaItems.reduce((acc, it) => acc + (it.sizeMB || 0), 0);
+
   const isFormValid =
     (folderMode === "existing" ? !!selectedFolderId : !!newFolderTitle.trim() && !!newDate) &&
     (mediaItems.length > 0 || !!youtubeUrlInput.trim());
