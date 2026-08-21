@@ -776,7 +776,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                           eventTitle={folder.title}
                           heightClass="h-full w-full"
                         />
-                        {canDeleteFolder(folder) && (
+                        {canEditOrDeleteFolder(folder) && (
                           <button
                             onClick={(e) => handleDeleteFolder(folder.id, e)}
                             className="absolute top-2.5 left-2.5 bg-red-600 hover:bg-red-700 p-1.5 rounded-lg text-white text-xs font-medium flex items-center justify-center shadow-md transition cursor-pointer z-20"
@@ -836,7 +836,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      {canDeleteFolder(folder) && (
+                      {canEditOrDeleteFolder(folder) && (
                         <button
                           onClick={(e) => handleDeleteFolder(folder.id, e)}
                           className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/50 rounded-xl transition cursor-pointer"
