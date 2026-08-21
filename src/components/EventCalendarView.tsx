@@ -583,117 +583,117 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                   return (
                     <div
                       key={event.id}
-                      className={`group relative bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 hover:border-cyan-500/50 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden font-normal ${
+                      className={`group relative bg-white dark:bg-slate-900 rounded-2xl p-3.5 sm:p-4 border border-slate-200/90 dark:border-slate-800 hover:border-cyan-500/60 shadow-xs hover:shadow-md transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 overflow-hidden font-normal ${
                         isPastWithin7Days ? "opacity-90" : ""
                       }`}
                     >
                       {isWithin7Days && (
-                        <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-400 to-orange-500" />
+                        <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-amber-400 to-orange-500" />
                       )}
-                      
-                      {/* Top Row: Date & Title */}
-                      <div className="flex flex-col sm:flex-row gap-6 sm:gap-8 items-start">
-                        {/* Date Icon Display */}
-                        <div className="flex flex-col items-center justify-center shrink-0 min-w-[110px] rounded-2xl p-5 h-fit bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 font-normal">
-                          <span className="text-xs uppercase tracking-wider text-cyan-700 dark:text-cyan-400 font-normal">
+
+                      {/* Left: Compact Date Tag & Event Details in straight alignment */}
+                      <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 pl-1">
+                        {/* Compact Date Box */}
+                        <div className="flex flex-col items-center justify-center shrink-0 w-12 sm:w-14 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-center font-normal">
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-cyan-600 dark:text-cyan-400 leading-none">
                             {new Date(event.date).toLocaleString("default", { month: "short" })}
                           </span>
-                          <span className="text-2xl sm:text-sm sm:text-base text-slate-900 dark:text-white tracking-tight leading-none mt-2 font-normal">
+                          <span className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight mt-0.5">
                             {new Date(event.date).getDate()}
                           </span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500 mt-1 font-normal">
-                            {new Date(event.date).getFullYear()}
-                          </span>
                         </div>
-                        
-                        {/* Title & Details */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-4">
-                            <h3 className="text-sm sm:text-base text-slate-900 dark:text-white group-hover:text-cyan-700 dark:group-hover:text-cyan-400 transition font-normal truncate">
+
+                        {/* Event Title & Metadata (Time, Location, Description) */}
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition truncate">
                               {event.title}
                             </h3>
+                            {event.category && (
+                              <span className="px-2 py-0.5 rounded-md bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/40 text-[11px] font-medium shrink-0">
+                                {event.category}
+                              </span>
+                            )}
                           </div>
 
-                          <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-500 dark:text-slate-400 font-normal">
-                            <span className="flex items-center gap-2">
-                              <Clock className="w-5 h-5 text-slate-400 shrink-0" />
+                          <div className="flex items-center gap-3 sm:gap-4 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+                            <span className="flex items-center gap-1 shrink-0">
+                              <Clock className="w-3.5 h-3.5 text-slate-400" />
                               <span>{event.time}</span>
                             </span>
-                            <span className="flex items-center gap-2">
-                              <MapPin className="w-5 h-5 text-slate-400 shrink-0" />
-                              <span>{event.location}</span>
+                            <span className="flex items-center gap-1 truncate">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <span className="truncate">{event.location}</span>
                             </span>
+                            {event.description && (
+                              <span className="hidden xl:inline text-slate-400 dark:text-slate-500 truncate max-w-xs">
+                                • {event.description}
+                              </span>
+                            )}
                           </div>
-                          {event.description && (
-                            <p className="mt-4 text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-normal whitespace-pre-wrap break-words">
-                              {event.description}
-                            </p>
-                          )}
                         </div>
                       </div>
 
-                      {/* Footer */}
-                      <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-4 text-sm px-1 font-normal w-full">
-                        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-                          <span className="inline-flex items-center px-3 py-1 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/40 text-xs font-normal shrink-0">
-                            {event.category}
-                          </span>
-                          {currentUser && (
-                            <div className="flex items-center space-x-2 sm:space-x-3">
-                              <button
-                                onClick={() => handleRSVP(event.id, "attending")}
-                                className={`px-3 py-1.5 rounded-2xl text-xs sm:text-xs transition font-normal cursor-pointer ${
-                                  isAttending
-                                    ? "bg-emerald-600 text-white shadow-sm font-medium"
-                                    : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40"
-                                }`}
-                              >
-                                <span>Yes</span>
-                              </button>
-                              <button
-                                onClick={() => handleRSVP(event.id, "maybe")}
-                                className={`px-3 py-1.5 rounded-2xl text-xs sm:text-xs transition font-normal cursor-pointer ${
-                                  isMaybe
-                                    ? "bg-amber-500 text-slate-950 shadow-sm font-medium"
-                                    : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-amber-50 dark:hover:bg-amber-950/40"
-                                }`}
-                              >
-                                <span>Maybe</span>
-                              </button>
-                              <button
-                                onClick={() => handleRSVP(event.id, "declined")}
-                                className={`px-3 py-1.5 rounded-2xl text-xs sm:text-xs transition font-normal cursor-pointer ${
-                                  isDeclined
-                                    ? "bg-red-600 text-white shadow-sm font-medium"
-                                    : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-red-950/40"
-                                }`}
-                              >
-                                <span>No</span>
-                              </button>
-                            </div>
-                          )}
-                          {/* Edit & Delete Buttons: Visible only to original uploader or Admin */}
-                          {(isAdmin || (currentUser && event.createdById === currentUser.id)) && (
-                            <div className="flex items-center space-x-2 ml-auto">
-                              <button
-                                onClick={() => handleStartEditEvent(event)}
-                                className="px-3 py-1 rounded-xl bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/40 text-xs font-normal hover:bg-cyan-100 dark:hover:bg-cyan-900 transition flex items-center space-x-1.5 cursor-pointer"
-                                title="Edit Upload Details"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                                <span>Edit</span>
-                              </button>
-                              <button
-                                onClick={(e) => handleDeleteEvent(event.id, e)}
-                                className="px-3 py-1 rounded-xl bg-red-50 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800/40 text-xs font-normal hover:bg-red-100 dark:hover:bg-red-900 transition flex items-center space-x-1.5 cursor-pointer"
-                                title="Delete Upload"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                <span>Delete</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                      {/* Right: Inline RSVP Buttons & Admin Edit/Delete Controls */}
+                      <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800/60">
+                        {currentUser && (
+                          <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleRSVP(event.id, "attending")}
+                              className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer font-medium ${
+                                isAttending
+                                  ? "bg-emerald-600 text-white shadow-xs"
+                                  : "text-slate-600 dark:text-slate-300 hover:text-emerald-600 hover:bg-white dark:hover:bg-slate-700"
+                              }`}
+                            >
+                              Yes
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRSVP(event.id, "maybe")}
+                              className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer font-medium ${
+                                isMaybe
+                                  ? "bg-amber-500 text-slate-950 shadow-xs"
+                                  : "text-slate-600 dark:text-slate-300 hover:text-amber-600 hover:bg-white dark:hover:bg-slate-700"
+                              }`}
+                            >
+                              Maybe
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRSVP(event.id, "declined")}
+                              className={`px-3 py-1 rounded-lg text-xs transition cursor-pointer font-medium ${
+                                isDeclined
+                                  ? "bg-red-600 text-white shadow-xs"
+                                  : "text-slate-600 dark:text-slate-300 hover:text-red-600 hover:bg-white dark:hover:bg-slate-700"
+                              }`}
+                            >
+                              No
+                            </button>
+                          </div>
+                        )}
+
+                        {(isAdmin || (currentUser && event.createdById === currentUser.id)) && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditEvent(event)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                              title="Edit Event"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteEvent(event.id, e)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                              title="Delete Event"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
