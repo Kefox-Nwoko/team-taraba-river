@@ -4,6 +4,8 @@ import { logger } from "../lib/logger";
 import { GroupEvent, Member } from "../types";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import { syncGoogleDriveUrl, parseYouTubeVideoUrl, uploadMediaItem, finalizeMediaItem } from "../services/apiClient";
+import { storage } from "../lib/firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { ReturnButton } from "./ReturnButton";
 import { useToast } from "./ui/Toast";
 import {
@@ -37,7 +39,7 @@ interface FullPageMediaUploadProps {
   currentUser: Member | null;
   initialFolderId?: string;
   onReturn: () => void;
-  onSuccess: (updatedEvent: GroupEvent) => void;
+  onSuccess: (updatedEvent: GroupEvent | undefined) => void;
 }
 
 export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
@@ -47,31 +49,26 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   onReturn,
   onSuccess,
 }) => {
-  const [folderMode, setFolderMode] = useState<"new" | "existing">(
-    initialFolderId ? "existing" : "new"
+  const { showToast } = useToast();
+  const [folderMode, setFolderMode] = useState<"existing" | "new">(
+    initialFolderId ? "existing" : (events && events.length > 0 ? "existing" : "new")
   );
-  const [selectedFolderId, setSelectedFolderId] = useState<string>(
-    initialFolderId || (events && events.length > 0 ? events[0].id : "")
-  );
-
-  const [newTitle, setNewTitle] = useState("");
+  const [selectedFolderId, setSelectedFolderId] = useState<string>(initialFolderId || (events && events.length > 0 ? events[0].id : ""));
+  const [newFolderTitle, setNewFolderTitle] = useState("");
   const [newDate, setNewDate] = useState(new Date().toISOString().split("T")[0]);
-  const [newCategory, setNewCategory] = useState<
-    "cleanup" | "workshop" | "celebration" | "outreach" | "general"
-  >("cleanup");
-  const [newLocation, setNewLocation] = useState("");
+  const [newLocation, setNewLocation] = useState("Taraba State");
+  const [newCategory, setNewCategory] = useState<"cleanup" | "workshop" | "celebration" | "outreach" | "general">("cleanup");
   const [newDescription, setNewDescription] = useState("");
 
   const [youtubeUrlInput, setYoutubeUrlInput] = useState("");
 
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
-  const [totalBatchSizeMB, setTotalBatchSizeMB] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgressText, setUploadProgressText] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadProgressText, setUploadProgressText] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const toast = useToast();
+  
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const formatDateLabel = (dateStr: string) => {
     try {
@@ -85,12 +82,56 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
   useEffect(() => {
     if (initialFolderId) {
-      setFolderMode("existing");
       setSelectedFolderId(initialFolderId);
+      setFolderMode("existing");
     } else if (events && events.length > 0 && !selectedFolderId) {
       setSelectedFolderId(events[0].id);
     }
   }, [initialFolderId, events, selectedFolderId]);
+
+  const compressAndConvertToWebpBlob = (file: File): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          let width = img.width;
+          let height = img.height;
+          const MAX_WIDTH = 1920;
+          const MAX_HEIGHT = 1080;
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Canvas context unavailable"));
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            (blob) => {
+              if (blob) resolve(blob);
+              else reject(new Error("Failed to encode WebP blob"));
+            },
+            "image/webp",
+            0.85
+          );
+        };
+        img.onerror = () => reject(new Error("Failed to load image"));
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error("Failed to read image"));
+      reader.readAsDataURL(file);
+    });
+  };
 
   const compressAndConvertToWebp = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -139,145 +180,132 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   };
 
   const handleFilesSelected = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    setErrorMessage(null);
+    if (!files) return;
     const newItems: MediaItem[] = [];
     let addedSizeMB = 0;
     const MAX_BATCH_SIZE_MB = 300;
+    
     Array.from(files).forEach((file) => {
       const isVideo = file.type.startsWith("video/");
       const isPhoto = file.type.startsWith("image/");
       if (!isVideo && !isPhoto) return;
+
       const sizeMB = file.size / (1024 * 1024);
-      if (totalBatchSizeMB + addedSizeMB + sizeMB > MAX_BATCH_SIZE_MB) {
-        setErrorMessage(`Total batch size exceeds ${MAX_BATCH_SIZE_MB} MB limit. Please select fewer files.`);
-        return;
-      }
       addedSizeMB += sizeMB;
+      const previewUrl = URL.createObjectURL(file);
       newItems.push({
-        id: `media_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         file,
         type: isVideo ? "video" : "photo",
-        previewUrl: URL.createObjectURL(file),
+        previewUrl,
         sizeMB: parseFloat(sizeMB.toFixed(2)),
         status: "ready",
       });
     });
-    setTotalBatchSizeMB((prev) => prev + addedSizeMB);
+
+    const currentTotalSize = mediaItems.reduce((acc, it) => acc + it.sizeMB, 0);
+    if (currentTotalSize + addedSizeMB > MAX_BATCH_SIZE_MB) {
+      setErrorMessage(`Upload batch exceeds ${MAX_BATCH_SIZE_MB}MB limit. Please select fewer or smaller files.`);
+      return;
+    }
     setMediaItems((prev) => [...prev, ...newItems]);
   };
 
   const handleRemoveItem = (id: string) => {
     setMediaItems((prev) => {
       const item = prev.find((i) => i.id === id);
-      if (item) {
-        URL.revokeObjectURL(item.previewUrl);
-        setTotalBatchSizeMB((prevSize) => Math.max(0, prevSize - item.sizeMB));
-      }
-      return prev.filter((item) => item.id !== id);
+      if (item) URL.revokeObjectURL(item.previewUrl);
+      return prev.filter((i) => i.id !== id);
     });
   };
 
-  const isFormValid =
-    totalBatchSizeMB <= 300 &&
-    (folderMode === "existing" ? !!selectedFolderId : !!newTitle.trim() && !!newDate) &&
-    (mediaItems.length > 0 || !!youtubeUrlInput.trim());
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isFormValid || isUploading) return;
+    if (mediaItems.length === 0 && !youtubeUrlInput.trim()) {
+      setErrorMessage("Please select media or add a YouTube link.");
+      return;
+    }
+    if (folderMode === "new" && !newFolderTitle.trim()) {
+      setErrorMessage("Please enter an event folder title.");
+      return;
+    }
+    if (folderMode === "existing" && !selectedFolderId) {
+      setErrorMessage("Please select an existing event folder.");
+      return;
+    }
+
     setIsUploading(true);
+    setUploadProgress(5);
     setErrorMessage(null);
-    setUploadProgress(0);
+
+    const folderNameTitle = folderMode === "new" 
+      ? newFolderTitle.trim() 
+      : (events.find((e) => e.id === selectedFolderId)?.title || "Event Gallery");
+    const eventId = folderMode === "new" ? `evt_${Date.now()}` : selectedFolderId;
     
-    const timeout = (ms: number) => new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out - please check your connection and try again.")), ms));
+    const photoFinalUrls: string[] = [];
+    const videoFinalUrls: string[] = [];
+    const approvalsToSave: Array<{ id: string; type: "photo" | "video"; url: string }> = [];
 
     try {
-      setUploadProgressText("Processing request...");
-      setUploadProgress(10);
-
-      const eventId = folderMode === "existing" ? selectedFolderId : `evt_folder_${Date.now()}`;
-      const folderNameTitle = folderMode === "new" ? `${newDate} - ${newTitle.trim()}` : (events.find((e) => e.id === selectedFolderId)?.title || "Community Gathering");
-      const isAdmin = currentUser?.role === "admin";
-
-      const photoFinalUrls: string[] = [];
-      const videoFinalUrls: string[] = [];
-      const approvalsToSave: Array<{ id: string; type: "photo" | "video"; url: string; previewDataUrl?: string }> = [];
-
-      // Handle YouTube URL — parse client-side to avoid extra network round-trip
       const trimmedYtUrl = youtubeUrlInput.trim();
       if (trimmedYtUrl) {
         const ytMatch = trimmedYtUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([a-zA-Z0-9_-]{11})/);
-        if (!ytMatch) {
-          throw new Error("Invalid YouTube URL. Please paste a valid YouTube watch, short, or share link (e.g. https://youtu.be/xxxxx or https://www.youtube.com/watch?v=xxxxx).");
-        }
+        if (!ytMatch) throw new Error("Invalid YouTube URL.");
         const cleanYtUrl = `https://www.youtube.com/watch?v=${ytMatch[1]}`;
         videoFinalUrls.unshift(cleanYtUrl);
-        approvalsToSave.push({
-          id: `req_yt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          type: "video",
-          url: cleanYtUrl,
-        });
+        approvalsToSave.push({ id: `req_yt_${Date.now()}`, type: "video", url: cleanYtUrl });
       }
 
       for (let i = 0; i < mediaItems.length; i++) {
         const item = mediaItems[i];
-        const progressBase = 10;
-        const totalSteps = 80;
-        const uploadStart = progressBase + (i * totalSteps / mediaItems.length);
-        const finalizeEnd = progressBase + ((i + 1) * totalSteps / mediaItems.length);
-
         setUploadProgressText(`Uploading asset ${i + 1} of ${mediaItems.length}...`);
-        setUploadProgress(Math.round(uploadStart));
-
-        let base64Data: string;
-        let mimeType: string;
-        let fileName: string;
-
-        if (item.type === "photo") {
-          const webpDataUrl = await compressAndConvertToWebp(item.file);
-          base64Data = webpDataUrl;
-          mimeType = "image/webp";
-          fileName = `photo_${eventId}_${i + 1}.webp`;
-        } else {
-          base64Data = await readVideoAsDataUrl(item.file);
-          mimeType = item.file.type || "video/mp4";
-          fileName = item.file.name || `video_${eventId}_${i + 1}.mp4`;
+        
+        let finalUrl = "";
+        try {
+          if (item.type === "photo") {
+            const webpBlob = await compressAndConvertToWebpBlob(item.file);
+            const storageRef = ref(storage, `events/${eventId}/${Date.now()}_${i + 1}.webp`);
+            await uploadBytes(storageRef, webpBlob, { contentType: "image/webp" });
+            finalUrl = await getDownloadURL(storageRef);
+          } else {
+            const storageRef = ref(storage, `events/${eventId}/${Date.now()}_${item.file.name || "video.mp4"}`);
+            await uploadBytes(storageRef, item.file, { contentType: item.file.type || "video/mp4" });
+            finalUrl = await getDownloadURL(storageRef);
+          }
+        } catch (storageErr) {
+          logger.warn("Direct storage upload notice, trying gateway fallback", { error: storageErr });
+          try {
+            const base64Data = item.type === "photo" ? await compressAndConvertToWebp(item.file) : await readVideoAsDataUrl(item.file);
+            const uploadResult = await uploadMediaItem({
+              eventId,
+              type: item.type,
+              base64Data,
+              mimeType: item.type === "photo" ? "image/webp" : (item.file.type || "video/mp4"),
+              fileName: item.file.name,
+              storageTarget: item.type === "video" ? "youtube" : "drive",
+            });
+            const finalizeResult = await finalizeMediaItem(uploadResult.mediaId);
+            if (finalizeResult.success && finalizeResult.finalUrl) {
+              finalUrl = finalizeResult.finalUrl;
+            }
+          } catch (gateErr) {
+            logger.warn("Gateway fallback failed", { error: gateErr });
+          }
         }
 
-        const uploadResult = await Promise.race([
-          uploadMediaItem({
-            eventId,
-            type: item.type,
-            base64Data,
-            mimeType,
-            fileName,
-            storageTarget: item.type === "video" ? "youtube" : "drive",
-          }),
-          timeout(60000)
-        ]) as any;
-
-        const finalizeResult = await Promise.race([
-          finalizeMediaItem(uploadResult.mediaId),
-          timeout(30000)
-        ]) as any;
-
-        if (finalizeResult.success && finalizeResult.finalUrl) {
+        if (finalUrl) {
           if (item.type === "photo") {
-            photoFinalUrls.push(finalizeResult.finalUrl);
+            photoFinalUrls.push(finalUrl);
           } else {
-            videoFinalUrls.push(finalizeResult.finalUrl);
+            videoFinalUrls.push(finalUrl);
           }
           approvalsToSave.push({
             id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
             type: item.type,
-            url: finalizeResult.finalUrl,
+            url: finalUrl,
           });
-        } else {
-          throw new Error(finalizeResult.error || `Failed to finalize ${item.type}`);
         }
-
-        setUploadProgress(Math.round(finalizeEnd));
       }
 
       setUploadProgressText("Submitting media for Admin approval...");

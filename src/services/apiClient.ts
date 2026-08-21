@@ -901,9 +901,14 @@ export async function uploadMediaItem(params: {
       headers,
       body: JSON.stringify(params),
     });
-    const data = await res.json().catch(() => ({ error: `Server error (${res.status}). The upload may be too large.` }));
-    if (!res.ok) throw new Error(data.error || `Upload failed with status ${res.status}`);
-    return data;
+    const contentType = res.headers.get("content-type") || "";
+    if (res.ok && contentType.includes("application/json")) {
+      return await res.json();
+    }
+    const data = contentType.includes("application/json")
+      ? await res.json()
+      : { error: `Server returned non-JSON response (${res.status}).` };
+    throw new Error(data.error || `Upload failed with status ${res.status}`);
   } catch (err: any) {
     throw new Error(err.message || "Media upload failed");
   }
@@ -917,9 +922,14 @@ export async function finalizeMediaItem(mediaId: string): Promise<MediaFinalizeR
       headers,
       body: JSON.stringify({ mediaId }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Media finalize failed");
-    return data;
+    const contentType = res.headers.get("content-type") || "";
+    if (res.ok && contentType.includes("application/json")) {
+      return await res.json();
+    }
+    const data = contentType.includes("application/json")
+      ? await res.json()
+      : { error: `Server returned non-JSON response (${res.status}).` };
+    throw new Error(data.error || "Media finalize failed");
   } catch (err: any) {
     throw new Error(err.message || "Media finalize failed");
   }
@@ -931,9 +941,11 @@ export async function getMediaItemStatus(mediaId: string): Promise<MediaStatusRe
     const res = await fetch(apiUrl(`/api/media/status/${encodeURIComponent(mediaId)}`), {
       headers,
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to get media status");
-    return data;
+    const contentType = res.headers.get("content-type") || "";
+    if (res.ok && contentType.includes("application/json")) {
+      return await res.json();
+    }
+    throw new Error("Failed to get media status");
   } catch (err: any) {
     throw new Error(err.message || "Failed to get media status");
   }
