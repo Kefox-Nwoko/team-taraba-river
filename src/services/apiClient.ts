@@ -80,22 +80,35 @@ export async function loginMember(
   } catch {}
 
   // Step 2: Direct Firestore search fallback
-  const normalized = credential.trim().toLowerCase();
-  const cleanInput = normalized.replace(/\s/g, "");
+  const norm = credential.trim().toLowerCase();
+  const cleanDigits = norm.replace(/\D/g, "");
 
   const members = await FirebaseSyncManager.seedCSVDataIfNeeded();
   const matched = members.find((m) => {
-    const emailMatch = m.email && m.email.trim().toLowerCase() === normalized;
-    const mPhone = (m.phoneNumber || "").replace(/\s/g, "");
-    const mWhatsapp = (m.whatsappNumber || "").replace(/\s/g, "");
-    const phoneMatch =
-      cleanInput.length >= 6 &&
-      (mPhone === cleanInput ||
-        mWhatsapp === cleanInput ||
-        mPhone.includes(cleanInput) ||
-        cleanInput.includes(mPhone));
-    const nameMatch = m.fullName && m.fullName.trim().toLowerCase() === normalized;
-    return emailMatch || phoneMatch || nameMatch;
+    // 1. Email match
+    if (m.email && m.email.trim().toLowerCase() === norm) return true;
+    // 2. ID match
+    if (m.id && m.id.trim().toLowerCase() === norm) return true;
+    // 3. Phone / WhatsApp match
+    const mPhoneDigits = (m.phoneNumber || "").replace(/\D/g, "");
+    const mWaDigits = (m.whatsappNumber || "").replace(/\D/g, "");
+    if (cleanDigits.length >= 6) {
+      if (mPhoneDigits && (mPhoneDigits === cleanDigits || mPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(mPhoneDigits))) return true;
+      if (mWaDigits && (mWaDigits === cleanDigits || mWaDigits.endsWith(cleanDigits) || cleanDigits.endsWith(mWaDigits))) return true;
+    }
+    // 4. Name match (full name, first name, surname, or name tokens)
+    const fullNameLower = (m.fullName || "").trim().toLowerCase();
+    const firstNameLower = (m.firstName || "").trim().toLowerCase();
+    const surnameLower = (m.surname || "").trim().toLowerCase();
+    if (fullNameLower && fullNameLower === norm) return true;
+    if (firstNameLower && firstNameLower === norm) return true;
+    if (surnameLower && surnameLower === norm) return true;
+    if (norm.length >= 3) {
+      if (fullNameLower && (fullNameLower.includes(norm) || norm.includes(fullNameLower))) return true;
+      const tokens = fullNameLower.split(/\s+/);
+      if (tokens.some((t) => t.length >= 3 && (t === norm || t.startsWith(norm) || norm.startsWith(t)))) return true;
+    }
+    return false;
   });
 
   if (matched) {

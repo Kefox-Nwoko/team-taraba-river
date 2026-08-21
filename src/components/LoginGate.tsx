@@ -56,28 +56,44 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     setIsLoading(true);
 
     try {
-      const normalized = credential.trim().toLowerCase();
-      const cleanInput = normalized.replace(/\s/g, "");
+      const norm = credential.trim().toLowerCase();
+      const cleanDigits = norm.replace(/\D/g, "");
       const membersList = availableMembers.length > 0 ? availableMembers : AppStateManager.getMembers();
 
+      const matchFn = (m: Member): boolean => {
+        // 1. Email match
+        if (m.email && m.email.trim().toLowerCase() === norm) return true;
+        // 2. ID match
+        if (m.id && m.id.trim().toLowerCase() === norm) return true;
+        // 3. Phone / WhatsApp match
+        const mPhoneDigits = (m.phoneNumber || "").replace(/\D/g, "");
+        const mWaDigits = (m.whatsappNumber || "").replace(/\D/g, "");
+        if (cleanDigits.length >= 6) {
+          if (mPhoneDigits && (mPhoneDigits === cleanDigits || mPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(mPhoneDigits))) return true;
+          if (mWaDigits && (mWaDigits === cleanDigits || mWaDigits.endsWith(cleanDigits) || cleanDigits.endsWith(mWaDigits))) return true;
+        }
+        // 4. Name match (full name, first name, surname, or tokens)
+        const fullNameLower = (m.fullName || "").trim().toLowerCase();
+        const firstNameLower = (m.firstName || "").trim().toLowerCase();
+        const surnameLower = (m.surname || "").trim().toLowerCase();
+        if (fullNameLower && fullNameLower === norm) return true;
+        if (firstNameLower && firstNameLower === norm) return true;
+        if (surnameLower && surnameLower === norm) return true;
+        if (norm.length >= 3) {
+          if (fullNameLower && (fullNameLower.includes(norm) || norm.includes(fullNameLower))) return true;
+          const tokens = fullNameLower.split(/\s+/);
+          if (tokens.some((t) => t.length >= 3 && (t === norm || t.startsWith(norm) || norm.startsWith(t)))) return true;
+        }
+        return false;
+      };
+
       // 1. Fast instant local memory match (< 1ms)
-      let matched: Member | undefined = membersList.find((m) => {
-        const emailMatch = m.email && m.email.trim().toLowerCase() === normalized;
-        const mPhone = (m.phoneNumber || "").replace(/\s/g, "");
-        const mWhatsapp = (m.whatsappNumber || "").replace(/\s/g, "");
-        const phoneMatch = cleanInput.length >= 6 && (mPhone === cleanInput || mWhatsapp === cleanInput || mPhone.includes(cleanInput) || cleanInput.includes(mPhone));
-        const nameMatch = m.fullName && m.fullName.trim().toLowerCase() === normalized;
-        return emailMatch || phoneMatch || nameMatch;
-      });
+      let matched: Member | undefined = membersList.find(matchFn);
 
       if (!matched) {
-        // If not found in local memory, try fast API lookup with a 2-second timeout
+        // 2. Fallback to API / Firestore search
         try {
-          const apiPromise = loginMember(credential.trim());
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("Login timeout. Please verify credentials.")), 2500)
-          );
-          const res = await Promise.race([apiPromise, timeoutPromise]);
+          const res = await loginMember(credential.trim());
           matched = { ...res.member, role: res.member.role || "member" };
           if (res.customToken) {
             signInWithCustomToken(res.customToken).catch(() => {});
