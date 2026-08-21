@@ -51,7 +51,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 }) => {
   const { showToast } = useToast();
   const [folderMode, setFolderMode] = useState<"existing" | "new">(
-    initialFolderId ? "existing" : (events && events.length > 0 ? "existing" : "new")
+    initialFolderId ? "existing" : "new"
   );
   const [selectedFolderId, setSelectedFolderId] = useState<string>(initialFolderId || (events && events.length > 0 ? events[0].id : ""));
   const [newFolderTitle, setNewFolderTitle] = useState("");
@@ -101,8 +101,8 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           const canvas = document.createElement("canvas");
           let width = img.width;
           let height = img.height;
-          const MAX_WIDTH = 1920;
-          const MAX_HEIGHT = 1080;
+          const MAX_WIDTH = 1280;
+          const MAX_HEIGHT = 960;
           if (width > MAX_WIDTH) {
             height = Math.round((height * MAX_WIDTH) / width);
             width = MAX_WIDTH;
@@ -122,10 +122,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           canvas.toBlob(
             (blob) => {
               if (blob) resolve(blob);
-              else reject(new Error("Failed to encode WebP blob"));
+              else reject(new Error("Failed to convert image to WebP blob"));
             },
             "image/webp",
-            0.85
+            0.78
           );
         };
         img.onerror = () => reject(new Error("Failed to load image"));
