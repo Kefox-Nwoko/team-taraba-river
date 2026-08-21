@@ -435,12 +435,15 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         "success"
       );
 
-      // Cleanly reset upload form state so items do not persist on the upload page
+      // Cleanly reset upload form state and native file input so items cannot be submitted a 2nd time
       mediaItems.forEach((it) => {
         try {
           URL.revokeObjectURL(it.previewUrl);
         } catch {}
       });
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
       setMediaItems([]);
       setYoutubeUrlInput("");
       setNewFolderTitle("");
