@@ -145,12 +145,19 @@ const FolderCollagePreview: React.FC<{ images: string[]; youtubeVideoUrl?: strin
   eventTitle,
   heightClass = "h-full w-full aspect-square",
 }) => {
-  const videoThumb = getYouTubeThumbnail(youtubeVideoUrl);
+  const videoThumb = getYouTubeThumbnail(youtubeVideoUrl) || (youtubeVideoUrl ? "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80" : null);
   const mediaList: Array<{ src: string; isVideo?: boolean }> = [];
   if (videoThumb) {
     mediaList.push({ src: videoThumb, isVideo: true });
   }
-  images.forEach((img) => mediaList.push({ src: img }));
+  images.forEach((img) => {
+    const isDirectVideo = img.startsWith("data:video") || img.endsWith(".mp4") || img.endsWith(".webm") || (img.includes("/events%2F") && img.includes(".mp4"));
+    if (isDirectVideo) {
+      mediaList.push({ src: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80", isVideo: true });
+    } else {
+      mediaList.push({ src: img, isVideo: false });
+    }
+  });
 
   const previewItems = mediaList.slice(0, 4);
 
@@ -387,22 +394,32 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       title: string;
     }> = [];
 
-    const ytThumb = getYouTubeThumbnail(activeFolder.youtubeVideoUrl);
-    if (activeFolder.youtubeVideoUrl && ytThumb) {
+    if (activeFolder.youtubeVideoUrl) {
+      const ytThumb = getYouTubeThumbnail(activeFolder.youtubeVideoUrl);
       items.push({
         type: "video",
-        url: ytThumb,
+        url: ytThumb || "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80",
         videoUrl: activeFolder.youtubeVideoUrl,
         title: activeFolder.youtubeTitle || `${activeFolder.title} Video Highlights`,
       });
     }
 
     (activeFolder.driveImageUrls || []).forEach((imgUrl, i) => {
-      items.push({
-        type: "photo",
-        url: imgUrl,
-        title: `${activeFolder.title} Photo ${i + 1}`,
-      });
+      const isDirectVideo = imgUrl.startsWith("data:video") || imgUrl.endsWith(".mp4") || imgUrl.endsWith(".webm") || (imgUrl.includes("/events%2F") && imgUrl.includes(".mp4"));
+      if (isDirectVideo) {
+        items.push({
+          type: "video",
+          url: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80",
+          videoUrl: imgUrl,
+          title: `${activeFolder.title} Video ${i + 1}`,
+        });
+      } else {
+        items.push({
+          type: "photo",
+          url: imgUrl,
+          title: `${activeFolder.title} Photo ${i + 1}`,
+        });
+      }
     });
 
     return items;
@@ -933,7 +950,9 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                         </div>
                         <div className="absolute bottom-2 left-2 right-2 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-lg text-white text-xs flex items-center justify-between font-normal">
                           <span className="truncate">VIDEO</span>
-                          <span className="bg-red-600 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold">YouTube</span>
+                          <span className="bg-red-600 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold">
+                            {item.videoUrl?.includes("youtube") || item.videoUrl?.includes("youtu.be") ? "YouTube" : "Video"}
+                          </span>
                         </div>
                       </>
                     )}
@@ -1026,14 +1045,24 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
             {/* Media Screen Stage */}
             <div className="w-full flex-1 max-h-[62vh] flex items-center justify-center overflow-hidden">
               {galleryItems[lightboxIndex].type === "video" ? (
-                <div className="w-full h-full aspect-video rounded-3xl overflow-hidden shadow-2xl border border-slate-800 bg-black">
-                  <iframe
-                    src={`https://www.youtube.com/embed/${extractYouTubeId(galleryItems[lightboxIndex].videoUrl)}?autoplay=1`}
-                    title={galleryItems[lightboxIndex].title}
-                    className="w-full h-full border-0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  />
+                <div className="w-full h-full aspect-video rounded-3xl overflow-hidden shadow-2xl border border-slate-800 bg-black flex items-center justify-center">
+                  {galleryItems[lightboxIndex].videoUrl && (galleryItems[lightboxIndex].videoUrl.includes("youtube.com") || galleryItems[lightboxIndex].videoUrl.includes("youtu.be")) ? (
+                    <iframe
+                      src={`https://www.youtube.com/embed/${extractYouTubeId(galleryItems[lightboxIndex].videoUrl)}?autoplay=1`}
+                      title={galleryItems[lightboxIndex].title}
+                      className="w-full h-full border-0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  ) : (
+                    <video
+                      src={galleryItems[lightboxIndex].videoUrl}
+                      controls
+                      autoPlay
+                      playsInline
+                      className="w-full h-full object-contain"
+                    />
+                  )}
                 </div>
               ) : (
                 <img
