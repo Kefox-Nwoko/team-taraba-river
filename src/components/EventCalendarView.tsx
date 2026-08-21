@@ -184,76 +184,82 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
   const currentDay = todayObj.getDate(); // 1-31
   const nextMonth = (currentMonth % 12) + 1;
 
+  const monthMap: Record<string, number> = {
+    jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+    apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
+    aug: 8, august: 8, sep: 9, september: 9, oct: 10, october: 10,
+    nov: 11, november: 11, dec: 12, december: 12
+  };
+
   const birthdaysList = members
-    .filter((m) => {
-      const dobStr = m.dateOfBirth || "";
+    .map((m) => {
+      const dobStr = (m.dateOfBirth || "").trim();
       const bMonthRaw = (m as any).birthMonth;
-      if (!dobStr && !bMonthRaw) return false;
+      const bDayRaw = (m as any).birthDay;
 
       let bMonth = 0;
-      
-      // If birthMonth is explicitly provided (from legacy data or CSV)
+      let bDay = 0;
+
+      if (bDayRaw) bDay = parseInt(bDayRaw, 10) || 0;
       if (bMonthRaw) {
-        bMonth = parseInt(bMonthRaw, 10);
+        bMonth = parseInt(bMonthRaw, 10) || 0;
         if (isNaN(bMonth) || bMonth === 0) {
-          const months: Record<string, number> = {
-            jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
-            apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
-            aug: 8, august: 8, sep: 9, september: 9, oct: 10, october: 10,
-            nov: 11, november: 11, dec: 12, december: 12
-          };
-          const lowercaseDob = String(bMonthRaw).toLowerCase();
-          for (const [monthName, monthNum] of Object.entries(months)) {
-            if (lowercaseDob.includes(monthName)) {
-              bMonth = monthNum;
+          const lowercase = String(bMonthRaw).toLowerCase();
+          for (const [mName, mNum] of Object.entries(monthMap)) {
+            if (lowercase.includes(mName)) {
+              bMonth = mNum;
               break;
             }
           }
         }
       }
 
-      // If we still don't have a month, try parsing dateOfBirth
-      if (!bMonth && dobStr) {
-        const parts = dobStr.split("-");
-        if (parts.length === 3) {
-          bMonth = parseInt(parts[1], 10);
+      if (dobStr) {
+        const isoMatch = dobStr.match(/^\d{4}-(\d{1,2})-(\d{1,2})$/);
+        if (isoMatch) {
+          bMonth = parseInt(isoMatch[1], 10);
+          bDay = parseInt(isoMatch[2], 10);
         } else {
-          const d = new Date(dobStr);
-          if (!isNaN(d.getTime())) {
-            bMonth = d.getMonth() + 1;
-          } else {
-            const months: Record<string, number> = {
-              jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
-              apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
-              aug: 8, august: 8, sep: 9, september: 9, oct: 10, october: 10,
-              nov: 11, november: 11, dec: 12, december: 12
-            };
-            const lowercaseDob = dobStr.toLowerCase();
-            for (const [monthName, monthNum] of Object.entries(months)) {
-              if (lowercaseDob.includes(monthName)) {
-                bMonth = monthNum;
-                break;
+          const cleanDob = dobStr.replace(/(\d+)(st|nd|rd|th)/gi, "$1").toLowerCase();
+          for (const [mName, mNum] of Object.entries(monthMap)) {
+            if (cleanDob.includes(mName)) {
+              bMonth = mNum;
+              const dayMatch = cleanDob.match(/\b([0-2]?[0-9]|3[01])\b/);
+              if (dayMatch) {
+                bDay = parseInt(dayMatch[1], 10);
               }
+              break;
             }
           }
         }
       }
 
-      if (!bMonth) return false;
+      const isToday = bMonth === currentMonth && bDay === currentDay;
+      const isCurrentMonth = bMonth === currentMonth;
+      const isNextMonthNearEnd = currentDay >= 25 && bMonth === nextMonth;
 
-      // Show if in current month
-      if (bMonth === currentMonth) return true;
-      // Show if current day >= 25 AND in next month
-      if (currentDay >= 25 && bMonth === nextMonth) return true;
+      const isVisible = isCurrentMonth || isNextMonthNearEnd;
 
-      return false;
+      return {
+        memberId: m.id,
+        memberName: m.fullName,
+        photoUrl: m.photoUrl,
+        fullDob: m.dateOfBirth || (((m as any).birthDay || "") + " " + ((m as any).birthMonth || "")).trim(),
+        bDay,
+        bMonth,
+        isToday,
+        isVisible,
+      };
     })
-    .map((m) => ({
-      memberId: m.id,
-      memberName: m.fullName,
-      photoUrl: m.photoUrl,
-      fullDob: m.dateOfBirth || (((m as any).birthDay || "") + " " + ((m as any).birthMonth || "")).trim(),
-    }));
+    .filter((item) => item.isVisible)
+    .sort((a, b) => {
+      // 1. Today's celebrants come first
+      if (a.isToday && !b.isToday) return -1;
+      if (!a.isToday && b.isToday) return 1;
+      // 2. Sort chronologically by day
+      if (a.bMonth === b.bMonth) return a.bDay - b.bDay;
+      return a.bMonth - b.bMonth;
+    });
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -720,20 +726,53 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                     </div>
                   ) : (
                     birthdaysList.map((item, idx) => (
-                      <div key={idx} className="flex items-center justify-between group">
-                        <div className="flex items-center space-x-4 min-w-0">
-                          <MemberAvatar
-                            member={{ fullName: item.memberName, photoUrl: item.photoUrl }}
-                            sizeClassName="w-12 h-12"
-                            textClassName="text-sm font-normal"
-                          />
-                          <div className="min-w-0">
-                            <BirthdayCelebrationAnimation>
-                              <span className="text-sm sm:text-sm text-slate-900 dark:text-white truncate block group-hover:text-purple-600 transition-colors font-normal">
-                                {item.memberName}
+                      <div
+                        key={idx}
+                        className={`flex items-center justify-between group p-2.5 rounded-2xl transition-all ${
+                          item.isToday
+                            ? "bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-amber-500/10 dark:from-pink-950/40 dark:via-purple-950/40 dark:to-amber-950/30 border border-pink-500/30 dark:border-pink-500/40 shadow-xs"
+                            : ""
+                        }`}
+                      >
+                        <div className="flex items-center space-x-3.5 min-w-0">
+                          <div className="relative shrink-0">
+                            <MemberAvatar
+                              member={{ fullName: item.memberName, photoUrl: item.photoUrl }}
+                              sizeClassName={item.isToday ? "w-13 h-13 ring-2 ring-pink-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900" : "w-12 h-12"}
+                              textClassName="text-sm font-normal"
+                            />
+                            {item.isToday && (
+                              <span className="absolute -bottom-1 -right-1 text-sm select-none" title="Birthday Celebrant!">
+                                🎂
                               </span>
-                            </BirthdayCelebrationAnimation>
-                            <span className="text-sm text-slate-500 font-normal">{item.fullDob}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            {item.isToday ? (
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <BirthdayCelebrationAnimation autoPlay durationMs={6000}>
+                                  <span className="text-sm sm:text-base animate-celebrant-today truncate block tracking-wide">
+                                    {item.memberName}
+                                  </span>
+                                </BirthdayCelebrationAnimation>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r from-pink-500 to-amber-500 text-white shadow-xs animate-pulse">
+                                  🎉 Birthday Today!
+                                </span>
+                              </div>
+                            ) : (
+                              <BirthdayCelebrationAnimation autoPlay={false}>
+                                <span className="text-sm sm:text-sm text-slate-900 dark:text-white truncate block group-hover:text-purple-600 transition-colors font-normal">
+                                  {item.memberName}
+                                </span>
+                              </BirthdayCelebrationAnimation>
+                            )}
+                            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-normal">
+                              {item.isToday ? (
+                                <span className="text-pink-600 dark:text-pink-400 font-semibold">{item.fullDob} • Today</span>
+                              ) : (
+                                item.fullDob
+                              )}
+                            </p>
                           </div>
                         </div>
                       </div>
