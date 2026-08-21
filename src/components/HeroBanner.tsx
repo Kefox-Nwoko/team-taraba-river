@@ -58,7 +58,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
 
   return (
     <div className="space-y-6 py-2 w-full font-normal">
-      {/* Welcome Header Container - No background container block */}
+      {/* Welcome Header Container */}
       <div className="space-y-6 font-normal">
         <div className="space-y-3">
           {isFirstVisit ? (
@@ -104,9 +104,8 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
           </div>
         </div>
 
-        {/* Metrics Section Header & Cards - Separation & Extra space with horizontal line */}
+        {/* Metrics Section Header & Cards */}
         <div className="py-3 my-3 border-y border-slate-200 dark:border-slate-800 space-y-4 sm:space-y-6">
-          {/* Stacked Header mimicking Welcome style */}
           <div className="space-y-2">
             <h2 className="text-xl sm:text-2xl font-normal tracking-tight text-slate-900 dark:text-white leading-tight">
               Community Impact
@@ -116,49 +115,49 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             </p>
           </div>
 
-          {/* Metric Section - Left aligned group, vertically centered figures */}
-          <div className="flex flex-wrap items-start justify-between sm:justify-start gap-4 sm:gap-16 lg:gap-24 font-normal w-full sm:w-auto">
+          {/* Metric Section - Centered and grouped closer together away from edges, 70% bigger */}
+          <div className="flex items-center justify-center sm:justify-start gap-8 sm:gap-14 md:gap-20 font-normal w-full py-2">
             {/* Card 1: Registered */}
-            <div className="flex flex-col items-center justify-center text-center space-y-1 font-normal min-w-0">
-              <div className="flex flex-col items-center justify-center space-y-1.5">
-                <div className="w-5 h-5 sm:w-8 sm:h-8 rounded-md sm:rounded-lg bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-400 flex items-center justify-center shrink-0">
-                  <Users className="w-3 h-3 sm:w-4 sm:h-4" />
+            <div className="flex flex-col items-center justify-center text-center space-y-1.5 font-normal min-w-0">
+              <div className="flex flex-col items-center justify-center space-y-2">
+                <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-teal-100 dark:bg-teal-950/80 text-teal-700 dark:text-teal-400 flex items-center justify-center shrink-0 shadow-xs">
+                  <Users className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
-                <span className="text-[10px] sm:text-sm text-slate-700 dark:text-slate-200 font-normal whitespace-nowrap truncate">
+                <span className="text-xs sm:text-base text-slate-700 dark:text-slate-200 font-medium whitespace-nowrap">
                   Registered
                 </span>
               </div>
-              <span className="text-lg sm:text-3xl text-slate-900 dark:text-white tracking-tight font-normal block text-center mt-0 sm:mt-1">
+              <span className="text-3xl sm:text-5xl text-slate-900 dark:text-white tracking-tight font-bold block text-center mt-1">
                 {memberCount}
               </span>
             </div>
 
             {/* Card 2: Active Events */}
-            <div className="flex flex-col items-center justify-center text-center space-y-1 font-normal min-w-0">
-              <div className="flex flex-col items-center justify-center space-y-1.5">
-                <div className="w-5 h-5 sm:w-8 sm:h-8 rounded-md sm:rounded-lg bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-400 flex items-center justify-center shrink-0">
-                  <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
+            <div className="flex flex-col items-center justify-center text-center space-y-1.5 font-normal min-w-0">
+              <div className="flex flex-col items-center justify-center space-y-2">
+                <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-cyan-100 dark:bg-cyan-950/80 text-cyan-700 dark:text-cyan-400 flex items-center justify-center shrink-0 shadow-xs">
+                  <Calendar className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
-                <span className="text-[10px] sm:text-sm text-slate-700 dark:text-slate-200 font-normal whitespace-nowrap truncate">
+                <span className="text-xs sm:text-base text-slate-700 dark:text-slate-200 font-medium whitespace-nowrap">
                   Active Events
                 </span>
               </div>
-              <span className="text-lg sm:text-3xl text-slate-900 dark:text-white tracking-tight font-normal block text-center mt-0 sm:mt-1">
+              <span className="text-3xl sm:text-5xl text-slate-900 dark:text-white tracking-tight font-bold block text-center mt-1">
                 {eventCount}
               </span>
             </div>
 
             {/* Card 3: Portal Visits */}
-            <div className="flex flex-col items-center justify-center text-center space-y-1 font-normal min-w-0">
-              <div className="flex flex-col items-center justify-center space-y-1.5">
-                <div className="w-5 h-5 sm:w-8 sm:h-8 rounded-md sm:rounded-lg bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-400 flex items-center justify-center shrink-0">
-                  <Eye className="w-3 h-3 sm:w-4 sm:h-4" />
+            <div className="flex flex-col items-center justify-center text-center space-y-1.5 font-normal min-w-0">
+              <div className="flex flex-col items-center justify-center space-y-2">
+                <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-400 flex items-center justify-center shrink-0 shadow-xs">
+                  <Eye className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
-                <span className="text-[10px] sm:text-sm text-slate-700 dark:text-slate-200 font-normal whitespace-nowrap truncate">
+                <span className="text-xs sm:text-base text-slate-700 dark:text-slate-200 font-medium whitespace-nowrap">
                   Portal Visits
                 </span>
               </div>
-              <span className="text-lg sm:text-3xl text-slate-900 dark:text-white tracking-tight font-normal block text-center mt-0 sm:mt-1">
+              <span className="text-3xl sm:text-5xl text-slate-900 dark:text-white tracking-tight font-bold block text-center mt-1">
                 {totalVisits.toLocaleString()}
               </span>
             </div>
