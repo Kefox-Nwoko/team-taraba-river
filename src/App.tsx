@@ -374,12 +374,12 @@ export default function App() {
   const renderScrollToTopButton = () => (
     <button
       onClick={scrollToTop}
-      className={`fixed bottom-56 sm:bottom-44 md:bottom-36 right-6 sm:right-8 p-3.5 rounded-full bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600 text-white shadow-2xl hover:scale-110 active:scale-95 transition-all duration-300 z-[9999] flex items-center justify-center border border-white/30 cursor-pointer interactive
+      className={`fixed bottom-[199px] sm:bottom-[151px] md:bottom-[119px] right-6 sm:right-8 w-8 h-8 rounded-full bg-blue-600 dark:bg-blue-500 hover:bg-blue-700 dark:hover:bg-blue-600 text-white shadow-2xl hover:scale-110 active:scale-95 transition-all duration-300 z-[9999] flex items-center justify-center border border-white/30 cursor-pointer interactive
         ${showScrollTop ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10 pointer-events-none"}`}
       title="Back to top"
       aria-label="Back to top"
     >
-      <ChevronUp className="w-6 h-6 stroke-[2.5]" />
+      <ChevronUp className="w-4.5 h-4.5 stroke-[2.5]" />
     </button>
   );
 
