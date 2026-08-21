@@ -676,6 +676,82 @@ The celebration reinforced the critical role of girls' education in national dev
   },
 ];
 
+/**
+ * Strict Multi-Layer Relevance Filter:
+ * Ensures ONLY news directly connected to Nigerian Federal Unity Colleges,
+ * USOSA, FGCs, FGGCs, FSTCs, King's College, Queen's College, and Suleja Academy
+ * is admitted to the news feed.
+ */
+function isRelevantToNigerianUnityColleges(title: string, snippet: string, sourceName: string = ""): boolean {
+  const combined = `${title} ${snippet} ${sourceName}`.toLowerCase();
+
+  // 1. Negative Exclusion Filters: Reject foreign/unrelated education policy or non-Nigerian news
+  const foreignPolicyBlacklist = [
+    /\bschool choice\b/i,
+    /\bcharter school[s]?\b/i,
+    /\bpublic school monopoly\b/i,
+    /\bschool voucher[s]?\b/i,
+    /\bdistrict superintendent\b/i,
+    /\bking['’]?s college london\b/i,
+    /\bqueen['’]?s college oxford\b/i,
+    /\bqueen['’]?s college cambridge\b/i,
+    /\bqueen['’]?s college melbourne\b/i,
+    /\bflorida student\b/i,
+    /\bfutures and options\b/i,
+    /\bforeign security\b/i,
+  ];
+
+  for (const regex of foreignPolicyBlacklist) {
+    if (regex.test(combined)) {
+      // Immediate rejection of foreign policy / foreign university articles
+      return false;
+    }
+  }
+
+  // 2. High-Confidence Direct Entity Matches (Always relevant)
+  const directEntities = [
+    /\busosa\b/i,
+    /\bunity school[s]?\b/i,
+    /\bunity college[s]?\b/i,
+    /\bfederal unity college[s]?\b/i,
+    /\bfederal government college[s]?\b/i,
+    /\bfederal government girls['’]? college[s]?\b/i,
+    /\bfederal science and technical college[s]?\b/i,
+    /\bfederal science & technical college[s]?\b/i,
+    /\bfederal academy suleja\b/i,
+    /\bsuleja academy\b/i,
+    /\bking['’]?s college lagos\b/i,
+    /\bqueen['’]?s college lagos\b/i,
+    /\bkcoba\b/i,
+    /\bqcoga\b/i,
+    /\bfegowoco\b/i,
+  ];
+
+  for (const regex of directEntities) {
+    if (regex.test(combined)) {
+      return true;
+    }
+  }
+
+  // 3. Specific Unity College Campus Patterns: e.g. "FGGC Bwari", "FGC Idoani", "FSTC Yaba", "FGC Warri"
+  const campusPattern = /\b(fgc|fggc|fstc)\s+(bwari|yaba|usi|otukpo|uromi|ilesa|shiroro|zuru|ohanso|jalingo|orozo|doma|michika|kafanchan|dayi|hadejia|lassa|tungbo|uyo|ahoada|kano|kaduna|warri|enugu|okigwe|ugwolawo|ijanikin|oyo|sagamu|onitsha|kazaure|odogbolu|ikot\s*ekpene|ilorin|sokoto|maiduguri|buni\s*yadi|keffi|azare|biliri|gwarzo|tambuwal|wukari|potiskum|vandeikya|rubochi|keana|kiyawa|daura|birnin\s*kebbi|gwandu|minna|kontagora|new\s*bussa|bida|malumfashi|dutse|gumel|langtang|pankshin|mangu|shendam|bokkos|yawuri|anza|zaria|ebonyi|abakaliki|afikpo|isenya|ogidi|nnewi|awka|umuahia|owerri|abaji|kwali|gwagwalada)\b/i;
+
+  if (campusPattern.test(combined)) {
+    return true;
+  }
+
+  // 4. Secondary Context Filter: Acronym (FGC/FGGC/FSTC) + Nigerian Education Anchor
+  const hasAcronym = /\b(fgc|fggc|fstc)\b/i.test(combined);
+  const hasNigerianAnchor = /\b(nigeria|nigerian|lagos|abuja|waec|neco|bece|federal ministry of education|minister of education|tahir mamman|tinubu|pta|old students|alumni|inter-house sports)\b/i.test(combined);
+
+  if (hasAcronym && hasNigerianAnchor) {
+    return true;
+  }
+
+  // Exclude everything else (Default Deny - zero false positives)
+  return false;
+}
+
 export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> {
   // Step 1: Try backend endpoint first if available
   try {
@@ -693,9 +769,9 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
   // Step 2: Multi-Cluster Live Search across 104 Unity Colleges, FGCs, FGGCs, FSTCs, King's & Queen's
   try {
     const clusters = [
-      'USOSA OR "Unity Schools Nigeria" OR "Federal Unity Colleges"',
-      '"Federal Government College" OR "Federal Government Girls College" OR "FGGC" OR "FGC"',
-      '"King\'s College Lagos" OR "Queen\'s College Lagos" OR "FSTC" OR "Federal Science and Technical College" OR "Federal Academy Suleja"',
+      '("USOSA" OR "Unity Schools" OR "Federal Unity Colleges" OR "Unity Colleges") AND (Nigeria OR education OR alumni OR FG)',
+      '("Federal Government College" OR "Federal Government Girls College" OR "Federal Science and Technical College" OR "Federal Science & Technical College" OR "Federal Academy Suleja") AND (Nigeria OR WAEC OR NECO OR FG)',
+      '("King\'s College Lagos" OR "Queen\'s College Lagos" OR "FGC Lagos" OR "FGGC Bwari" OR "FSTC Yaba" OR "FSTC Usi" OR "FSTC Otukpo" OR "FSTC Uromi") AND (Nigeria OR alumni OR PTA OR education)',
     ];
 
     const fetchPromises = clusters.map(async (queryStr) => {
@@ -745,10 +821,16 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
 
         const sourceName = extractedSource || item.author || "Google News Nigeria";
         const link = item.link || "https://news.google.com";
+        const cleanDesc = (item.description || item.content || "").replace(/<[^>]*>?/gm, "").trim();
+
+        // ── STRICT UNITY COLLEGES RELEVANCE GATE ──
+        if (!isRelevantToNigerianUnityColleges(cleanTitle, cleanDesc, sourceName)) {
+          continue; // Drop irrelevant / foreign news immediately
+        }
+
         const itemDate = item.pubDate ? new Date(item.pubDate) : new Date();
         const itemTimestamp = !isNaN(itemDate.getTime()) ? itemDate.getTime() : Date.now();
         const pubDate = itemDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-        const cleanDesc = (item.description || item.content || "").replace(/<[^>]*>?/gm, "").trim();
         const keywords = extractKeywords(cleanTitle + " " + cleanDesc);
         const schoolTag = detectSchoolTag(cleanTitle + " " + cleanDesc);
 
