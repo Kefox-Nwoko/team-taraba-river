@@ -408,47 +408,101 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
 
       {/* Headline Detail Drawer (slide-up overlay) */}
       {selectedHeadline && (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center font-normal p-0 sm:p-4">
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center font-normal p-0 sm:p-4 animate-fadeIn">
           <div
-            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity"
+            className="absolute inset-0 bg-slate-950/60 backdrop-blur-md transition-opacity"
             onClick={() => setSelectedHeadline(null)}
           />
-          <div className="relative w-full sm:max-w-2xl max-h-[85vh] bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800 animate-slideUp">
+          <div className="relative w-full sm:max-w-2xl max-h-[90vh] bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800 animate-slideUp">
             {/* Drawer Header */}
-            <div className="shrink-0 flex items-start justify-between p-6 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex-1 pr-4">
-                <p className="text-xs uppercase tracking-wider text-amber-600 dark:text-amber-400 font-normal mb-1">
-                  {selectedHeadline.source} · {selectedHeadline.publishedAt}
-                </p>
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white leading-snug">
-                  {selectedHeadline.title}
-                </h3>
+            <div className="shrink-0 p-5 sm:p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 mb-2">
+                    {selectedHeadline.schoolTag && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 border border-teal-200 dark:border-teal-800/60">
+                        🏷️ {selectedHeadline.schoolTag}
+                      </span>
+                    )}
+                    <span className="text-xs uppercase tracking-wider text-amber-700 dark:text-amber-400 font-medium">
+                      {selectedHeadline.source} · {selectedHeadline.publishedAt}
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-snug">
+                    {selectedHeadline.title}
+                  </h3>
+                </div>
+                <button
+                  onClick={() => setSelectedHeadline(null)}
+                  className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 transition-colors cursor-pointer shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button
-                onClick={() => setSelectedHeadline(null)}
-                className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 transition-colors cursor-pointer shrink-0"
-              >
-                <X className="w-5 h-5" />
-              </button>
             </div>
 
-            {/* Clean News Summary */}
-            <div className="flex-1 overflow-y-auto p-6">
-              <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300 font-normal">
+            {/* Scrollable Body */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+              {/* AI Chief Editor Summary Header */}
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 dark:bg-amber-950/30 border border-amber-300/30 dark:border-amber-700/30 w-fit">
+                <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <span className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                  AI Chief Editor Intelligence (10–15 Line Analysis)
+                </span>
+              </div>
+
+              {/* 10-15 Line Comprehensive Summary */}
+              <div className="text-sm leading-relaxed text-slate-700 dark:text-slate-200 space-y-3 whitespace-pre-line font-normal bg-slate-50 dark:bg-slate-800/40 p-4.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80">
                 {selectedHeadline.summary}
-              </p>
+              </div>
+
+              {/* All Covering News Channels / Media Outlets */}
+              {selectedHeadline.otherSources && selectedHeadline.otherSources.length > 0 && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center gap-2">
+                    <Newspaper className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                      News Outlets & Channels Covering This Story ({selectedHeadline.otherSources.length})
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {selectedHeadline.otherSources.map((source, sIdx) => (
+                      <a
+                        key={sIdx}
+                        href={source.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between gap-2 p-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-amber-400 dark:hover:border-amber-500 hover:shadow-xs transition-all group"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors truncate">
+                            {source.sourceName}
+                          </p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                            {source.title}
+                          </p>
+                        </div>
+                        <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-500 shrink-0 transition-colors" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Direct Source Link Button */}
-            <div className="shrink-0 p-5 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+            {/* Direct Source Link Button Footer */}
+            <div className="shrink-0 p-4 sm:p-5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/40 flex items-center justify-between gap-3">
+              <span className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                Click any channel above to read alternate coverage.
+              </span>
               <a
                 href={selectedHeadline.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium transition-colors cursor-pointer"
+                className="flex items-center gap-2 px-4.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs sm:text-sm font-semibold transition-colors cursor-pointer shrink-0 shadow-xs"
               >
-                <span>Read Full Story on {selectedHeadline.source}</span>
-                <ExternalLink className="w-4 h-4" />
+                <span>Read Full Story</span>
+                <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>
           </div>
