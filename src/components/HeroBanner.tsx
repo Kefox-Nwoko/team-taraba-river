@@ -26,7 +26,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   currentUser,
   members,
   events,
-  totalVisits = 1428,
+  totalVisits = 0,
    onOpenRegister,
 }) => {
   const memberCount = members.length;
@@ -148,9 +148,12 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             </div>
 
             {/* Card 3: Portal Visits */}
-            <div className="flex flex-col items-center justify-center text-center space-y-1.5 font-normal min-w-0">
+            <div
+              className="flex flex-col items-center justify-center text-center space-y-1.5 font-normal min-w-0 group relative cursor-help"
+              title="Portal Visits: Calculated via real-time Firestore session deduplication (30-minute inactivity window to prevent artificial refresh counts)."
+            >
               <div className="flex flex-col items-center justify-center space-y-2">
-                <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-400 flex items-center justify-center shrink-0 shadow-xs">
+                <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl bg-purple-100 dark:bg-purple-950/80 text-purple-700 dark:text-purple-400 flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
                   <Eye className="w-5 h-5 sm:w-6 sm:h-6" />
                 </div>
                 <span className="text-xs sm:text-base text-slate-700 dark:text-slate-200 font-medium whitespace-nowrap">

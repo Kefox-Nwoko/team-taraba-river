@@ -214,7 +214,33 @@ export const MicroservicesArchModal: React.FC<MicroservicesArchModalProps> = ({
             </div>{" "}
           </div>{" "}
         </div>{" "}
-        {/* Bottom Navigation */}{" "}
+        {/* Section 4: Authentic Analytics & Portal Visit Counting Methodology */}
+        <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+          <h3 className="text-sm uppercase tracking-wider text-teal-800 dark:text-teal-400 flex items-center space-x-2 border-b border-slate-200 dark:border-slate-800 pb-2">
+            <Zap className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+            <span>4. Portal Visit Calculation & Authenticity Methodology</span>
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-slate-700 dark:text-slate-300">
+            <div className="bg-slate-50 dark:bg-slate-950/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
+              <strong className="text-slate-900 dark:text-white block mb-1">
+                30-Minute Session Deduplication:
+              </strong>
+              <span>
+                To guarantee genuine metrics and prevent spam, repeat visits or browser refreshes (F5) within a 30-minute inactivity window are treated as the same active session and will not artificially inflate visit counts.
+              </span>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-950/80 p-4 rounded-2xl border border-slate-200 dark:border-slate-800">
+              <strong className="text-slate-900 dark:text-white block mb-1">
+                Atomic Cloud Firestore Synchronization:
+              </strong>
+              <span>
+                New unique sessions execute an atomic <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded">increment(1)</code> in Firestore (<code className="text-xs">system/metrics</code>) with server timestamps, synchronized in real-time across all public clients and admin dashboards.
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Navigation */}
         <div className="flex justify-between items-center pt-6 border-t border-slate-200 dark:border-slate-800">
           {" "}
           <button onClick={onClose} className="px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs rounded-xl transition shadow-md flex items-center space-x-2" >

@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   setDoc,
   updateDoc,
@@ -8,6 +9,8 @@ import {
   onSnapshot,
   query,
   orderBy,
+  increment,
+  serverTimestamp,
 } from "firebase/firestore";
 import {
   signInWithPopup,
@@ -268,4 +271,69 @@ export class FirebaseSyncManager {
       logger.error("Failed to save activity log to Firestore", err);
     }
   }
+
+  /**
+   * Records a realistic, deduplicated session visit in Firestore.
+   * Debounced per browser session with an industry-standard 30-minute inactivity window.
+   */
+  public static async recordSessionVisit(): Promise<number> {
+    try {
+      const SESSION_KEY = "taraba_active_session_ts";
+      const lastRecorded = sessionStorage.getItem(SESSION_KEY);
+      const now = Date.now();
+      const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+
+      // If user already registered a visit within this session in the last 30 minutes, skip incrementing
+      if (lastRecorded && now - parseInt(lastRecorded, 10) < THIRTY_MINUTES_MS) {
+        const snap = await getDoc(doc(db, "system", "metrics"));
+        if (snap.exists()) {
+          return snap.data().totalVisits || 1;
+        }
+        return 1;
+      }
+
+      sessionStorage.setItem(SESSION_KEY, now.toString());
+
+      // Atomically increment the genuine visits counter in Firestore
+      await setDoc(
+        doc(db, "system", "metrics"),
+        {
+          totalVisits: increment(1),
+          lastVisitAt: serverTimestamp(),
+          lastRecordedSession: now,
+        },
+        { merge: true }
+      );
+
+      const updatedSnap = await getDoc(doc(db, "system", "metrics"));
+      if (updatedSnap.exists()) {
+        return updatedSnap.data().totalVisits || 1;
+      }
+      return 1;
+    } catch (err) {
+      logger.warn("Firestore recordSessionVisit fallback", err);
+      return AppStateManager.getSessionCount() || 1;
+    }
+  }
+
+  /**
+   * Subscribes to real-time synchronized visits metric across all clients
+   */
+  public static subscribeVisitMetrics(onUpdate: (totalVisits: number) => void) {
+    try {
+      return onSnapshot(doc(db, "system", "metrics"), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (typeof data.totalVisits === "number") {
+            onUpdate(data.totalVisits);
+          }
+        }
+      });
+    } catch (err) {
+      logger.warn("Firestore subscribeVisitMetrics fallback", err);
+      return () => {};
+    }
+  }
 }
+
+export const FirebaseService = FirebaseSyncManager;

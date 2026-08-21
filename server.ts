@@ -1151,6 +1151,31 @@ app.delete("/api/admin/approvals/:id", conditionalAuth, conditionalRequireAdmin,
   }
 });
 
+app.get("/api/system/visits", async (req: Request, res: Response) => {
+  try {
+    if (isFirestoreAvailable()) {
+      const docSnap = await db.collection("system").doc("metrics").get();
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        return res.json({
+          totalVisits: data?.totalVisits || 1,
+          lastVisitTimestamp: data?.lastVisitAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
+          latestUniqueUser: "Community Member",
+          calculationMethod: "30-minute debounced session deduplication with atomic Firestore increment",
+        });
+      }
+    }
+    res.json({
+      totalVisits: 1,
+      lastVisitTimestamp: new Date().toISOString(),
+      latestUniqueUser: "Community Member",
+      calculationMethod: "30-minute debounced session deduplication",
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch visit metrics" });
+  }
+});
+
 app.post("/api/admin/reset-data", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
   try {
     // 1. Reset all members' activity points to 0

@@ -3,7 +3,7 @@ import { logger } from "./lib/logger";
 import { Member, GroupEvent, PhotoApprovalRequest } from "./types";
 import { AppStateManager } from "./services/storage";
 import { fetchMembers, fetchEvents, fetchApprovals, fetchVisitMetrics } from "./services/apiClient";
-import { FirebaseSyncManager, triggerGoogleAdminSignIn } from "./services/firebaseService";
+import { FirebaseSyncManager, FirebaseService, triggerGoogleAdminSignIn } from "./services/firebaseService";
 import { ChevronUp } from "lucide-react";
 import { ViewSkeleton } from "./components/ui/Skeleton";
 import { NetworkStatusBanner } from "./components/NetworkStatusBanner";
@@ -148,19 +148,32 @@ export default function App() {
     attemptSync();
   };
 
-  // Fetch real-time visit metrics from backend on load/login
+  // Fetch real-time visit metrics and record genuine session
   useEffect(() => {
-    async function updateVisitMetrics() {
-      try {
-        const metrics = await fetchVisitMetrics();
-        setTotalVisits(metrics.totalVisits);
+    // 1. Record authentic session visit (deduplicated by 30-minute window)
+    FirebaseService.recordSessionVisit().then((visits) => {
+      if (visits > 0) setTotalVisits(visits);
+    });
+
+    // 2. Real-time synchronized subscription across all active clients
+    const unsubscribe = FirebaseService.subscribeVisitMetrics((liveVisits) => {
+      setTotalVisits(liveVisits);
+    });
+
+    // 3. Backend fallback sync
+    fetchVisitMetrics()
+      .then((metrics) => {
+        if (metrics.totalVisits > 0) {
+          setTotalVisits((prev) => Math.max(prev, metrics.totalVisits));
+        }
         setLastVisitTimestamp(metrics.lastVisitTimestamp);
         setLatestUniqueUser(metrics.latestUniqueUser);
-      } catch (err) {
-        logger.warn("Failed to fetch visit metrics from backend, using baseline", { error: err });
-      }
-    }
-    updateVisitMetrics();
+      })
+      .catch((err) => logger.warn("Failed to fetch visit metrics from backend", { error: err }));
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [currentUser?.id]);
 
   // Modals state
