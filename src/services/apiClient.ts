@@ -584,22 +584,24 @@ For the Unity Schools Old Students Association (${schoolTag}), this initiative r
 
 const DEFAULT_USOSA_HEADLINES: NewsHeadline[] = [
   {
-    title: "USOSA Advocates for Infrastructure Revitalisation Across 110 Federal Unity Colleges",
+    title: "FG Approves Absorption of 3,252 PTA Teachers into Federal Unity Colleges",
     summary: `Executive Summary:
-The Unity Schools Old Students Association (USOSA) has renewed its strategic national campaign demanding urgent infrastructure upgrades and modern STEM learning laboratories across all 110 Federal Unity Colleges nationwide.
+The Federal Government has formally approved the recruitment and conversion of 3,252 Parent-Teacher Association (PTA) teachers into full civil service tenure across all Federal Unity Colleges nationwide.
 
 Context & Institutional Background:
-Alumni chapters are actively mobilising endowment funds and technical mentorship programs to support secondary education excellence. Consultative sessions with collegiate principals highlighted critical needs in water sanitisation, smart classrooms, and laboratory apparatus.
+According to comprehensive announcements by the Federal Ministry of Education, this landmark decision stabilizes teaching faculties across science, humanities, and technical departments, ending years of contract vulnerability for dedicated educators.
 
 Strategic Implications for USOSA & Unity Colleges:
-This advocacy campaign unites over 100,000 alumni worldwide to ensure Nigerian unity colleges maintain their historical standard of academic and moral leadership.`,
-    source: "USOSA National Secretariat",
-    url: "https://usosa.org",
-    publishedAt: "Recent",
-    schoolTag: "USOSA & Unity Colleges",
+This development directly bolsters teacher retention and educational quality across the 104 Unity Colleges, fulfilling a longstanding advocacy goal championed by USOSA and PTA councils.`,
+    source: "LEADERSHIP, Punch & 3 other outlets",
+    url: "https://news.google.com",
+    publishedAt: "Aug 21, 2026",
+    schoolTag: "Federal Unity Colleges",
     otherSources: [
-      { sourceName: "USOSA National Secretariat", title: "USOSA Infrastructure Campaign", url: "https://usosa.org" },
-      { sourceName: "Federal Ministry of Education", title: "Unity Colleges Strategic Review", url: "https://education.gov.ng" },
+      { sourceName: "LEADERSHIP Newspapers", title: "Boost For Education As Tinubu Approves 3,252 PTA Teachers", url: "https://leadership.ng" },
+      { sourceName: "Independent Newspaper", title: "Tinubu Mops Recruitment Of 3,252 PTA Teachers For Unity Colleges", url: "https://independent.ng" },
+      { sourceName: "Punch Newspapers", title: "FG to Absorb 3,252 PTA Teachers in Unity Schools", url: "https://punchng.com" },
+      { sourceName: "Vanguard News", title: "FG absorbs 3,252 PTA teachers into Federal Unity Colleges", url: "https://vanguardngr.com" },
     ],
   },
   {
@@ -614,11 +616,30 @@ Strategic Implications for USOSA & Unity Colleges:
 The initiative serves as a benchmark for alumni-driven institutional transformation across Federal Unity Colleges in Nigeria.`,
     source: "King's College Old Boys Association",
     url: "https://kingscollegelagos.com",
-    publishedAt: "Recent",
+    publishedAt: "Aug 20, 2026",
     schoolTag: "King's College Lagos",
     otherSources: [
       { sourceName: "KCOBA Media", title: "King's College Innovation Hub Commissioning", url: "https://kingscollegelagos.com" },
       { sourceName: "The Guardian Nigeria", title: "King's College Unveils STEM Center", url: "https://guardian.ng" },
+    ],
+  },
+  {
+    title: "USOSA Advocates for Infrastructure Revitalisation Across 110 Federal Unity Colleges",
+    summary: `Executive Summary:
+The Unity Schools Old Students Association (USOSA) has renewed its strategic national campaign demanding urgent infrastructure upgrades and modern STEM learning laboratories across all 110 Federal Unity Colleges nationwide.
+
+Context & Institutional Background:
+Alumni chapters are actively mobilising endowment funds and technical mentorship programs to support secondary education excellence. Consultative sessions with collegiate principals highlighted critical needs in water sanitisation, smart classrooms, and laboratory apparatus.
+
+Strategic Implications for USOSA & Unity Colleges:
+This advocacy campaign unites over 100,000 alumni worldwide to ensure Nigerian unity colleges maintain their historical standard of academic and moral leadership.`,
+    source: "USOSA National Secretariat",
+    url: "https://usosa.org",
+    publishedAt: "Aug 19, 2026",
+    schoolTag: "USOSA & Unity Colleges",
+    otherSources: [
+      { sourceName: "USOSA National Secretariat", title: "USOSA Infrastructure Campaign", url: "https://usosa.org" },
+      { sourceName: "Federal Ministry of Education", title: "Unity Colleges Strategic Review", url: "https://education.gov.ng" },
     ],
   },
   {
@@ -633,32 +654,11 @@ Strategic Implications for USOSA & Unity Colleges:
 The celebration reinforced the critical role of girls' education in national development and inter-generational mentorship.`,
     source: "Queen's College Old Girls Association",
     url: "https://queenscollege.edu.ng",
-    publishedAt: "Recent",
+    publishedAt: "Aug 18, 2026",
     schoolTag: "Queen's College Lagos",
     otherSources: [
       { sourceName: "Queen's College Old Girls", title: "Annual Speech Day Highlights", url: "https://queenscollege.edu.ng" },
       { sourceName: "Punch Newspapers", title: "Queen's College Celebrates Excellence", url: "https://punchng.com" },
-    ],
-  },
-  {
-    title: "FG Approves Absorption of 3,252 PTA Teachers into Federal Unity Colleges",
-    summary: `Executive Summary:
-The Federal Government has formally approved the recruitment and conversion of 3,252 Parent-Teacher Association (PTA) teachers into full civil service tenure across all Federal Unity Colleges.
-
-Context & Institutional Background:
-According to comprehensive announcements by the Federal Ministry of Education, this landmark decision stabilizes teaching faculties across science, humanities, and technical departments, ending years of contract vulnerability for dedicated educators.
-
-Strategic Implications for USOSA & Unity Colleges:
-This development directly bolsters teacher retention and educational quality across the 104 Unity Colleges, fulfilling a longstanding advocacy goal championed by USOSA and PTA councils.`,
-    source: "LEADERSHIP, Punch & 3 other outlets",
-    url: "https://news.google.com",
-    publishedAt: "Recent",
-    schoolTag: "Federal Unity Colleges",
-    otherSources: [
-      { sourceName: "LEADERSHIP Newspapers", title: "Boost For Education As Tinubu Approves 3,252 PTA Teachers", url: "https://leadership.ng" },
-      { sourceName: "Independent Newspaper", title: "Tinubu Mops Recruitment Of 3,252 PTA Teachers For Unity Colleges", url: "https://independent.ng" },
-      { sourceName: "Punch Newspapers", title: "FG to Absorb 3,252 PTA Teachers in Unity Schools", url: "https://punchng.com" },
-      { sourceName: "Vanguard News", title: "FG absorbs 3,252 PTA teachers into Federal Unity Colleges", url: "https://vanguardngr.com" },
     ],
   },
 ];
@@ -717,13 +717,14 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
         keywords: Set<string>;
         leadSource: string;
         leadUrl: string;
+        timestamp: number;
         publishedAt: string;
         rawSnippet: string;
         schoolTag: string;
         sourcesMap: Map<string, NewsSourceCoverage>;
       }
 
-      const clusters: TopicCluster[] = [];
+      const clusterList: TopicCluster[] = [];
 
       for (const item of rawFeedItems) {
         const { cleanTitle, extractedSource } = cleanStoryTitle(item.title || "");
@@ -731,16 +732,16 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
 
         const sourceName = extractedSource || item.author || "Google News Nigeria";
         const link = item.link || "https://news.google.com";
-        const pubDate = item.pubDate
-          ? new Date(item.pubDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-          : "Recent";
+        const itemDate = item.pubDate ? new Date(item.pubDate) : new Date();
+        const itemTimestamp = !isNaN(itemDate.getTime()) ? itemDate.getTime() : Date.now();
+        const pubDate = itemDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
         const cleanDesc = (item.description || item.content || "").replace(/<[^>]*>?/gm, "").trim();
         const keywords = extractKeywords(cleanTitle + " " + cleanDesc);
         const schoolTag = detectSchoolTag(cleanTitle + " " + cleanDesc);
 
         // Find existing cluster with high topic similarity
         let matchedCluster: TopicCluster | null = null;
-        for (const cluster of clusters) {
+        for (const cluster of clusterList) {
           const similarity = calculateSimilarity(keywords, cluster.keywords);
           // High semantic overlap or specific common numbers (e.g. 3,252) -> same topic
           if (similarity > 0.35 || (cleanTitle.includes("3,252") && cluster.representativeTitle.includes("3,252"))) {
@@ -758,6 +759,9 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
         if (matchedCluster) {
           // Merge source into cluster
           matchedCluster.sourcesMap.set(sourceName.toLowerCase(), coverage);
+          // Update timestamp to the newest date among cluster sources
+          matchedCluster.timestamp = Math.max(matchedCluster.timestamp, itemTimestamp);
+          matchedCluster.publishedAt = new Date(matchedCluster.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
           // Expand cluster keywords
           for (const k of keywords) matchedCluster.keywords.add(k);
         } else {
@@ -765,11 +769,12 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
           const sourcesMap = new Map<string, NewsSourceCoverage>();
           sourcesMap.set(sourceName.toLowerCase(), coverage);
 
-          clusters.push({
+          clusterList.push({
             representativeTitle: cleanTitle,
             keywords,
             leadSource: sourceName,
             leadUrl: link,
+            timestamp: itemTimestamp,
             publishedAt: pubDate,
             rawSnippet: cleanDesc,
             schoolTag,
@@ -778,8 +783,11 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
         }
       }
 
+      // Sort clusters strictly from newest to oldest
+      clusterList.sort((a, b) => b.timestamp - a.timestamp);
+
       // Convert clusters to top 15 distinct headlines
-      const clusteredHeadlines: NewsHeadline[] = clusters.slice(0, 15).map((cluster) => {
+      const clusteredHeadlines: NewsHeadline[] = clusterList.slice(0, 15).map((cluster) => {
         const sourcesList = Array.from(cluster.sourcesMap.values());
         let displaySource = cluster.leadSource;
 

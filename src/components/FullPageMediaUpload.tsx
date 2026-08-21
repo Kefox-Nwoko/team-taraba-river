@@ -55,6 +55,8 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   );
   const [selectedFolderId, setSelectedFolderId] = useState<string>(initialFolderId || (events && events.length > 0 ? events[0].id : ""));
   const [newFolderTitle, setNewFolderTitle] = useState("");
+  const [newDate, setNewDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [newCategory, setNewCategory] = useState<GroupEvent["category"]>("cleanup");
   const [newLocation, setNewLocation] = useState("");
   const [newDescription, setNewDescription] = useState("");
 
@@ -68,13 +70,16 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const formatDateLabel = (dateStr: string) => {
+  const formatDateLabel = (dateStr?: string) => {
+    if (!dateStr) return "Select Date";
     try {
-      const [year, month, day] = dateStr.split("-");
+      const parts = dateStr.split("-");
+      if (parts.length < 3) return dateStr;
+      const [year, month, day] = parts;
       const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
       return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     } catch {
-      return dateStr;
+      return dateStr || "Select Date";
     }
   };
 

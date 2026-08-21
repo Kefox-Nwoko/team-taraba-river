@@ -49,6 +49,17 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
   const isAdmin = currentUser?.role === "admin";
   const userReadStorageKey = `usosa_news_read_v1_${currentUser?.id || "guest"}`;
 
+  const sortedHeadlines = useMemo(() => {
+    return [...headlines].sort((a, b) => {
+      const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+      const dateB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+      if (!isNaN(dateA) && !isNaN(dateB) && dateA !== dateB) {
+        return dateB - dateA;
+      }
+      return 0;
+    });
+  }, [headlines]);
+
   // Track read article IDs per member
   const [readArticleKeys, setReadArticleKeys] = useState<Set<string>>(() => {
     try {
@@ -258,7 +269,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
             )}
 
             {!newsLoading &&
-              headlines.map((h, idx) => {
+              sortedHeadlines.map((h, idx) => {
                 const articleKey = (h.url || h.title).trim();
                 const isUnread = !isAdmin && !readArticleKeys.has(articleKey);
 
