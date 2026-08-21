@@ -115,8 +115,8 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             </p>
           </div>
 
-          {/* Metric Section - Centered and grouped closer together away from edges, 70% bigger */}
-          <div className="flex items-center justify-center sm:justify-start gap-8 sm:gap-14 md:gap-20 font-normal w-full py-2">
+          {/* Metric Section - Centered with +10px spacing, 70% bigger */}
+          <div className="flex items-center justify-center sm:justify-start gap-[42px] sm:gap-[66px] md:gap-[90px] font-normal w-full py-2">
             {/* Card 1: Registered */}
             <div className="flex flex-col items-center justify-center text-center space-y-1.5 font-normal min-w-0">
               <div className="flex flex-col items-center justify-center space-y-2">
