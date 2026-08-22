@@ -8,6 +8,7 @@ import { auth } from "../lib/firebase";
 import { logger } from "../lib/logger";
 import { FirebaseSyncManager } from "./firebaseService";
 import { AppStateManager } from "./storage";
+import { isMemberCredentialMatch } from "../lib/authMatching";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
@@ -80,52 +81,8 @@ export async function loginMember(
   } catch {}
 
   // Step 2: Direct Firestore search fallback
-  const norm = credential.trim().toLowerCase();
-  const cleanDigits = norm.replace(/\D/g, "");
-
   const members = await FirebaseSyncManager.seedCSVDataIfNeeded();
-  const matched = members.find((m) => {
-    // 1. Email match
-    if (m.email && m.email.trim().toLowerCase() === norm) return true;
-    // 2. ID match
-    if (m.id && m.id.trim().toLowerCase() === norm) return true;
-    // 3. Phone / WhatsApp match (Handles +234, 080..., 80..., spaces, dashes)
-    if (cleanDigits.length >= 7) {
-      const mPhoneDigits = (m.phoneNumber || "").replace(/\D/g, "");
-      const mWaDigits = (m.whatsappNumber || "").replace(/\D/g, "");
-      const searchLast10 = cleanDigits.slice(-10);
-      const searchLast9 = cleanDigits.slice(-9);
-      const searchLast8 = cleanDigits.slice(-8);
-
-      if (mPhoneDigits.length >= 7) {
-        if (mPhoneDigits === cleanDigits) return true;
-        if (mPhoneDigits.slice(-10) === searchLast10) return true;
-        if (mPhoneDigits.slice(-9) === searchLast9) return true;
-        if (mPhoneDigits.slice(-8) === searchLast8) return true;
-        if (mPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(mPhoneDigits)) return true;
-      }
-      if (mWaDigits.length >= 7) {
-        if (mWaDigits === cleanDigits) return true;
-        if (mWaDigits.slice(-10) === searchLast10) return true;
-        if (mWaDigits.slice(-9) === searchLast9) return true;
-        if (mWaDigits.slice(-8) === searchLast8) return true;
-        if (mWaDigits.endsWith(cleanDigits) || cleanDigits.endsWith(mWaDigits)) return true;
-      }
-    }
-    // 4. Name match (full name, first name, surname, or name tokens)
-    const fullNameLower = (m.fullName || "").trim().toLowerCase();
-    const firstNameLower = (m.firstName || "").trim().toLowerCase();
-    const surnameLower = (m.surname || "").trim().toLowerCase();
-    if (fullNameLower && fullNameLower === norm) return true;
-    if (firstNameLower && firstNameLower === norm) return true;
-    if (surnameLower && surnameLower === norm) return true;
-    if (norm.length >= 3) {
-      if (fullNameLower && (fullNameLower.includes(norm) || norm.includes(fullNameLower))) return true;
-      const tokens = fullNameLower.split(/\s+/);
-      if (tokens.some((t) => t.length >= 3 && (t === norm || t.startsWith(norm) || norm.startsWith(t)))) return true;
-    }
-    return false;
-  });
+  const matched = members.find((m) => isMemberCredentialMatch(m, credential));
 
   if (matched) {
     return { member: matched };

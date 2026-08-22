@@ -1,5 +1,6 @@
 import { Member, GroupEvent, PhotoApprovalRequest, ActivityLog } from "../types";
 import { clientConfig } from "../lib/config";
+import { isMemberCredentialMatch } from "../lib/authMatching";
 const LOCAL_STORAGE_KEY_MEMBERS = "taraba_river_members_v6_csv_db";
 const LOCAL_STORAGE_KEY_EVENTS = "taraba_river_events_v1";
 const LOCAL_STORAGE_KEY_APPROVALS = "taraba_river_approvals_v1";
@@ -170,45 +171,24 @@ export class AppStateManager {
     localStorage.setItem(LOCAL_STORAGE_KEY_LOGS, JSON.stringify(logs.slice(0, 50)));
     this.notify();
   }
-  /** * Look up matching member in database by ID, email, or phone number. */
+  /** * Look up matching member in database by ID, email, phone number, or credential object. */
   public static findMatchingMember(
     target: Partial<Member> | string | null | undefined
   ): Member | null {
     if (!target) return null;
     const members = this.getMembers();
 
-    let searchId = "";
-    let searchEmail = "";
-    let searchPhoneLast10 = "";
-
     if (typeof target === "string") {
-      const input = target.trim().toLowerCase();
-      searchEmail = input;
-      searchId = target;
-      const digits = input.replace(/\D/g, "");
-      if (digits.length >= 7) {
-        searchPhoneLast10 = digits.slice(-10);
-      }
-    } else {
-      if (target.id) searchId = target.id;
-      if (target.email) searchEmail = target.email.trim().toLowerCase();
-      const rawPhone = target.phoneNumber || target.whatsappNumber || "";
-      const digits = rawPhone.replace(/\D/g, "");
-      if (digits.length >= 7) {
-        searchPhoneLast10 = digits.slice(-10);
-      }
+      return members.find((m) => isMemberCredentialMatch(m, target)) || null;
     }
 
     return (
       members.find((m) => {
-        if (searchId && m.id === searchId) return true;
-        if (searchEmail && m.email && m.email.trim().toLowerCase() === searchEmail) return true;
-        if (searchPhoneLast10) {
-          const mPhoneDigits = (m.phoneNumber || "").replace(/\D/g, "");
-          const mWhatsappDigits = (m.whatsappNumber || "").replace(/\D/g, "");
-          if (mPhoneDigits.length >= 7 && mPhoneDigits.slice(-10) === searchPhoneLast10) return true;
-          if (mWhatsappDigits.length >= 7 && mWhatsappDigits.slice(-10) === searchPhoneLast10) return true;
-        }
+        if (target.id && m.id === target.id) return true;
+        if (target.email && m.email && m.email.trim().toLowerCase() === target.email.trim().toLowerCase()) return true;
+        if (target.phoneNumber && isMemberCredentialMatch(m, target.phoneNumber)) return true;
+        if (target.whatsappNumber && isMemberCredentialMatch(m, target.whatsappNumber)) return true;
+        if (target.fullName && isMemberCredentialMatch(m, target.fullName)) return true;
         return false;
       }) || null
     );
