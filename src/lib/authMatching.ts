@@ -17,15 +17,25 @@ export function isMemberCredentialMatch(
   rawInput: string
 ): boolean {
   if (!m || !rawInput) return false;
-  const input = rawInput.trim().replace(/[\u00A0\u200B-\u200D\uFEFF]/g, "");
+  // Clean zero-width, non-breaking spaces, and quotes
+  let input = rawInput.trim().replace(/[\u00A0\u200B-\u200D\uFEFF]/g, "");
+  input = input.replace(/^['"]+|['"]+$/g, "").trim();
   if (!input) return false;
   const norm = input.toLowerCase();
 
-  // 1. Email match
-  if (m.email && m.email.trim().toLowerCase() === norm) return true;
+  // 1. Email match (exact or whitespace-stripped)
+  if (m.email) {
+    const mEmailNorm = m.email.trim().toLowerCase();
+    if (mEmailNorm === norm) return true;
+    if (mEmailNorm.replace(/\s+/g, "") === norm.replace(/\s+/g, "")) return true;
+  }
 
   // 2. Member ID match
-  if (m.id && m.id.trim().toLowerCase() === norm) return true;
+  if (m.id) {
+    const mIdNorm = m.id.trim().toLowerCase();
+    if (mIdNorm === norm) return true;
+    if (m.id === input) return true;
+  }
 
   // 3. Extract clean digits from input
   const cleanDigits = norm.replace(/\D/g, "");
