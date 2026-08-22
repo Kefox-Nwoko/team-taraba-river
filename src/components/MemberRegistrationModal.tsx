@@ -21,8 +21,10 @@ import {
   AlertCircle,
   ArrowLeft,
   Upload,
+  Ruler,
 } from "lucide-react";
 import { MemberAvatar, getMemberInitials } from "./MemberAvatar";
+import { TShirtSizeGuideModal } from "./TShirtSizeGuideModal";
 
 interface MemberRegistrationModalProps {
   isOpen: boolean;
@@ -105,6 +107,7 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [isSizeGuideOpen, setIsSizeGuideOpen] = useState(false);
 
   if (!isOpen) return null;
 
@@ -282,9 +285,21 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                         key={field.key}
                         className={field.type === "textarea" ? "sm:col-span-2 lg:col-span-3" : ""}
                       >
-                        <label className="block text-sm text-slate-800 dark:text-slate-200 mb-1 font-normal">
-                          {field.label} {field.required && <span className="text-red-500">*</span>}
-                        </label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-sm text-slate-800 dark:text-slate-200 font-normal">
+                            {field.label} {field.required && <span className="text-red-500">*</span>}
+                          </label>
+                          {field.key === "jerseySize" && (
+                            <button
+                              type="button"
+                              onClick={() => setIsSizeGuideOpen(true)}
+                              className="text-xs font-semibold text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 flex items-center gap-1 hover:underline cursor-pointer bg-teal-50 dark:bg-teal-950/60 px-2.5 py-1 rounded-lg border border-teal-200 dark:border-teal-800/60 transition"
+                            >
+                              <Ruler className="w-3.5 h-3.5" />
+                              <span>📐 View Size Chart</span>
+                            </button>
+                          )}
+                        </div>
                         {field.type === "select" ? (
                           <select
                             required={field.required}
@@ -293,11 +308,34 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                             className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm font-normal"
                           >
                             <option value="">-- {field.placeholder || "Select option"} --</option>
-                            {field.options?.map((opt) => (
-                              <option key={opt} value={opt}>
-                                {opt}
-                              </option>
-                            ))}
+                            {field.key === "jerseySize" ? (
+                              <>
+                                <optgroup label="── 🇳🇬 ASIAN SIZING (Nigerian Local Markets) ──">
+                                  {field.options
+                                    ?.filter((opt) => opt.startsWith("Asian"))
+                                    .map((opt) => (
+                                      <option key={opt} value={opt}>
+                                        {opt}
+                                      </option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="── 🇺🇸 AMERICAN / UK SIZING (US Brands) ──">
+                                  {field.options
+                                    ?.filter((opt) => opt.startsWith("US"))
+                                    .map((opt) => (
+                                      <option key={opt} value={opt}>
+                                        {opt}
+                                      </option>
+                                    ))}
+                                </optgroup>
+                              </>
+                            ) : (
+                              field.options?.map((opt) => (
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
+                              ))
+                            )}
                           </select>
                         ) : field.type === "textarea" ? (
                           <textarea
@@ -391,6 +429,13 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
           </div>
         </form>
       </div>
+
+      <TShirtSizeGuideModal
+        isOpen={isSizeGuideOpen}
+        onClose={() => setIsSizeGuideOpen(false)}
+        selectedSize={formData.jerseySize}
+        onSelectSize={(sz) => handleFieldChange("jerseySize", sz)}
+      />
     </div>
   );
 };

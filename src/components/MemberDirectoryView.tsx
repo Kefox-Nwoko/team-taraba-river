@@ -20,6 +20,7 @@ import {
   Shirt,
   Award,
   Sparkles,
+  FileSpreadsheet,
 } from "lucide-react";
 
 interface MemberDirectoryViewProps {
@@ -173,6 +174,88 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
     return () => clearTimeout(timer);
   }, [searchTerm, isAdmin]);
 
+  const handleExportToExcel = () => {
+    if (!members || members.length === 0) {
+      alert("No member records available to export.");
+      return;
+    }
+
+    const headers = [
+      "Member ID",
+      "Title",
+      "Full Name",
+      "First Name",
+      "Surname",
+      "Birthday",
+      "Jersey / T-Shirt Size",
+      "Email Address",
+      "Phone Number",
+      "WhatsApp Number",
+      "Unity School / High School",
+      "Grad / Set Year",
+      "Occupation / Profession",
+      "Skills & Expertise",
+      "Estate / Housing Layout",
+      "Area / District",
+      "Other Area / Landmark",
+      "Street Name",
+      "Next of Kin Name",
+      "Next of Kin Phone",
+      "Closest Neighbor Name",
+      "Closest Neighbor Phone",
+      "Activity Points",
+      "Role",
+      "Registration Date"
+    ];
+
+    const escapeCsv = (val: any): string => {
+      if (val === null || val === undefined) return '""';
+      let str = Array.isArray(val) ? val.join("; ") : String(val);
+      str = str.replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const rows = members.map((m) => [
+      escapeCsv(m.id),
+      escapeCsv(m.title || ""),
+      escapeCsv(m.fullName || ""),
+      escapeCsv(m.firstName || ""),
+      escapeCsv(m.surname || ""),
+      escapeCsv(m.dateOfBirth || ""),
+      escapeCsv(m.jerseySize || ""),
+      escapeCsv(m.email || ""),
+      escapeCsv(m.phoneNumber || ""),
+      escapeCsv(m.whatsappNumber || ""),
+      escapeCsv(m.schoolName || ""),
+      escapeCsv(m.gradYear || ""),
+      escapeCsv(m.occupation || ""),
+      escapeCsv(m.skills || ""),
+      escapeCsv(m.estateName || ""),
+      escapeCsv(m.area || ""),
+      escapeCsv(m.otherArea || ""),
+      escapeCsv(m.streetName || ""),
+      escapeCsv(m.nextOfKinName || ""),
+      escapeCsv(m.nextOfKinPhone || ""),
+      escapeCsv(m.closestNeighborName || ""),
+      escapeCsv(m.closestNeighborPhone || ""),
+      escapeCsv(m.activityPoints || 0),
+      escapeCsv(m.role || "member"),
+      escapeCsv(m.createdAt || "")
+    ]);
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    const dateStr = new Date().toISOString().split("T")[0];
+    link.setAttribute("download", `URIP_Member_Database_${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   if (!isAdmin) {
     const myProfile = currentUser || members[0];
     const formattedMyName = myProfile ? formatMemberName(myProfile.title, myProfile.fullName) : "";
@@ -269,7 +352,7 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
     <div className="space-y-6 font-sans font-normal">
       {/* Sticky Filter Bar - Pinned below the fixed Navbar when scrolling for seamless access */}
       <div className="sticky top-[80px] sm:top-[92px] z-40 bg-white/95 dark:bg-[#121212]/95 backdrop-blur-xl pt-3 pb-4 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200 dark:border-slate-800 transition-colors shadow-xs font-normal">
-        <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
+        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
           <form onSubmit={handleSearchSubmit} className="relative flex-1">
             <Search className="w-6 h-6 text-slate-400 absolute left-4 top-3.5" />
             <input
@@ -285,6 +368,18 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
               </div>
             )}
           </form>
+
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleExportToExcel}
+              className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-semibold rounded-2xl transition shadow-sm flex items-center justify-center space-x-2 shrink-0 cursor-pointer"
+              title="Download full member database as Microsoft Excel CSV"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Export to Excel (.csv)</span>
+            </button>
+          )}
         </div>
         <div className="flex items-center justify-between text-xs sm:text-sm text-slate-500 dark:text-slate-400 pt-2.5 border-t border-slate-200/60 dark:border-slate-800/60 font-normal mt-2.5">
           <span>
