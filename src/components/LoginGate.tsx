@@ -58,19 +58,40 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     try {
       const norm = credential.trim().toLowerCase();
       const cleanDigits = norm.replace(/\D/g, "");
-      const membersList = availableMembers.length > 0 ? availableMembers : AppStateManager.getMembers();
+      let membersList = availableMembers.length > 0 ? availableMembers : AppStateManager.getMembers();
+      if (membersList.length === 0) {
+        try {
+          membersList = await FirebaseSyncManager.seedCSVDataIfNeeded();
+        } catch {}
+      }
 
       const matchFn = (m: Member): boolean => {
         // 1. Email match
         if (m.email && m.email.trim().toLowerCase() === norm) return true;
         // 2. ID match
         if (m.id && m.id.trim().toLowerCase() === norm) return true;
-        // 3. Phone / WhatsApp match
-        const mPhoneDigits = (m.phoneNumber || "").replace(/\D/g, "");
-        const mWaDigits = (m.whatsappNumber || "").replace(/\D/g, "");
-        if (cleanDigits.length >= 6) {
-          if (mPhoneDigits && (mPhoneDigits === cleanDigits || mPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(mPhoneDigits))) return true;
-          if (mWaDigits && (mWaDigits === cleanDigits || mWaDigits.endsWith(cleanDigits) || cleanDigits.endsWith(mWaDigits))) return true;
+        // 3. Phone / WhatsApp match (Handles +234, 080..., 80..., spaces, dashes)
+        if (cleanDigits.length >= 7) {
+          const mPhoneDigits = (m.phoneNumber || "").replace(/\D/g, "");
+          const mWaDigits = (m.whatsappNumber || "").replace(/\D/g, "");
+          const searchLast10 = cleanDigits.slice(-10);
+          const searchLast9 = cleanDigits.slice(-9);
+          const searchLast8 = cleanDigits.slice(-8);
+
+          if (mPhoneDigits.length >= 7) {
+            if (mPhoneDigits === cleanDigits) return true;
+            if (mPhoneDigits.slice(-10) === searchLast10) return true;
+            if (mPhoneDigits.slice(-9) === searchLast9) return true;
+            if (mPhoneDigits.slice(-8) === searchLast8) return true;
+            if (mPhoneDigits.endsWith(cleanDigits) || cleanDigits.endsWith(mPhoneDigits)) return true;
+          }
+          if (mWaDigits.length >= 7) {
+            if (mWaDigits === cleanDigits) return true;
+            if (mWaDigits.slice(-10) === searchLast10) return true;
+            if (mWaDigits.slice(-9) === searchLast9) return true;
+            if (mWaDigits.slice(-8) === searchLast8) return true;
+            if (mWaDigits.endsWith(cleanDigits) || cleanDigits.endsWith(mWaDigits)) return true;
+          }
         }
         // 4. Name match (full name, first name, surname, or tokens)
         const fullNameLower = (m.fullName || "").trim().toLowerCase();

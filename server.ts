@@ -576,23 +576,53 @@ app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => 
       memberDocId = emailQuery.docs[0].id;
     } else {
       // 2. Fast check against fallback members list in memory
+      const inputDigits = cleanInput.replace(/\D/g, '');
       const matchedLocal = fallbackMembers.find(m => {
         const mEmail = (m.email || '').trim().toLowerCase();
-        const mPhone = (m.phoneNumber || '').replace(/\s/g, '');
-        const mWhatsapp = (m.whatsappNumber || '').replace(/\s/g, '');
-        return mEmail === normalized || (cleanInput.length >= 6 && (mPhone === cleanInput || mWhatsapp === cleanInput));
+        const mPhoneDigits = (m.phoneNumber || '').replace(/\D/g, '');
+        const mWaDigits = (m.whatsappNumber || '').replace(/\D/g, '');
+        if (mEmail === normalized) return true;
+        if (inputDigits.length >= 7) {
+          const s10 = inputDigits.slice(-10);
+          const s9 = inputDigits.slice(-9);
+          const s8 = inputDigits.slice(-8);
+          if (mPhoneDigits.length >= 7 && (mPhoneDigits === inputDigits || mPhoneDigits.slice(-10) === s10 || mPhoneDigits.slice(-9) === s9 || mPhoneDigits.slice(-8) === s8)) return true;
+          if (mWaDigits.length >= 7 && (mWaDigits === inputDigits || mWaDigits.slice(-10) === s10 || mWaDigits.slice(-9) === s9 || mWaDigits.slice(-8) === s8)) return true;
+        }
+        return false;
       });
 
       if (matchedLocal) {
         memberData = matchedLocal;
         memberDocId = matchedLocal.id;
       } else {
-        // 3. Query phone numbers indexed in Firestore
-        const phoneQuery = await db.collection(COLLECTIONS.members)
-          .where('phoneNumber', '==', credential.trim()).limit(1).get();
-        if (!phoneQuery.empty) {
-          memberData = phoneQuery.docs[0].data() as Member;
-          memberDocId = phoneQuery.docs[0].id;
+        // 3. Query all members in Firestore and match with flexible phone formats
+        const allMembersSnap = await db.collection(COLLECTIONS.members).get();
+        for (const d of allMembersSnap.docs) {
+          const m = d.data() as Member;
+          const mEmail = (m.email || '').trim().toLowerCase();
+          const mPhoneDigits = (m.phoneNumber || '').replace(/\D/g, '');
+          const mWaDigits = (m.whatsappNumber || '').replace(/\D/g, '');
+          if (mEmail === normalized) {
+            memberData = m;
+            memberDocId = d.id;
+            break;
+          }
+          if (inputDigits.length >= 7) {
+            const s10 = inputDigits.slice(-10);
+            const s9 = inputDigits.slice(-9);
+            const s8 = inputDigits.slice(-8);
+            if (mPhoneDigits.length >= 7 && (mPhoneDigits === inputDigits || mPhoneDigits.slice(-10) === s10 || mPhoneDigits.slice(-9) === s9 || mPhoneDigits.slice(-8) === s8)) {
+              memberData = m;
+              memberDocId = d.id;
+              break;
+            }
+            if (mWaDigits.length >= 7 && (mWaDigits === inputDigits || mWaDigits.slice(-10) === s10 || mWaDigits.slice(-9) === s9 || mWaDigits.slice(-8) === s8)) {
+              memberData = m;
+              memberDocId = d.id;
+              break;
+            }
+          }
         }
       }
     }
