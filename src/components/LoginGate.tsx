@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Member } from "../types";
 import { loginMember } from "../services/apiClient";
-import { signInWithCustomToken } from "../services/firebaseService";
+import { signInWithCustomToken, triggerGoogleAdminSignIn, FirebaseSyncManager } from "../services/firebaseService";
 import { AppStateManager } from "../services/storage";
-import { triggerGoogleAdminSignIn } from "../services/firebaseService";
 import { LogIn, UserPlus, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck } from "lucide-react";
 import { BRAND_LOGO, LOGIN_WALL_BG } from "../constants/assets";
 import { clientConfig } from "../lib/config";
