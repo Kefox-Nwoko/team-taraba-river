@@ -44,8 +44,26 @@ const authUrl = oauth2Client.generateAuthUrl({
   scope: scopes,
 });
 
-console.log('Step 1: Open this authorization link in your web browser:\n');
+console.log('------------------------------------------------------');
+console.log('Method 1: Direct Local Authorization');
+console.log('------------------------------------------------------');
+console.log('If you see "Error 400: redirect_uri_mismatch":');
+console.log('1. Go to Google Cloud Console: https://console.cloud.google.com/apis/credentials');
+console.log('2. Click your OAuth 2.0 Client ID.');
+console.log('3. Under "Authorized redirect URIs", add:');
+console.log('   http://localhost:3000/oauth2callback');
+console.log('   https://developers.google.com/oauthplayground');
+console.log('4. Click Save, then open this authorization link in your browser:\n');
 console.log('\x1b[36m' + authUrl + '\x1b[0m\n');
-console.log('Step 2: Sign in with the Google Account that manages the YouTube channel.');
-console.log('Step 3: Click Allow. Once complete, copy the generated REFRESH TOKEN and add it to your .env:\n');
+
+console.log('------------------------------------------------------');
+console.log('Method 2: Google OAuth Playground (Instant - 30 Seconds)');
+console.log('------------------------------------------------------');
+console.log('1. Open: https://developers.google.com/oauthplayground/');
+console.log('2. Click the Gear icon ⚙️ (top right), check "Use your own OAuth credentials", and enter your Client ID & Secret.');
+console.log('3. In the left list, find "YouTube Data API v3" -> select "https://www.googleapis.com/auth/youtube.upload".');
+console.log('4. Click "Authorize APIs", sign in with your YouTube account, and click Allow.');
+console.log('5. Click "Exchange authorization code for tokens", then copy the "Refresh token".\n');
+console.log('Finally, add to your .env:');
 console.log('YOUTUBE_REFRESH_TOKEN=your_refresh_token_here\n');
+
