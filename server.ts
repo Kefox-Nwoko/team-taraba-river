@@ -27,7 +27,7 @@ import {
   MediaUploadSchema,
   MediaFinalizeSchema,
 } from "./server/validation";
-import { uploadIntermediateMedia, finalizeMedia, getMediaStatus } from "./server/mediaPipeline";
+import { uploadIntermediateMedia, finalizeMedia, getMediaStatus, uploadVideoBufferToYouTube, base64ToBuffer } from "./server/mediaPipeline";
 import { isMemberCredentialMatch } from "./src/lib/authMatching";
 import { CSV_SEED_MEMBERS } from "./src/data/csvMembers";
 
@@ -2580,6 +2580,92 @@ app.post("/api/ai-xplora", async (req: Request, res: Response) => {
     });
   }
 });
+
+// ===================================================================
+//  Automated YouTube Upload & OAuth2 Bridge Pipeline
+// ===================================================================
+app.post("/api/media/upload-video-to-youtube", async (req: Request, res: Response) => {
+  try {
+    const { base64Data, fileName, folderName, mimeType } = req.body || {};
+
+    if (!base64Data) {
+      return res.status(400).json({ success: false, error: "base64Data is required for video upload." });
+    }
+
+    const buffer = await base64ToBuffer(base64Data);
+    const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
+    serverLogger.info(`[YouTube API Gateway] Received video "${fileName}" (${sizeMB} MB) for streaming to YouTube...`);
+
+    const youtubeUrl = await uploadVideoBufferToYouTube(
+      buffer,
+      fileName || `video_${Date.now()}.mp4`,
+      folderName || "Event Media",
+      mimeType || "video/mp4"
+    );
+
+    return res.json({
+      success: true,
+      youtubeUrl,
+      fileName,
+      sizeMB,
+    });
+  } catch (error: any) {
+    serverLogger.error("[YouTube API Gateway] Upload error", error);
+    return res.status(500).json({
+      success: false,
+      error: error?.message || "Failed to stream video to YouTube.",
+    });
+  }
+});
+
+// YouTube OAuth2 Callback to retrieve Refresh Token
+app.get("/oauth2callback", async (req: Request, res: Response) => {
+  const code = req.query.code as string;
+  if (!code) {
+    return res.status(400).send("No authorization code provided.");
+  }
+
+  try {
+    const { google } = await import("googleapis");
+    const oauth2Client = new google.auth.OAuth2(
+      config.youtubeClientId,
+      config.youtubeClientSecret,
+      config.youtubeRedirectUri
+    );
+
+    const { tokens } = await oauth2Client.getToken(code);
+    const refreshToken = tokens.refresh_token;
+
+    serverLogger.info("[YouTube OAuth] ✅ Successfully generated YouTube Refresh Token!");
+
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>YouTube Authorization Complete</title></head>
+      <body style="font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; text-align: center;">
+        <div style="max-width: 600px; margin: 0 auto; background: #1e293b; padding: 32px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+          <div style="font-size: 48px; margin-bottom: 16px;">🎥</div>
+          <h2 style="color: #4ade80; margin-bottom: 12px;">YouTube Channel Authorized!</h2>
+          <p style="color: #94a3b8; font-size: 15px; line-height: 1.5;">
+            Your permanent YouTube OAuth Refresh Token has been successfully generated.
+          </p>
+          <div style="margin-top: 24px; text-align: left;">
+            <label style="display: block; font-size: 13px; font-weight: 600; color: #cbd5e1; margin-bottom: 6px;">REFRESH TOKEN:</label>
+            <textarea style="width: 100%; box-sizing: border-box; height: 100px; padding: 12px; font-family: monospace; font-size: 13px; background: #0f172a; color: #38bdf8; border: 1px solid #334155; border-radius: 8px;" readonly>${refreshToken || 'Authorization granted. (Token already active)'}</textarea>
+          </div>
+          <p style="color: #64748b; font-size: 13px; margin-top: 20px;">
+            Copy this token into your <code>.env</code> file as <code>YOUTUBE_REFRESH_TOKEN=...</code>
+          </p>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (err: any) {
+    serverLogger.error("[YouTube OAuth] Token exchange error", err);
+    return res.status(500).send(`OAuth Error: ${err?.message || err}`);
+  }
+});
+
 
 // ===================================================================
 //  Global Error Handler

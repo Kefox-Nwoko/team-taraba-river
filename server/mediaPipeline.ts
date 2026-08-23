@@ -451,33 +451,62 @@ export async function compressVideoForDrive(originalBuffer: Buffer, originalName
   }
 }
 
-export async function uploadVideoToYouTube(item: MediaItem): Promise<string> {
+export async function uploadVideoBufferToYouTube(
+  buffer: Buffer,
+  fileName: string,
+  folderName?: string,
+  mimeType: string = 'video/mp4'
+): Promise<string> {
   const { google } = await import('googleapis');
-  
-  const serviceAccountPath = await getServiceAccountPath();
-  const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
 
-  const auth = new google.auth.JWT({
-    email: serviceAccount.client_email,
-    key: serviceAccount.private_key,
-    scopes: ['https://www.googleapis.com/auth/youtube.upload'],
-  });
+  let authClient: any = null;
 
-  const youtube = google.youtube({ version: 'v3', auth });
+  // Method 1: OAuth2 Client with permanent Refresh Token (Primary & Recommended by Google)
+  if (config.youtubeClientId && config.youtubeClientSecret && config.youtubeRefreshToken) {
+    const oauth2Client = new google.auth.OAuth2(
+      config.youtubeClientId,
+      config.youtubeClientSecret,
+      config.youtubeRedirectUri
+    );
+    oauth2Client.setCredentials({
+      refresh_token: config.youtubeRefreshToken,
+    });
+    authClient = oauth2Client;
+    serverLogger.info(`[YouTube Upload] Using OAuth2 credentials with channel refresh token for "${fileName}"`);
+  } else {
+    // Method 2: Service Account JWT Fallback (if configured)
+    try {
+      const serviceAccountPath = await getServiceAccountPath();
+      const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
+      authClient = new google.auth.JWT({
+        email: serviceAccount.client_email,
+        key: serviceAccount.private_key,
+        scopes: ['https://www.googleapis.com/auth/youtube.upload'],
+      });
+      serverLogger.info(`[YouTube Upload] Attempting Service Account JWT fallback for "${fileName}"`);
+    } catch {
+      throw new Error(
+        'YouTube upload credentials not configured. Please set YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, and YOUTUBE_REFRESH_TOKEN in your environment.'
+      );
+    }
+  }
 
-  const buffer = await base64ToBuffer(item.base64Data);
-  // Use top-level import instead of require() to avoid ESM/CJS incompatibility
+  const youtube = google.youtube({ version: 'v3', auth: authClient });
   const bufferStream = Readable.from(buffer);
+
+  const cleanTitle = (fileName || `Team Taraba River Video ${new Date().toLocaleDateString()}`)
+    .replace(/\.[^/.]+$/, '')
+    .substring(0, 100);
 
   const requestBody: any = {
     snippet: {
-      title: item.fileName || `Team Taraba River Video ${new Date().toLocaleDateString()}`,
-      description: 'Video uploaded via Team Taraba River Community Portal',
+      title: cleanTitle,
+      description: `Team Taraba River Community Event Media Archive (${folderName || 'General Event'})\nUploaded via Team Taraba River Portal.`,
       tags: ['Team Taraba River', 'Community', 'URIP', 'USOSA', 'Event'],
-      categoryId: '22', // People & Blogs (more appropriate; Sports is 17)
+      categoryId: '22', // People & Blogs
     },
     status: {
-      privacyStatus: 'unlisted',
+      privacyStatus: 'unlisted', // Unlisted: community can watch on app without ads or unwanted public indexing
       selfDeclaredMadeForKids: false,
     },
   };
@@ -486,15 +515,23 @@ export async function uploadVideoToYouTube(item: MediaItem): Promise<string> {
     part: 'snippet,status',
     requestBody,
     media: {
-      mimeType: item.mimeType || 'video/mp4',
+      mimeType: mimeType || 'video/mp4',
       body: bufferStream,
     },
   });
 
   const videoId = response.data.id;
   if (!videoId) {
-    throw new Error('YouTube upload succeeded but returned no video ID');
+    throw new Error('YouTube upload completed but returned no video ID');
   }
 
-  return `https://www.youtube.com/watch?v=${videoId}`;
+  const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  serverLogger.info(`[YouTube Upload] ✅ Successfully published video to YouTube: ${youtubeUrl}`);
+  return youtubeUrl;
 }
+
+export async function uploadVideoToYouTube(item: MediaItem): Promise<string> {
+  const buffer = await base64ToBuffer(item.base64Data);
+  return uploadVideoBufferToYouTube(buffer, item.fileName, item.folderName, item.mimeType);
+}
+

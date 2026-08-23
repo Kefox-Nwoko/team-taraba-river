@@ -1283,3 +1283,56 @@ export async function getMediaItemStatus(mediaId: string): Promise<MediaStatusRe
     throw new Error(err.message || "Failed to get media status");
   }
 }
+
+export async function uploadVideoToYouTubeBridge(
+  file: File,
+  folderName: string,
+  onProgress?: (pct: number) => void
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read video file for upload."));
+    reader.onload = () => {
+      const base64Data = reader.result as string;
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", apiUrl("/api/media/upload-video-to-youtube"));
+      xhr.setRequestHeader("Content-Type", "application/json");
+
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable) {
+            const pct = Math.min(99, Math.round((evt.loaded / evt.total) * 100));
+            onProgress(pct);
+          }
+        };
+      }
+
+      xhr.onload = () => {
+        try {
+          const res = JSON.parse(xhr.responseText);
+          if (xhr.status >= 200 && xhr.status < 300 && res.success && res.youtubeUrl) {
+            if (onProgress) onProgress(100);
+            resolve(res.youtubeUrl);
+          } else {
+            reject(new Error(res.error || `Server returned error status ${xhr.status}`));
+          }
+        } catch {
+          reject(new Error(`Invalid server response (${xhr.status})`));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Network error streaming video to YouTube bridge"));
+      xhr.send(
+        JSON.stringify({
+          base64Data,
+          fileName: file.name,
+          folderName,
+          mimeType: file.type || "video/mp4",
+        })
+      );
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+

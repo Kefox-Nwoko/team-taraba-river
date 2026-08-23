@@ -18,6 +18,7 @@ import {
   ChevronDown,
   Play,
 } from "lucide-react";
+import { uploadVideoToYouTubeBridge } from "../services/apiClient";
 
 interface MediaItem {
   id: string;
@@ -133,10 +134,25 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   const uploadMediaFileWithProgress = async (
     item: MediaItem,
     eventId: string,
+    folderName: string,
     index: number,
     onFileProgress: (percent: number) => void
   ): Promise<string> => {
     const isVideo = item.type === "video";
+
+    // 1. For Videos: Attempt automated streaming to YouTube Bridge
+    if (isVideo) {
+      try {
+        const ytUrl = await uploadVideoToYouTubeBridge(item.file, folderName, onFileProgress);
+        if (ytUrl && ytUrl.startsWith("http")) {
+          return ytUrl;
+        }
+      } catch (bridgeErr: any) {
+        logger.warn("YouTube Bridge direct stream notice, attempting Cloud Storage fallback:", bridgeErr);
+      }
+    }
+
+    // 2. For Photos (WebP compressed) or Video Fallback
     let uploadPayload: Blob = item.file;
     let contentType = item.file.type || (isVideo ? "video/mp4" : "image/jpeg");
     let ext = isVideo ? "mp4" : "webp";
@@ -291,7 +307,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
         let finalUrl = "";
         try {
-          finalUrl = await uploadMediaFileWithProgress(item, eventId, i, (pct) => {
+          finalUrl = await uploadMediaFileWithProgress(item, eventId, folderNameTitle, i, (pct) => {
             fileProgresses[i] = pct;
             setUploadProgressText(`Uploading ${isVideo ? "video" : "photo"} ${i + 1} of ${mediaItems.length} (${pct}%)...`);
             updateOverallProgress();
@@ -612,12 +628,11 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                       >
                         <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-900 border border-slate-700/80 shrink-0 relative flex items-center justify-center">
                           {item.type === "video" ? (
-                            <>
-                              <video src={item.previewUrl} className="w-full h-full object-cover" />
-                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <div className="w-full h-full bg-slate-950 flex items-center justify-center">
+                              <div className="w-8 h-8 rounded-full bg-red-600/90 flex items-center justify-center shadow-md">
                                 <Play className="w-4 h-4 text-white fill-current ml-0.5" />
                               </div>
-                            </>
+                            </div>
                           ) : (
                             <img src={item.previewUrl} alt="preview" className="w-full h-full object-cover" />
                           )}
