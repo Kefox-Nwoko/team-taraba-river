@@ -1,16 +1,15 @@
 import { Member } from "../types";
 
 /**
- * Universal, high-resilience member credential matcher.
- * Matches by:
- * 1. Email (case-insensitive)
- * 2. Member ID (exact)
- * 3. Phone / WhatsApp / Next of Kin / Neighbor numbers across all formats:
- *    - Nigerian local: 0803..., 0703..., 0814...
- *    - International: +234803..., 234803..., +234 803...
- *    - 10-digit subscriber numbers: 803..., 703...
- *    - Dashed, spaced, dotted, or comma/slash separated multi-number fields
- * 4. Full Name, First Name, Surname, and individual name tokens
+ * Member credential matcher strictly enforcing registered Email and Phone/WhatsApp number.
+ * 
+ * Allowed credentials:
+ * 1. Registered Email (case-insensitive, exact or whitespace-trimmed)
+ * 2. Registered Phone Number / WhatsApp Number across all formats:
+ *    - Nigerian local format: 0803..., 0703..., 0814..., 0903...
+ *    - International format: +234803..., 234803..., +234 803...
+ *    - 10-digit subscriber format: 803..., 703..., 903...
+ *    - Formatted strings with spaces, dashes, or parentheses
  */
 export function isMemberCredentialMatch(
   m: Member | null | undefined,
@@ -23,33 +22,23 @@ export function isMemberCredentialMatch(
   if (!input) return false;
   const norm = input.toLowerCase();
 
-  // 1. Email match (exact or whitespace-stripped)
+  // 1. Registered Email match (exact or whitespace-stripped)
   if (m.email) {
     const mEmailNorm = m.email.trim().toLowerCase();
     if (mEmailNorm === norm) return true;
     if (mEmailNorm.replace(/\s+/g, "") === norm.replace(/\s+/g, "")) return true;
   }
 
-  // 2. Member ID match
-  if (m.id) {
-    const mIdNorm = m.id.trim().toLowerCase();
-    if (mIdNorm === norm) return true;
-    if (m.id === input) return true;
-  }
-
-  // 3. Extract clean digits from input
+  // 2. Extract digits for registered Phone & WhatsApp matching
   const cleanDigits = norm.replace(/\D/g, "");
 
-  // If input contains at least 5 digits, perform comprehensive phone number matching
-  if (cleanDigits.length >= 5) {
+  // If input contains a valid phone sequence (at least 7 digits)
+  if (cleanDigits.length >= 7) {
     const candidatePhones: string[] = [
       m.phoneNumber,
       m.whatsappNumber,
-      m.nextOfKinPhone,
-      m.closestNeighborPhone,
       (m as any).phone,
       (m as any).whatsapp,
-      (m as any).telephone,
       (m as any).mobileNumber,
     ].filter((p): p is string => Boolean(p) && typeof p === "string");
 
@@ -60,21 +49,20 @@ export function isMemberCredentialMatch(
 
     for (const phone of candidatePhones) {
       const pDigits = phone.replace(/\D/g, "");
-      if (!pDigits || pDigits.length < 5) continue;
+      if (!pDigits || pDigits.length < 7) continue;
 
       // Direct exact digits match
       if (pDigits === cleanDigits) return true;
 
-      // Multi-number or prefix substring match
+      // Suffix / prefix matches (e.g. 0802... vs +234802... vs 802...)
       if (pDigits.includes(cleanDigits) || cleanDigits.includes(pDigits)) return true;
 
-      // Substring match for last 7, 8, 9, 10 significant digits
+      // Match last 7 to 10 significant digits
       if (searchLast10.length >= 7 && pDigits.includes(searchLast10)) return true;
       if (searchLast9.length >= 7 && pDigits.includes(searchLast9)) return true;
       if (searchLast8.length >= 7 && pDigits.includes(searchLast8)) return true;
       if (searchLast7.length >= 7 && pDigits.includes(searchLast7)) return true;
 
-      // Reverse candidate phone's last 7-10 digits included in cleanDigits
       if (pDigits.length >= 7) {
         const pLast7 = pDigits.slice(-7);
         const pLast8 = pDigits.length >= 8 ? pDigits.slice(-8) : pLast7;
@@ -91,21 +79,6 @@ export function isMemberCredentialMatch(
         }
       }
     }
-  }
-
-  // 4. Name match (Full name, First name, Surname, or individual name tokens)
-  const fullNameLower = (m.fullName || "").trim().toLowerCase();
-  const firstNameLower = (m.firstName || "").trim().toLowerCase();
-  const surnameLower = (m.surname || "").trim().toLowerCase();
-
-  if (fullNameLower && fullNameLower === norm) return true;
-  if (firstNameLower && firstNameLower === norm) return true;
-  if (surnameLower && surnameLower === norm) return true;
-
-  if (norm.length >= 3) {
-    if (fullNameLower && (fullNameLower.includes(norm) || norm.includes(fullNameLower))) return true;
-    const tokens = fullNameLower.split(/\s+/).filter((t) => t.length >= 3);
-    if (tokens.some((t) => t === norm || t.startsWith(norm) || norm.startsWith(t))) return true;
   }
 
   return false;

@@ -12,6 +12,7 @@ import {
   AlertCircle,
   Bot,
   User,
+  Trash2,
 } from "lucide-react";
 import {
   fetchUsosaNews,
@@ -86,8 +87,35 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
     }
   };
 
-  // ---------- AI Xplora state ----------
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // ---------- AI Xplora state & 3-month persistence ----------
+  const THREE_MONTHS_MS = 90 * 24 * 60 * 60 * 1000;
+  const userChatStorageKey = `taraba_aixplora_chat_v2_${currentUser?.id || "guest"}`;
+  const userChatLastUsedKey = `taraba_aixplora_last_used_v2_${currentUser?.id || "guest"}`;
+
+  const getInitialChatMessages = (): ChatMessage[] => {
+    try {
+      const lastUsed = localStorage.getItem(userChatLastUsedKey);
+      if (lastUsed) {
+        const lastUsedTime = parseInt(lastUsed, 10);
+        if (!isNaN(lastUsedTime) && Date.now() - lastUsedTime > THREE_MONTHS_MS) {
+          // Inactive for more than 3 months -> Auto-delete logs
+          localStorage.removeItem(userChatStorageKey);
+          localStorage.removeItem(userChatLastUsedKey);
+          return [];
+        }
+      }
+      const saved = localStorage.getItem(userChatStorageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return [];
+  };
+
+  const [messages, setMessages] = useState<ChatMessage[]>(getInitialChatMessages);
   const [inputQuery, setInputQuery] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -101,7 +129,26 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
     }
   }, [messages]);
 
-  // Set welcome message when AI Xplora tab opens for first time
+  // Persist messages whenever updated & track last used timestamp
+  useEffect(() => {
+    if (messages.length > 0) {
+      try {
+        localStorage.setItem(userChatStorageKey, JSON.stringify(messages));
+        localStorage.setItem(userChatLastUsedKey, Date.now().toString());
+      } catch {}
+    }
+  }, [messages, userChatStorageKey, userChatLastUsedKey]);
+
+  // Update last used timestamp when user visits/switches to AI Xplora tab
+  useEffect(() => {
+    if (activeTab === "AI Xplora") {
+      try {
+        localStorage.setItem(userChatLastUsedKey, Date.now().toString());
+      } catch {}
+    }
+  }, [activeTab, userChatLastUsedKey]);
+
+  // Set welcome message when AI Xplora tab opens for first time if no history exists
   useEffect(() => {
     if (activeTab === "AI Xplora" && messages.length === 0) {
       const greeting = firstName
@@ -116,7 +163,27 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
         },
       ]);
     }
-  }, [activeTab]);
+  }, [activeTab, firstName, messages.length]);
+
+  const handleClearChatLogs = () => {
+    if (window.confirm("Are you sure you want to delete your AI Xplora chat history?")) {
+      try {
+        localStorage.removeItem(userChatStorageKey);
+        localStorage.setItem(userChatLastUsedKey, Date.now().toString());
+      } catch {}
+      const greeting = firstName
+        ? `Hi ${firstName}! 👋 I'm Gemini AI Xplora — your open AI assistant connected live to the web. Ask me anything in the world — science, current affairs, tech, coding, sports, recommendations, or general knowledge!`
+        : `Hi there! 👋 I'm Gemini AI Xplora — connected live to the web. Ask me anything on any topic in the world!`;
+      setMessages([
+        {
+          id: `welcome_${Date.now()}`,
+          sender: "ai",
+          text: greeting,
+          timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
+    }
+  };
 
   // Fetch news on mount
   useEffect(() => {
@@ -155,11 +222,16 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
       text: query,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
-    setMessages((prev) => [...prev, userMsg]);
-    setIsAiLoading(true);
+    const historyPayload = messages
+      .filter((m) => m.id !== "welcome" && !m.id.startsWith("welcome_") && !m.id.startsWith("err_") && m.text)
+      .slice(-8)
+      .map((m) => ({
+        role: (m.sender === "user" ? "user" : "model") as "user" | "model",
+        parts: [{ text: m.text }],
+      }));
 
     try {
-      const res = await queryAiXplora(query, firstName || undefined);
+      const res = await queryAiXplora(query, firstName || undefined, historyPayload);
       const aiMsg: ChatMessage = {
         id: `ai_${Date.now()}`,
         sender: "ai",
@@ -327,6 +399,21 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
         {/* ── Tab: AI Xplora ── */}
         {activeTab === "AI Xplora" && (
           <div className="flex flex-col h-[420px] sm:h-[460px]">
+            {/* Top Toolbar / Action Bar */}
+            <div className="flex items-center justify-between px-4 py-2 bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800 text-xs shrink-0">
+              <span className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-300">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                <span>Gemini Web AI (3-Month Session History)</span>
+              </span>
+              <button
+                onClick={handleClearChatLogs}
+                title="Clear and reset chat history"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition cursor-pointer font-medium"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                <span>Clear History</span>
+              </button>
+            </div>
             {/* Messages */}
             <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
               {messages.map((msg) => (
@@ -454,11 +541,11 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
 
             {/* Scrollable Body */}
             <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
-              {/* AI Chief Editor Summary Header */}
+              {/* 10-15 Line Comprehensive Story Summary */}
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-500/10 dark:bg-amber-950/30 border border-amber-300/30 dark:border-amber-700/30 w-fit">
                 <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 <span className="text-xs font-semibold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
-                  AI Chief Editor Intelligence (10–15 Line Analysis)
+                  Story Summary (10–15 Lines)
                 </span>
               </div>
 

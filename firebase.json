@@ -1,4 +1,13 @@
 {
+  "firestore": [
+    {
+      "database": "team-taraba-database",
+      "rules": "firestore.rules"
+    }
+  ],
+  "storage": {
+    "rules": "storage.rules"
+  },
   "hosting": {
     "site": "team-taraba-river",
     "public": "dist/public",

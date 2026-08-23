@@ -101,8 +101,16 @@ export async function registerMember(memberData: Partial<Member>): Promise<Membe
     id: memberData.id || `mem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     fullName: memberData.fullName || "Community Member",
     email: memberData.email || "",
+    phoneNumber: memberData.phoneNumber || "",
+    dateOfBirth: memberData.dateOfBirth || "",
+    occupation: memberData.occupation || "",
+    skills: memberData.skills || [],
+    photoUrl: memberData.photoUrl || "",
+    photoStatus: memberData.photoStatus || "approved",
     role: memberData.role || "member",
-    createdAt: new Date().toISOString(),
+    activityPoints: memberData.activityPoints || 0,
+    joinedAt: memberData.joinedAt || new Date().toISOString(),
+    lastActive: memberData.lastActive || new Date().toISOString(),
     ...memberData,
   };
 
@@ -150,8 +158,16 @@ export async function updateMemberProfile(
         id,
         fullName: "Member",
         email: "",
+        phoneNumber: "",
+        dateOfBirth: "",
+        occupation: "",
+        skills: [],
+        photoUrl: "",
+        photoStatus: "approved",
         role: "member",
-        createdAt: new Date().toISOString(),
+        activityPoints: 0,
+        joinedAt: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
       }),
       ...memberData,
     };
@@ -457,7 +473,7 @@ export async function fetchVisitMetrics(): Promise<{ totalVisits: number; lastVi
     }
   } catch {}
   return {
-    totalVisits: AppStateManager.getSessionCount() || 1,
+    totalVisits: 0,
     lastVisitTimestamp: new Date().toISOString(),
     latestUniqueUser: "Community Member",
   };
@@ -477,6 +493,14 @@ export interface NewsHeadline {
   publishedAt: string;
   otherSources?: NewsSourceCoverage[];
   schoolTag?: string;
+}
+
+export interface UsosaNewsResponse {
+  headlines: NewsHeadline[];
+  sourceCount?: number;
+  fetchedAt: string;
+  fallback?: boolean;
+  message?: string;
 }
 
 // Canonical list of major Unity Schools for auto-tagging
@@ -512,17 +536,55 @@ function detectSchoolTag(text: string): string {
   return "Unity Colleges Education";
 }
 
+function stripPublisherNames(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/\b(vanguard\s*news|vanguard|punch\s*newspapers|punch|the\s*guardian\s*nigeria|the\s*guardian|daily\s*trust|premium\s*times|leadership\s*newspapers|leadership|thecable|thisday\s*live|thisday|the\s*sun\s*nigeria|the\s*sun|sun\s*news|nigerian\s*tribune|tribune|businessday|daily\s*post\s*nigeria|daily\s*post|channels\s*tv|channels\s*television|arise\s*news|radio\s*nigeria|news\s*agency\s*of\s*nigeria|nan|google\s*news|rss\s*feed)\b/gi, "")
+    .replace(/\s*[-|–—•]\s*$/, "")
+    .replace(/^\s*[-|–—•]\s*/, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function cleanStoryTitle(raw: string): { cleanTitle: string; extractedSource: string } {
   let title = (raw || "").replace(/<[^>]*>?/gm, "").trim();
   let extractedSource = "";
 
   // Match trailing " - Newspaper" or " | Newspaper"
-  const match = title.match(/\s*[-|–—]\s*([^-|–—]+)$/);
+  const match = title.match(/\s*[-|–—•]\s*([^-|–—•]+)$/);
   if (match && match[1]) {
     extractedSource = match[1].trim();
     title = title.substring(0, match.index).trim();
   }
+  title = stripPublisherNames(title);
   return { cleanTitle: title, extractedSource };
+}
+
+function cleanStorySnippet(raw: string, titleToStrip?: string): string {
+  if (!raw) return "";
+  let clean = raw
+    .replace(/<[^>]*>?/gm, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // Strip publisher names
+  clean = stripPublisherNames(clean);
+
+  // If snippet starts with the title, remove it
+  if (titleToStrip && titleToStrip.length > 10) {
+    const cleanTitleLower = titleToStrip.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const cleanSnippetLower = clean.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (cleanSnippetLower.startsWith(cleanTitleLower)) {
+      clean = clean.slice(titleToStrip.length).replace(/^[\s:–—.-]+/, "").trim();
+    }
+  }
+  return clean;
 }
 
 function extractKeywords(str: string): Set<string> {
@@ -550,97 +612,142 @@ function calculateSimilarity(setA: Set<string>, setB: Set<string>): number {
   return intersection / union;
 }
 
-function buildComprehensiveSummary(title: string, rawSnippet: string, sources: NewsSourceCoverage[]): string {
-  const sourceListStr = sources.map((s) => s.sourceName).filter(Boolean).join(", ");
-  const schoolTag = detectSchoolTag(title + " " + rawSnippet);
+async function humanizeHeadlinesWithGemini(
+  clusters: Array<{ title: string; rawSnippet: string; leadSource: string; schoolTag: string; otherSources: string[] }>,
+  apiKey: string
+): Promise<Map<string, { title: string; summary: string }>> {
+  const models = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-flash-latest"];
+  const prompt = `You are a human journalist and senior editor reporting on Nigerian Federal Unity Colleges (FGC, FGGC, FSTC, King's College, Queen's College) and USOSA.
 
-  return `Executive Summary:
-${title}. This major development has garnered significant national attention across Nigerian educational leadership, alumni networks, and institutional stakeholders.
+Here are ${clusters.length} current news items:
+${JSON.stringify(clusters.map((c, i) => ({ index: i, title: c.title, context: c.rawSnippet, school: c.schoolTag })), null, 2)}
 
-Context & Institutional Background:
-According to comprehensive reporting by ${sourceListStr || "national news outlets"}, this policy action directly addresses critical infrastructural, administrative, and academic requirements within the Federal Unity Colleges system. It reflects ongoing consultative efforts between the Federal Ministry of Education, school administrations, Parent-Teacher Associations (PTA), and collegiate advisory boards to elevate learning standards and staff welfare.
+Instructions for each item:
+1. Write a clean, human headline without any publisher names.
+2. Write a comprehensive, human narrative story summary of 10 to 15 lines (about 120-180 words, formatted across 2 to 3 fluid paragraphs).
+3. Tell the story naturally as a human journalist: Explain what happened, why parents/students/alumni are reacting (e.g. protests against privatization/concessioning of King's College Lagos, teacher absorptions, strikes, facility upgrades), what government officials or USOSA leaders said, and what will happen next.
+4. STRICT RULES:
+   - NO corporate/analytical headers (DO NOT write "Executive Summary:", "Context:", "Strategic Implications:", or bullet points).
+   - DO NOT include publisher names in the story text (e.g. do NOT say "Vanguard News reported...").
+   - DO NOT use robotic boilerplate templates (e.g. do NOT write "This significant development highlights the ongoing focus among educational administrators...").
+   - Write genuine, fluent, human storytelling with empathy, substance, and clarity.
 
-Strategic Implications for USOSA & Unity Colleges:
-For the Unity Schools Old Students Association (${schoolTag}), this initiative represents a vital milestone for secondary education sustainability. Alumni chapters and regional bodies continue to champion equitable resource distribution, student safety, and institutional excellence across Nigeria's 104 Federal Unity Colleges. Members and stakeholders can explore the full coverage and official press statements through the individual news channels listed below.`;
+Return ONLY valid JSON (no markdown fences):
+[
+  {
+    "index": 0,
+    "title": "Clean Human Headline",
+    "summary": "10-15 line narrative story summary in 2-3 paragraphs."
+  }
+]`;
+
+  for (const model of models) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+        }),
+      });
+      const data = await res.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (rawText) {
+        const cleanedJson = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(cleanedJson);
+        const map = new Map<string, { title: string; summary: string }>();
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            if (typeof item.index === "number" && clusters[item.index]) {
+              map.set(clusters[item.index].title, {
+                title: item.title || clusters[item.index].title,
+                summary: item.summary,
+              });
+            }
+          }
+          return map;
+        }
+      }
+    } catch {}
+  }
+  return new Map();
+}
+
+function buildComprehensiveSummary(title: string, rawSnippet: string, sources: NewsSourceCoverage[], schoolTag: string = "Federal Unity Colleges"): string {
+  const cleanSnippet = cleanStorySnippet(rawSnippet, title);
+
+  const p1 = cleanSnippet && cleanSnippet.length > 50
+    ? cleanSnippet
+    : `Reports indicate important developments surrounding ${title.toLowerCase()}, drawing widespread attention across parent associations, alumni bodies, and education stakeholders.`;
+
+  const p2 = `Stakeholders across ${schoolTag || "Federal Unity Colleges"} are actively assessing the implications for students and faculty. Community leaders and collegiate councils continue to engage with authorities to ensure that student welfare and academic standards remain protected.`;
+
+  const p3 = `Follow verified reports and official statements through the news links below for complete live coverage and updates on subsequent resolutions.`;
+
+  return `${p1}\n\n${p2}\n\n${p3}`;
 }
 
 const DEFAULT_USOSA_HEADLINES: NewsHeadline[] = [
   {
     title: "FG Approves Absorption of 3,252 PTA Teachers into Federal Unity Colleges",
-    summary: `Executive Summary:
-The Federal Government has formally approved the recruitment and conversion of 3,252 Parent-Teacher Association (PTA) teachers into full civil service tenure across all Federal Unity Colleges nationwide.
+    summary: `The Federal Government has formally approved the recruitment and conversion of 3,252 Parent-Teacher Association (PTA) employed teachers into the permanent federal civil service structure across Nigeria's 104 Federal Unity Colleges. This decisive policy directive addresses a critical manpower gap that has persisted for years across Federal Government Colleges (FGC), Federal Government Girls' Colleges (FGGC), and Federal Science and Technical Colleges (FSTC).
 
-Context & Institutional Background:
-According to comprehensive announcements by the Federal Ministry of Education, this landmark decision stabilizes teaching faculties across science, humanities, and technical departments, ending years of contract vulnerability for dedicated educators.
+Under the new framework, educators who have served for extended periods on ad-hoc PTA contracts will now enjoy full civil service tenure, standardized remuneration, pensions, and career progression opportunities. The Minister of Education highlighted that absorbing these qualified educators will directly stabilize classroom instruction, restore institutional morale, and enhance academic consistency for hundreds of thousands of secondary school students nationwide.
 
-Strategic Implications for USOSA & Unity Colleges:
-This development directly bolsters teacher retention and educational quality across the 104 Unity Colleges, fulfilling a longstanding advocacy goal championed by USOSA and PTA councils.`,
-    source: "LEADERSHIP, Punch & 3 other outlets",
+The National Executive Council of USOSA, alongside regional PTA leadership and alumni chapters, has warmly welcomed the presidential approval as a monumental victory for public education. Stakeholders note that this policy reinforces the foundational mandate of Unity Schools in nurturing academic excellence and national integration. Complete administrative guidelines and deployment schedules are being finalized across all six geopolitical zones.`,
+    source: "LEADERSHIP & Punch Newspapers",
     url: "https://news.google.com",
-    publishedAt: "Aug 21, 2026",
+    publishedAt: "Recent",
     schoolTag: "Federal Unity Colleges",
     otherSources: [
       { sourceName: "LEADERSHIP Newspapers", title: "Boost For Education As Tinubu Approves 3,252 PTA Teachers", url: "https://leadership.ng" },
-      { sourceName: "Independent Newspaper", title: "Tinubu Mops Recruitment Of 3,252 PTA Teachers For Unity Colleges", url: "https://independent.ng" },
       { sourceName: "Punch Newspapers", title: "FG to Absorb 3,252 PTA Teachers in Unity Schools", url: "https://punchng.com" },
-      { sourceName: "Vanguard News", title: "FG absorbs 3,252 PTA teachers into Federal Unity Colleges", url: "https://vanguardngr.com" },
     ],
   },
   {
-    title: "King's College Lagos Alumni Commission N150m Ultra-Modern STEM & Robotics Innovation Center",
-    summary: `Executive Summary:
-Old boys of King's College Lagos (KCOBA) have officially unveiled a state-of-the-art innovation hub equipped with artificial intelligence workstations, high-speed fibre internet, and advanced science laboratory apparatus.
+    title: "King's College Lagos Alumni Unveil New STEM & Robotics Innovation Center",
+    summary: `The King's College Old Boys Association (KCOBA) has officially commissioned a state-of-the-art STEM and Robotics Innovation Center at the college campus in Lagos. The ultra-modern facility is equipped with dedicated coding workstations, artificial intelligence research modules, 3D printing equipment, and advanced electronics prototyping labs designed to prepare secondary school students for high-demand careers in technology and engineering.
 
-Context & Institutional Background:
-The flagship project was executed in collaboration with leading technology partners to foster hands-on coding, robotics, and engineering competencies for secondary school scholars.
+Built through strategic alumni endowments and partnerships with leading technology firms, the innovation hub provides students with hands-on exposure to software engineering, robotics, data science, and sustainable energy projects. School leadership and collegiate prefects commended the alumni body for consistently reinvesting in collegiate infrastructure and modernizing the learning environment in line with 21st-century global educational benchmarks.
 
-Strategic Implications for USOSA & Unity Colleges:
-The initiative serves as a benchmark for alumni-driven institutional transformation across Federal Unity Colleges in Nigeria.`,
+The initiative also incorporates ongoing mentorship tracks, where seasoned alumni in Silicon Valley, Nigeria's fintech sector, and academic institutions will provide continuous coaching and project guidance to budding student inventors. KCOBA emphasized that this project serves as a collaborative model that can be replicated across all 104 Federal Unity Colleges nationwide under the URIP revitalization agenda.`,
     source: "King's College Old Boys Association",
     url: "https://kingscollegelagos.com",
-    publishedAt: "Aug 20, 2026",
+    publishedAt: "Recent",
     schoolTag: "King's College Lagos",
     otherSources: [
       { sourceName: "KCOBA Media", title: "King's College Innovation Hub Commissioning", url: "https://kingscollegelagos.com" },
-      { sourceName: "The Guardian Nigeria", title: "King's College Unveils STEM Center", url: "https://guardian.ng" },
     ],
   },
   {
-    title: "USOSA Advocates for Infrastructure Revitalisation Across 110 Federal Unity Colleges",
-    summary: `Executive Summary:
-The Unity Schools Old Students Association (USOSA) has renewed its strategic national campaign demanding urgent infrastructure upgrades and modern STEM learning laboratories across all 110 Federal Unity Colleges nationwide.
+    title: "USOSA Calls for Infrastructure Upgrades Across Federal Unity Colleges",
+    summary: `The Unity Schools Old Students Association (USOSA) has renewed its national advocacy campaign urging accelerated investments in physical, digital, and security infrastructure across all 104 Federal Unity Colleges in Nigeria. Speaking at a recent national stakeholders forum, USOSA leadership stressed that urgent revitalization is needed to upgrade aging boarding facilities, science laboratories, digital libraries, and solar power installations across collegiate campuses.
 
-Context & Institutional Background:
-Alumni chapters are actively mobilising endowment funds and technical mentorship programs to support secondary education excellence. Consultative sessions with collegiate principals highlighted critical needs in water sanitisation, smart classrooms, and laboratory apparatus.
+The apex alumni body noted that while individual alumni chapters have continuously executed commendable intervention projects, a coordinated public-private framework is essential to preserve the legacy and operational capacity of Unity Schools. The proposed revitalization roadmap emphasizes modernized STEM learning environments, enhanced perimeter security architectures, and improved living conditions for boarding students nationwide.
 
-Strategic Implications for USOSA & Unity Colleges:
-This advocacy campaign unites over 100,000 alumni worldwide to ensure Nigerian unity colleges maintain their historical standard of academic and moral leadership.`,
+USOSA chapters across all geopolitical zones are actively mobilizing endowment funds, corporate partnerships, and technical expertise to support the ongoing Unity Schools Revitalisation Initiative (URIP). The association reiterated its commitment to partnering with the Federal Ministry of Education and collegiate principals to ensure all Unity Colleges remain centers of excellence and pillars of national unity.`,
     source: "USOSA National Secretariat",
     url: "https://usosa.org",
-    publishedAt: "Aug 19, 2026",
+    publishedAt: "Recent",
     schoolTag: "USOSA & Unity Colleges",
     otherSources: [
       { sourceName: "USOSA National Secretariat", title: "USOSA Infrastructure Campaign", url: "https://usosa.org" },
-      { sourceName: "Federal Ministry of Education", title: "Unity Colleges Strategic Review", url: "https://education.gov.ng" },
     ],
   },
   {
-    title: "Queen's College Lagos Celebrates Annual Speech Day & Leadership Awards",
-    summary: `Executive Summary:
-Queen's College Old Girls Association (QCOG) gathered to celebrate outstanding academic and artistic achievements among collegiate students.
+    title: "Queen's College Lagos Celebrates Annual Speech Day & Awards",
+    summary: `Queen's College Lagos, in conjunction with the Queen's College Old Girls Association (QCOGA), successfully commemorated its Annual Speech and Prize-Giving Day, celebrating remarkable academic, artistic, and leadership achievements by outstanding students. The colorful event brought together dignitaries, seasoned educators, parents, and distinguished alumni to honor academic excellence and character development among the student body.
 
-Context & Institutional Background:
-The keynote address emphasised digital empowerment, ethical governance, and expanding collegiate scholarship endowments for promising female leaders.
+The keynote addresses focused heavily on female empowerment in science and technology, digital literacy, and leadership resilience. Several merit awards and competitive scholarship packages were endowed by various graduating sets to support high-achieving indigent students, covering academic tuition, digital learning tablets, and specialized STEM training programs.
 
-Strategic Implications for USOSA & Unity Colleges:
-The celebration reinforced the critical role of girls' education in national development and inter-generational mentorship.`,
+Collegiate administrators and QCOGA executives reiterated their dedication to upholding the storied traditions of academic rigor and moral discipline that have defined Queen's College for decades. The celebration concluded with musical presentations, scientific exhibitions by junior students, and networking sessions aimed at strengthening alumni-student mentorship pipelines across all houses.`,
     source: "Queen's College Old Girls Association",
     url: "https://queenscollege.edu.ng",
-    publishedAt: "Aug 18, 2026",
+    publishedAt: "Recent",
     schoolTag: "Queen's College Lagos",
     otherSources: [
       { sourceName: "Queen's College Old Girls", title: "Annual Speech Day Highlights", url: "https://queenscollege.edu.ng" },
-      { sourceName: "Punch Newspapers", title: "Queen's College Celebrates Excellence", url: "https://punchng.com" },
     ],
   },
 ];
@@ -689,8 +796,8 @@ function isRelevantToNigerianUnityColleges(title: string, snippet: string, sourc
     /\bfederal science & technical college[s]?\b/i,
     /\bfederal academy suleja\b/i,
     /\bsuleja academy\b/i,
-    /\bking['’]?s college lagos\b/i,
-    /\bqueen['’]?s college lagos\b/i,
+    /\bking['’]?s college\b/i,
+    /\bqueen['’]?s college\b/i,
     /\bkcoba\b/i,
     /\bqcoga\b/i,
     /\bfegowoco\b/i,
@@ -709,9 +816,9 @@ function isRelevantToNigerianUnityColleges(title: string, snippet: string, sourc
     return true;
   }
 
-  // 4. Secondary Context Filter: Acronym (FGC/FGGC/FSTC) + Nigerian Education Anchor
+  // 4. Secondary Context Filter: Acronym (FGC/FGGC/FSTC) + Nigerian Unity Schools Anchor
   const hasAcronym = /\b(fgc|fggc|fstc)\b/i.test(combined);
-  const hasNigerianAnchor = /\b(nigeria|nigerian|lagos|abuja|waec|neco|bece|federal ministry of education|minister of education|tahir mamman|tinubu|pta|old students|alumni|inter-house sports)\b/i.test(combined);
+  const hasNigerianAnchor = /\b(nigeria|nigerian|lagos|abuja|federal ministry of education|minister of education|tahir mamman|tinubu|pta|old students|alumni|inter-house sports|concession|privatisation|privatize)\b/i.test(combined);
 
   if (hasAcronym && hasNigerianAnchor) {
     return true;
@@ -735,15 +842,21 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
     }
   } catch {}
 
-  // Step 2: Multi-Cluster Live Search across 104 Unity Colleges, FGCs, FGGCs, FSTCs, King's & Queen's
+  // Step 2: Live Multi-Stream Search strictly across USOSA, Unity Colleges, FGCs, FGGCs, FSTCs, King's & Queen's
   try {
-    const clusters = [
-      '("USOSA" OR "Unity Schools" OR "Federal Unity Colleges" OR "Unity Colleges") AND (Nigeria OR education OR alumni OR FG)',
-      '("Federal Government College" OR "Federal Government Girls College" OR "Federal Science and Technical College" OR "Federal Science & Technical College" OR "Federal Academy Suleja") AND (Nigeria OR WAEC OR NECO OR FG)',
-      '("King\'s College Lagos" OR "Queen\'s College Lagos" OR "FGC Lagos" OR "FGGC Bwari" OR "FSTC Yaba" OR "FSTC Usi" OR "FSTC Otukpo" OR "FSTC Uromi") AND (Nigeria OR alumni OR PTA OR education)',
+    const queryStreams = [
+      'USOSA Nigeria',
+      'Unity Schools Nigeria',
+      'Federal Unity Colleges Nigeria',
+      'Federal Government College Nigeria',
+      'Kings College Lagos',
+      'Queens College Lagos',
+      'FGGC Nigeria',
+      'FSTC Nigeria',
+      'Federal Science and Technical College Nigeria'
     ];
 
-    const fetchPromises = clusters.map(async (queryStr) => {
+    const fetchPromises = queryStreams.map(async (queryStr) => {
       try {
         const query = encodeURIComponent(queryStr);
         const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=en-NG&gl=NG&ceid=NG:en`;
@@ -803,12 +916,43 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
         const keywords = extractKeywords(cleanTitle + " " + cleanDesc);
         const schoolTag = detectSchoolTag(cleanTitle + " " + cleanDesc);
 
-        // Find existing cluster with high topic similarity
+        // Extract significant numbers from this headline (e.g. "11,700", "3,252")
+        const titleNumbers = new Set(
+          (cleanTitle.match(/\d[\d,]+/g) || [])
+            .map(n => n.replace(/,/g, ''))
+            .filter(n => parseInt(n, 10) >= 100)
+        );
+
+        // Normalize title for substring comparison
+        const normTitle = cleanTitle.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+        // Find existing cluster with topic similarity
         let matchedCluster: TopicCluster | null = null;
         for (const cluster of clusterList) {
           const similarity = calculateSimilarity(keywords, cluster.keywords);
-          // High semantic overlap or specific common numbers (e.g. 3,252) -> same topic
-          if (similarity > 0.35 || (cleanTitle.includes("3,252") && cluster.representativeTitle.includes("3,252"))) {
+
+          // Check 1: Jaccard keyword similarity above threshold
+          const isKeywordMatch = similarity > 0.25;
+
+          // Check 2: Both headlines share a significant number (e.g. 11,700 teachers)
+          const clusterNumbers = new Set(
+            (cluster.representativeTitle.match(/\d[\d,]+/g) || [])
+              .map(n => n.replace(/,/g, ''))
+              .filter(n => parseInt(n, 10) >= 100)
+          );
+          let sharedNumber = false;
+          for (const num of titleNumbers) {
+            if (clusterNumbers.has(num)) { sharedNumber = true; break; }
+          }
+          const isNumberMatch = sharedNumber && similarity > 0.15;
+
+          // Check 3: One title is largely a substring of the other
+          const normClusterTitle = cluster.representativeTitle.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+          const shorter = normTitle.length < normClusterTitle.length ? normTitle : normClusterTitle;
+          const longer = normTitle.length < normClusterTitle.length ? normClusterTitle : normTitle;
+          const isSubstringMatch = shorter.length > 20 && longer.includes(shorter.slice(0, Math.floor(shorter.length * 0.6)));
+
+          if (isKeywordMatch || isNumberMatch || isSubstringMatch) {
             matchedCluster = cluster;
             break;
           }
@@ -850,6 +994,24 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
       // Sort clusters strictly from newest to oldest
       clusterList.sort((a, b) => b.timestamp - a.timestamp);
 
+      // Attempt Live Gemini AI Story Humanization on top clusters
+      let humanizedMap = new Map<string, { title: string; summary: string }>();
+      const activeGeminiKey = localStorage.getItem("gemini_api_key") || DEFAULT_GEMINI_KEY;
+      if (activeGeminiKey && clusterList.length > 0) {
+        try {
+          const topClustersForAi = clusterList.slice(0, 8).map(c => ({
+            title: c.representativeTitle,
+            rawSnippet: c.rawSnippet,
+            leadSource: c.leadSource,
+            schoolTag: c.schoolTag,
+            otherSources: Array.from(c.sourcesMap.values()).map(s => s.sourceName),
+          }));
+          humanizedMap = await humanizeHeadlinesWithGemini(topClustersForAi, activeGeminiKey);
+        } catch (e) {
+          console.warn("Gemini headline humanization skipped:", e);
+        }
+      }
+
       // Convert clusters to top 15 distinct headlines
       const clusteredHeadlines: NewsHeadline[] = clusterList.slice(0, 15).map((cluster) => {
         const sourcesList = Array.from(cluster.sourcesMap.values());
@@ -861,10 +1023,12 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
           displaySource = `${sourcesList[0].sourceName} & ${sourcesList.length - 1} other outlets`;
         }
 
-        const summary = buildComprehensiveSummary(cluster.representativeTitle, cluster.rawSnippet, sourcesList);
+        const humanized = humanizedMap.get(cluster.representativeTitle);
+        const finalTitle = humanized?.title || cluster.representativeTitle;
+        const summary = humanized?.summary || buildComprehensiveSummary(finalTitle, cluster.rawSnippet, sourcesList, cluster.schoolTag);
 
         return {
-          title: cluster.representativeTitle,
+          title: finalTitle,
           summary,
           source: displaySource,
           url: cluster.leadUrl,
@@ -892,31 +1056,127 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
   };
 }
 
+export interface ChatHistoryTurn {
+  role: "user" | "model";
+  parts: { text: string }[];
+}
+
 export interface AiXploraResponse {
   answer: string;
   sources: { title: string; url: string }[];
   fallback: boolean;
 }
 
-export async function queryAiXplora(query: string, userName?: string): Promise<AiXploraResponse> {
+const DEFAULT_GEMINI_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
+
+export const USOSA_KNOWLEDGE_SYSTEM_INSTRUCTION = `You are Gemini AI Xplora — an intelligent, highly knowledgeable, and conversational AI assistant for USOSA and URIP (Unity Schools Revitalisation Initiative / Regional Integration Programs).
+
+CORE KNOWLEDGE BASE & SYSTEMIC GROUNDING:
+1. USOSA (Unity Schools Old Students Association): The apex umbrella association uniting alumni across all 104 Federal Unity Colleges in Nigeria. Motto: "Pro Unitate" (For Unity).
+2. URIP: The USOSA Unity Schools Revitalisation Initiative / Regional Integration Programs.
+3. Team Taraba River: The specific official name of this URIP team within the USOSA / URIP structure. It is a designated URIP team.
+4. The 104 Federal Unity Colleges:
+   - Federal Government Colleges (FGC) across all 36 states and FCT.
+   - Federal Government Girls' Colleges (FGGC).
+   - Federal Science and Technical Colleges (FSTC).
+   - Flagship institutions: King's College Lagos (KCOBA), Queen's College Lagos (QCOGA), Federal Academy Suleja.
+5. Unity Schools Traditions: House systems, Inter-House sports, set/class alumni coordination, collegiate principals, and mutual old students support.
+
+INSTRUCTION RULES:
+1. "CHECK INSIDE FIRST": Whenever a query relates to unity schools, USOSA, URIP, Team Taraba River (as a URIP team), alumni activities, or education, connect and ground your response in the context of USOSA, URIP, and Unity Schools heritage FIRST before checking outside.
+2. ACCURATE TEAM TARABA RIVER CONTEXT: "Team Taraba River" is purely the name of a URIP team within the USOSA/URIP structure.
+3. GENERAL KNOWLEDGE: For general queries (science, coding, business, philosophy, technology, sports, lifestyle, global topics), answer thoroughly, accurately, and intelligently like a standard top-tier Gemini AI without artificial constraints.
+4. TONE & STYLE: Direct, articulate, conversational, and natural. No robotic boilerplate.`;
+
+async function queryDirectGemini(
+  query: string,
+  apiKey: string,
+  history?: ChatHistoryTurn[],
+  userName?: string
+): Promise<AiXploraResponse> {
+  const models = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-flash-latest"];
+  const userGreeting = userName ? ` The current user is named ${userName}.` : "";
+  const dynamicInstruction = USOSA_KNOWLEDGE_SYSTEM_INSTRUCTION + userGreeting;
+
+  const contentsPayload: any[] = [];
+  if (Array.isArray(history) && history.length > 0) {
+    contentsPayload.push(...history);
+  }
+  contentsPayload.push({
+    role: "user",
+    parts: [{ text: query }],
+  });
+
+  for (const model of models) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: dynamicInstruction }],
+          },
+          contents: contentsPayload,
+        }),
+      });
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        // Extract web search sources if available from grounding metadata
+        const sources: { title: string; url: string }[] = [];
+        const chunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        for (const chunk of chunks) {
+          if (chunk.web?.uri && chunk.web?.title) {
+            sources.push({ title: chunk.web.title, url: chunk.web.uri });
+          }
+        }
+        return {
+          answer: text,
+          sources,
+          fallback: false,
+        };
+      }
+    } catch {}
+  }
+  throw new Error("Direct Gemini AI query attempt failed");
+}
+
+export async function queryAiXplora(
+  query: string,
+  userName?: string,
+  history?: ChatHistoryTurn[]
+): Promise<AiXploraResponse> {
+  const storedKey = localStorage.getItem("gemini_api_key") || DEFAULT_GEMINI_KEY;
+
+  // Step 1: Direct Live Google Gemini AI Call (Full Unrestricted Intelligence with USOSA Context Grounding)
+  if (storedKey) {
+    try {
+      return await queryDirectGemini(query, storedKey, history, userName);
+    } catch (directErr) {
+      console.warn("Direct Gemini call attempt failed, checking backend fallback:", directErr);
+    }
+  }
+
+  // Step 2: Try backend endpoint if reachable
   try {
     const headers = await getAuthHeaders();
-    const storedKey = localStorage.getItem("gemini_api_key");
     const res = await fetch(apiUrl("/api/ai-xplora"), {
       method: "POST",
       headers,
-      body: JSON.stringify({ query, userName, apiKey: storedKey }),
+      body: JSON.stringify({ query, userName, apiKey: storedKey, history }),
     });
     const contentType = res.headers.get("content-type") || "";
     if (res.ok && contentType.includes("application/json")) {
-      return await res.json();
+      const data = await res.json();
+      if (data && data.answer) return data;
     }
   } catch {}
 
-  // Fallback response for AI Xplora if server endpoint is offline
+  // Fallback if network is disconnected
   return {
-    answer: `Hi ${userName || "there"}! I'm Gemini AI Xplora for Team Taraba River. I can assist you with community updates, unity schools information, alumni connections, and general inquiries.`,
-    sources: [{ title: "Team Taraba River Community Portal", url: "https://team-taraba-river.web.app" }],
+    answer: "I'm currently unable to connect to Gemini AI services. Please check your internet connection and try again in a moment.",
+    sources: [],
     fallback: true,
   };
 }

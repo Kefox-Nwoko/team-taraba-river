@@ -3,26 +3,20 @@ import { DatePicker } from "./DatePicker";
 import { logger } from "../lib/logger";
 import { GroupEvent, Member } from "../types";
 import { FirebaseSyncManager } from "../services/firebaseService";
-import { syncGoogleDriveUrl, parseYouTubeVideoUrl, uploadMediaItem, finalizeMediaItem } from "../services/apiClient";
 import { storage } from "../lib/firebase";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { ReturnButton } from "./ReturnButton";
 import { useToast } from "./ui/Toast";
 import {
-  ArrowLeft,
   Upload,
   FolderOpen,
   FolderPlus,
   Calendar,
-  MapPin,
-  ImageIcon,
-  Video,
-  AlertTriangle,
   Loader2,
   CheckCircle2,
   X,
-  ExternalLink,
   ChevronDown,
+  Play,
 } from "lucide-react";
 
 interface MediaItem {
@@ -49,25 +43,25 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   onReturn,
   onSuccess,
 }) => {
-  const { showToast } = useToast();
+  const { notify } = useToast();
   const [folderMode, setFolderMode] = useState<"existing" | "new">(
     initialFolderId ? "existing" : "new"
   );
-  const [selectedFolderId, setSelectedFolderId] = useState<string>(initialFolderId || (events && events.length > 0 ? events[0].id : ""));
+  const [selectedFolderId, setSelectedFolderId] = useState<string>(
+    initialFolderId || (events && events.length > 0 ? events[0].id : "")
+  );
   const [newFolderTitle, setNewFolderTitle] = useState("");
   const [newDate, setNewDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [newCategory, setNewCategory] = useState<GroupEvent["category"]>("cleanup");
   const [newLocation, setNewLocation] = useState("");
   const [newDescription, setNewDescription] = useState("");
 
-  const [youtubeUrlInput, setYoutubeUrlInput] = useState("");
-
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadProgressText, setUploadProgressText] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const formatDateLabel = (dateStr?: string) => {
@@ -125,7 +119,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
               else reject(new Error("Failed to convert image to WebP blob"));
             },
             "image/webp",
-            0.78
+            0.82
           );
         };
         img.onerror = () => reject(new Error("Failed to load image"));
@@ -136,62 +130,78 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     });
   };
 
-  const compressAndConvertToWebp = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          let width = img.width;
-          let height = img.height;
-          const MAX_WIDTH = 1280;
-          const MAX_HEIGHT = 960;
-          if (width > MAX_WIDTH) {
-            height = Math.round((height * MAX_WIDTH) / width);
-            width = MAX_WIDTH;
-          }
-          if (height > MAX_HEIGHT) {
-            width = Math.round((width * MAX_HEIGHT) / height);
-            height = MAX_HEIGHT;
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            reject(new Error("Canvas context unavailable"));
-            return;
-          }
-          ctx.drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL("image/webp", 0.78));
-        };
-        img.onerror = () => reject(new Error("Failed to load image"));
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = () => reject(new Error("Failed to read image"));
-      reader.readAsDataURL(file);
-    });
-  };
+  const uploadMediaFileWithProgress = async (
+    item: MediaItem,
+    eventId: string,
+    index: number,
+    onFileProgress: (percent: number) => void
+  ): Promise<string> => {
+    const isVideo = item.type === "video";
+    let uploadPayload: Blob = item.file;
+    let contentType = item.file.type || (isVideo ? "video/mp4" : "image/jpeg");
+    let ext = isVideo ? "mp4" : "webp";
 
-  const readVideoAsDataUrl = (file: File): Promise<string> => {
+    if (!isVideo) {
+      try {
+        uploadPayload = await compressAndConvertToWebpBlob(item.file);
+        contentType = "image/webp";
+        ext = "webp";
+      } catch {
+        uploadPayload = item.file;
+      }
+    }
+
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target?.result as string);
-      reader.onerror = () => reject(new Error("Failed to read video"));
-      reader.readAsDataURL(file);
+      const cleanName = (item.file.name.replace(/\.[^/.]+$/, "") || `media_${index + 1}`).replace(/[^a-zA-Z0-9._-]/g, "_");
+      const folderPath = isVideo ? "videos" : "photos";
+      const storageRef = ref(storage, `events/${eventId}/${folderPath}/${Date.now()}_${index + 1}_${cleanName}.${ext}`);
+      const uploadTask = uploadBytesResumable(storageRef, uploadPayload, {
+        contentType,
+      });
+
+      uploadTask.on(
+        "state_changed",
+        (snapshot) => {
+          if (snapshot.totalBytes > 0) {
+            const pct = Math.min(99, Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100));
+            onFileProgress(pct);
+          }
+        },
+        (error) => {
+          logger.error("Cloud storage upload error", error);
+          reject(error);
+        },
+        async () => {
+          try {
+            onFileProgress(100);
+            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+            resolve(downloadUrl);
+          } catch (err) {
+            reject(err);
+          }
+        }
+      );
     });
   };
 
   const handleFilesSelected = (files: FileList | null) => {
-    if (!files) return;
+    if (!files || files.length === 0) return;
+    setErrorMessage(null);
     const newItems: MediaItem[] = [];
     let addedSizeMB = 0;
     const MAX_BATCH_SIZE_MB = 300;
-    
+
     Array.from(files).forEach((file) => {
-      const isVideo = file.type.startsWith("video/");
-      const isPhoto = file.type.startsWith("image/");
-      if (!isVideo && !isPhoto) return;
+      const filename = (file.name || "").toLowerCase();
+      const isVideoExt = /\.(mp4|mov|avi|mkv|webm|3gp|3gpp|m4v|wmv|flv|ts|mts|m2ts|ogv|vob|qt)$/i.test(filename);
+      const isPhotoExt = /\.(jpe?g|png|gif|webp|heic|heif|bmp|svg|tiff|raw|cr2|nef)$/i.test(filename);
+
+      const isVideo = (file.type && file.type.startsWith("video/")) || isVideoExt;
+      const isPhoto = (file.type && file.type.startsWith("image/")) || isPhotoExt;
+
+      if (!isVideo && !isPhoto) {
+        return;
+      }
 
       const sizeMB = file.size / (1024 * 1024);
       addedSizeMB += sizeMB;
@@ -208,9 +218,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
     const currentTotalSize = mediaItems.reduce((acc, it) => acc + it.sizeMB, 0);
     if (currentTotalSize + addedSizeMB > MAX_BATCH_SIZE_MB) {
-      setErrorMessage(`Upload batch exceeds ${MAX_BATCH_SIZE_MB}MB limit. Please select fewer or smaller files.`);
+      setErrorMessage(`Upload batch (${(currentTotalSize + addedSizeMB).toFixed(1)} MB) exceeds ${MAX_BATCH_SIZE_MB}MB limit. Please select fewer files.`);
       return;
     }
+
     setMediaItems((prev) => [...prev, ...newItems]);
   };
 
@@ -226,12 +237,12 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
   const isFormValid =
     (folderMode === "existing" ? !!selectedFolderId : !!newFolderTitle.trim() && !!newDate) &&
-    (mediaItems.length > 0 || !!youtubeUrlInput.trim());
+    mediaItems.length > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (mediaItems.length === 0 && !youtubeUrlInput.trim()) {
-      setErrorMessage("Please select media or add a YouTube link.");
+    if (mediaItems.length === 0) {
+      setErrorMessage("Please select photos or videos to upload.");
       return;
     }
     if (folderMode === "new" && !newFolderTitle.trim()) {
@@ -244,117 +255,99 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     }
 
     setIsUploading(true);
-    setUploadProgress(10);
+    setUploadProgress(5);
+    setUploadProgressText("Initializing media upload...");
     setErrorMessage(null);
 
-    const folderNameTitle = folderMode === "new" 
-      ? newFolderTitle.trim() 
+    const folderNameTitle = folderMode === "new"
+      ? newFolderTitle.trim()
       : (events.find((e) => e.id === selectedFolderId)?.title || "Event Gallery");
     const eventId = folderMode === "new" ? `evt_${Date.now()}` : selectedFolderId;
-    
+    const folderEventDate = folderMode === "new" ? newDate : (events.find((e) => e.id === selectedFolderId)?.date || newDate);
+    const folderLocation = folderMode === "new" ? newLocation.trim() : (events.find((e) => e.id === selectedFolderId)?.location || "");
+    const folderCategory = folderMode === "new" ? newCategory : (events.find((e) => e.id === selectedFolderId)?.category || "cleanup");
+    const folderDescription = folderMode === "new" ? newDescription.trim() : (events.find((e) => e.id === selectedFolderId)?.description || "");
+    const isAdmin = currentUser?.role === "admin";
+
     const photoFinalUrls: string[] = [];
     const videoFinalUrls: string[] = [];
     const approvalsToSave: Array<{ id: string; type: "photo" | "video"; url: string }> = [];
 
     try {
-      const trimmedYtUrl = youtubeUrlInput.trim();
-      if (trimmedYtUrl) {
-        const ytMatch = trimmedYtUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([a-zA-Z0-9_-]{11})/);
-        if (!ytMatch) throw new Error("Invalid YouTube URL.");
-        const cleanYtUrl = `https://www.youtube.com/watch?v=${ytMatch[1]}`;
-        videoFinalUrls.unshift(cleanYtUrl);
-        approvalsToSave.push({ id: `req_yt_${Date.now()}`, type: "video", url: cleanYtUrl });
-      }
+      // Track individual item progress
+      const fileProgresses = new Array(mediaItems.length).fill(0);
+      const updateOverallProgress = () => {
+        const totalPct = fileProgresses.reduce((a, b) => a + b, 0) / (mediaItems.length || 1);
+        const overall = Math.round(10 + totalPct * 0.8);
+        setUploadProgress(Math.min(90, Math.max(10, overall)));
+      };
 
       for (let i = 0; i < mediaItems.length; i++) {
         const item = mediaItems[i];
-        setUploadProgressText(`Processing and saving asset ${i + 1} of ${mediaItems.length}...`);
-        
+        const isVideo = item.type === "video";
+        setUploadProgressText(
+          `Uploading ${isVideo ? "video" : "photo"} ${i + 1} of ${mediaItems.length} (${item.file.name || "asset"})...`
+        );
+
         let finalUrl = "";
-        if (item.type === "photo") {
-          const webpDataUrl = await compressAndConvertToWebp(item.file);
-          // Primary: Google Drive subfolder upload pipeline
-          try {
-            const uploadRes = await uploadMediaItem({
-              eventId,
-              folderName: folderNameTitle,
-              type: "photo",
-              base64Data: webpDataUrl,
-              mimeType: "image/webp",
-              fileName: `${folderNameTitle}_photo_${i + 1}.webp`,
-              storageTarget: "drive",
-            });
-            if (uploadRes?.mediaId) {
-              const finalizeRes = await finalizeMediaItem(uploadRes.mediaId);
-              if (finalizeRes?.finalUrl) {
-                finalUrl = finalizeRes.finalUrl;
-              }
-            }
-          } catch {
-            // Secondary Fallback: Cloud Storage
-            try {
-              const webpBlob = await compressAndConvertToWebpBlob(item.file);
-              const storageRef = ref(storage, `events/${eventId}/${Date.now()}_${i + 1}.webp`);
-              const uploadPromise = uploadBytes(storageRef, webpBlob, { contentType: "image/webp" }).then(() => getDownloadURL(storageRef));
-              const timeoutPromise = new Promise<string>((_, reject) => setTimeout(() => reject(new Error("Storage timeout")), 3000));
-              finalUrl = await Promise.race([uploadPromise, timeoutPromise]);
-            } catch {
-              finalUrl = webpDataUrl;
-            }
+        try {
+          finalUrl = await uploadMediaFileWithProgress(item, eventId, i, (pct) => {
+            fileProgresses[i] = pct;
+            setUploadProgressText(`Uploading ${isVideo ? "video" : "photo"} ${i + 1} of ${mediaItems.length} (${pct}%)...`);
+            updateOverallProgress();
+          });
+        } catch (itemErr: any) {
+          logger.error(`Upload error on item ${i + 1}`, itemErr);
+          const errorText = itemErr?.message || "";
+          if (errorText.includes("quota-exceeded") || itemErr?.code === "storage/quota-exceeded") {
+            throw new Error("Cloud Storage daily free quota reached. Please try smaller files or wait for quota reset.");
           }
-        } else {
-          const videoDataUrl = await readVideoAsDataUrl(item.file);
-          // Primary: YouTube upload first, with automatic Google Drive subfolder fallback if rejected
-          try {
-            const uploadRes = await uploadMediaItem({
-              eventId,
-              folderName: folderNameTitle,
-              type: "video",
-              base64Data: videoDataUrl,
-              mimeType: item.file.type || "video/mp4",
-              fileName: item.file.name || `${folderNameTitle}_video_${i + 1}.mp4`,
-              storageTarget: "youtube",
-            });
-            if (uploadRes?.mediaId) {
-              const finalizeRes = await finalizeMediaItem(uploadRes.mediaId);
-              if (finalizeRes?.finalUrl) {
-                finalUrl = finalizeRes.finalUrl;
-              }
-            }
-          } catch {
-            // Secondary Fallback: Cloud Storage
-            try {
-              const storageRef = ref(storage, `events/${eventId}/${Date.now()}_${item.file.name || "video.mp4"}`);
-              const uploadPromise = uploadBytes(storageRef, item.file, { contentType: item.file.type || "video/mp4" }).then(() => getDownloadURL(storageRef));
-              const timeoutPromise = new Promise<string>((_, reject) => setTimeout(() => reject(new Error("Storage timeout")), 4000));
-              finalUrl = await Promise.race([uploadPromise, timeoutPromise]);
-            } catch {
-              finalUrl = videoDataUrl;
-            }
-          }
+          throw itemErr;
         }
 
         if (finalUrl) {
-          if (item.type === "photo") {
-            photoFinalUrls.push(finalUrl);
-          } else {
+          if (isVideo) {
             videoFinalUrls.push(finalUrl);
+          } else {
+            photoFinalUrls.push(finalUrl);
           }
-          approvalsToSave.push({
-            id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            type: item.type,
-            url: finalUrl,
-          });
-        }
 
-        const stepProgress = 15 + Math.round(((i + 1) / mediaItems.length) * 75);
-        setUploadProgress(stepProgress);
+          const approvalItem = {
+            id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            type: (isVideo ? "video" : "photo") as "photo" | "video",
+            url: finalUrl,
+          };
+          
+          if (!isAdmin) {
+            approvalsToSave.push(approvalItem);
+            // Save individual item to Firestore immediately
+            try {
+              await FirebaseSyncManager.saveApproval({
+                id: approvalItem.id,
+                memberId: currentUser?.id || "mem_guest",
+                memberName: currentUser?.fullName || "Community Member",
+                memberEmail: currentUser?.email || "member@tarabateam.org",
+                photoUrl: approvalItem.url,
+                uploadedAt: new Date().toISOString(),
+                status: "pending",
+                adminNotes: `${isVideo ? "Video" : "Photo"} submission for folder: ${folderNameTitle}`,
+                type: isVideo ? "video" : "photo",
+                eventId,
+                folderName: folderNameTitle,
+                date: folderEventDate,
+                location: folderLocation,
+                category: folderCategory,
+                description: folderDescription,
+              });
+            } catch (syncErr) {
+              logger.warn("Per-item approval save notice:", syncErr);
+            }
+          }
+        }
       }
 
       setUploadProgressText("Registering media in Event Gallery & Admin review...");
-      setUploadProgress(92);
-
-      const isAdmin = currentUser?.role === "admin";
+      setUploadProgress(95);
 
       let targetEvent: GroupEvent;
       if (folderMode === "existing") {
@@ -370,7 +363,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             ? (videoFinalUrls[0] || existingEvent.youtubeVideoUrl || "")
             : (existingEvent.youtubeVideoUrl || ""),
         };
-        // Only publish changes directly if user is Admin
+        // If Admin, directly publish changes to Event
         if (isAdmin) {
           await FirebaseSyncManager.saveEvent(targetEvent);
         }
@@ -392,50 +385,24 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           maxCapacity: 100,
           createdAt: new Date().toISOString(),
         };
-        // Only publish new event folder directly if user is Admin
+        // If Admin, directly publish new Event folder
         if (isAdmin) {
           await FirebaseSyncManager.saveEvent(targetEvent);
         }
       }
 
-      // Save approvals with full folder metadata into Firestore photoRequests
-      const folderEventDate = folderMode === "new" ? newDate : (events.find((e) => e.id === selectedFolderId)?.date || newDate);
-      const folderLocation = folderMode === "new" ? newLocation.trim() : (events.find((e) => e.id === selectedFolderId)?.location || "");
-      const folderCategory = folderMode === "new" ? newCategory : (events.find((e) => e.id === selectedFolderId)?.category || "cleanup");
-      const folderDescription = folderMode === "new" ? newDescription.trim() : (events.find((e) => e.id === selectedFolderId)?.description || "");
-
-      for (const approval of approvalsToSave) {
-        await FirebaseSyncManager.saveApproval({
-          id: approval.id,
-          memberId: currentUser?.id || "mem_guest",
-          memberName: currentUser?.fullName || "Community Member",
-          memberEmail: currentUser?.email || "member@tarabateam.org",
-          photoUrl: approval.url,
-          uploadedAt: new Date().toISOString(),
-          status: isAdmin ? "approved" : "pending",
-          adminNotes: `Media submission for folder: ${folderNameTitle}`,
-          type: approval.type,
-          eventId: targetEvent.id,
-          folderName: folderNameTitle,
-          date: folderEventDate,
-          location: folderLocation,
-          category: folderCategory,
-          description: folderDescription,
-        });
-      }
-
       setUploadProgress(100);
       setIsUploading(false);
-      
-      const totalCount = approvalsToSave.length;
-      toast.notify(
+
+      const totalItemsCount = photoFinalUrls.length + videoFinalUrls.length;
+      notify(
         isAdmin
-          ? `${totalCount} media item${totalCount !== 1 ? 's' : ''} published successfully to the Event Gallery.`
-          : `${totalCount} media item${totalCount !== 1 ? 's' : ''} submitted for Admin review. They will become visible on the public Media page once approved by an Admin.`,
+          ? `${totalItemsCount} media item${totalItemsCount !== 1 ? 's' : ''} published successfully to the Event Gallery.`
+          : `${totalItemsCount} media item${totalItemsCount !== 1 ? 's' : ''} submitted for Admin review. They will become visible on the public Media page once approved by an Admin.`,
         "success"
       );
 
-      // Cleanly reset upload form state and native file input so items cannot be submitted a 2nd time
+      // Cleanly reset upload form state and native file input
       mediaItems.forEach((it) => {
         try {
           URL.revokeObjectURL(it.previewUrl);
@@ -445,7 +412,6 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         fileInputRef.current.value = "";
       }
       setMediaItems([]);
-      setYoutubeUrlInput("");
       setNewFolderTitle("");
       setNewLocation("");
       setNewDescription("");
@@ -454,12 +420,12 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       setFolderMode(initialFolderId ? "existing" : "new");
       setUploadProgress(0);
       setErrorMessage(null);
-      
+
       onSuccess(targetEvent);
     } catch (err) {
       logger.error("Full page media upload error", err);
       const message = err instanceof Error ? err.message : "Failed to upload media.";
-      setErrorMessage(message.includes("NetworkError") ? "Check internet connection or server status." : message);
+      setErrorMessage(message.includes("NetworkError") ? "Check internet connection or network status." : message);
       setUploadProgress(0);
       setIsUploading(false);
     }
@@ -470,7 +436,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex flex-row items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
           <div>
-            <h1 className="text-sm sm:text-sm text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+            <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
               <Upload className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
               <span>Upload Media</span>
             </h1>
@@ -482,41 +448,53 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
         <form onSubmit={handleSubmit} className="space-y-5">
           {errorMessage && (
-            <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 text-xs">
-              {errorMessage}
+            <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs leading-relaxed">
+              <p className="font-semibold mb-1">Upload Notice:</p>
+              <p>{errorMessage}</p>
             </div>
           )}
           <div className="py-4 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-              <h2 className="text-sm text-slate-900 dark:text-white flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <FolderOpen className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
                 <span>1. Select or Create Event Folder & Upload Media</span>
               </h2>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-               <button type="button" onClick={() => setFolderMode("new")}
-                 className={`p-3 rounded-2xl border text-left flex items-start space-x-3 cursor-pointer ${
+              <button
+                type="button"
+                onClick={() => setFolderMode("new")}
+                className={`p-3.5 rounded-2xl border text-left flex items-start space-x-3 cursor-pointer transition ${
                   folderMode === "new"
-                    ? "border-cyan-500 bg-cyan-50/50 dark:bg-cyan-950/40 text-slate-900 dark:text-white"
-                    : "border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 text-slate-700 dark:text-slate-300"
+                    ? "border-cyan-500 bg-cyan-50/50 dark:bg-cyan-950/40 text-slate-900 dark:text-white shadow-xs"
+                    : "border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900"
                 }`}
               >
-                <FolderPlus className="w-5 h-5" />
+                <FolderPlus className="w-5 h-5 text-cyan-600 dark:text-cyan-400 shrink-0 mt-0.5" />
                 <div>
-                  <div className="text-sm">Create New Event Folder</div>
+                  <div className="text-sm font-semibold">Create New Event Folder</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Start a new photo & video collection
+                  </div>
                 </div>
               </button>
-              <button type="button" onClick={() => setFolderMode("existing")}
-                className={`p-4 rounded-2xl border text-left flex items-start space-x-3 cursor-pointer ${
+
+              <button
+                type="button"
+                onClick={() => setFolderMode("existing")}
+                className={`p-3.5 rounded-2xl border text-left flex items-start space-x-3 cursor-pointer transition ${
                   folderMode === "existing"
-                    ? "border-cyan-500 bg-cyan-50/50 dark:bg-cyan-950/40 text-slate-900 dark:text-white"
-                    : "border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 text-slate-700 dark:text-slate-300"
+                    ? "border-cyan-500 bg-cyan-50/50 dark:bg-cyan-950/40 text-slate-900 dark:text-white shadow-xs"
+                    : "border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900"
                 }`}
               >
-                <FolderOpen className="w-5 h-5" />
+                <FolderOpen className="w-5 h-5 text-cyan-600 dark:text-cyan-400 shrink-0 mt-0.5" />
                 <div>
-                  <div className="text-sm">Select Existing Event Folder</div>
+                  <div className="text-sm font-semibold">Select Existing Event Folder</div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Add media into an already published event
+                  </div>
                 </div>
               </button>
             </div>
@@ -525,21 +503,23 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
               <div className="space-y-3 pt-1">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-sm text-slate-700 dark:text-slate-300 mb-1.5">
+                    <label className="block text-xs uppercase font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                       Event Title *
                     </label>
                     <input
                       type="text"
                       required
-                      placeholder="e.g. URIP Sports Activity"
+                      placeholder="e.g. URIP Taraba River Sports & Assembly"
                       value={newFolderTitle}
                       onChange={(e) => setNewFolderTitle(e.target.value)}
-                      className="w-full px-3 py-2 text-sm rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                      className="w-full px-3.5 py-2.5 text-sm rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-slate-700 dark:text-slate-300 mb-1.5">Date *</label>
-                    <div className="relative w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3 py-2 flex items-center justify-between text-sm text-slate-900 dark:text-white cursor-pointer select-none">
+                    <label className="block text-xs uppercase font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                      Date *
+                    </label>
+                    <div className="relative w-full rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 px-3.5 py-2.5 flex items-center justify-between text-sm text-slate-900 dark:text-white cursor-pointer select-none">
                       <span className="truncate">{formatDateLabel(newDate)}</span>
                       <div className="flex items-center space-x-1 text-slate-400 dark:text-slate-500 shrink-0">
                         <Calendar className="w-4 h-4" />
@@ -553,28 +533,28 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                     </div>
                   </div>
                   <div className="sm:col-span-2">
-                    <label className="block text-sm text-slate-700 dark:text-slate-300 mb-1.5">
+                    <label className="block text-xs uppercase font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                       Location (optional)
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. Lagos"
+                      placeholder="e.g. Jalingo / Abuja / Port Harcourt"
                       value={newLocation}
                       onChange={(e) => setNewLocation(e.target.value)}
-                      className="w-full px-3 py-2 text-sm rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                      className="w-full px-3.5 py-2.5 text-sm rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
                     />
                   </div>
                 </div>
               </div>
             ) : (
               <div className="space-y-2 pt-1">
-                <label className="block text-sm text-slate-700 dark:text-slate-300">
+                <label className="block text-xs uppercase font-medium text-slate-700 dark:text-slate-300">
                   Select Existing Folder *
                 </label>
                 <select
                   value={selectedFolderId}
                   onChange={(e) => setSelectedFolderId(e.target.value)}
-                  className="w-full px-4 py-2.5 text-sm rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
+                  className="w-full px-4 py-2.5 text-sm rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 >
                   {(events || []).map((evt) => (
                     <option key={evt?.id || Math.random().toString()} value={evt?.id || ""}>
@@ -590,78 +570,79 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                 type="file"
                 ref={fileInputRef}
                 multiple
-                accept="image/*,video/*"
-                onChange={(e) => handleFilesSelected(e.target.files)}
+                accept="image/*,video/*,.mp4,.mov,.3gp,.mkv,.webm,.avi,.m4v,.jpg,.jpeg,.png,.webp,.heic,.heif"
+                onChange={(e) => {
+                  handleFilesSelected(e.target.files);
+                  e.target.value = "";
+                }}
                 className="hidden"
               />
-              {/* Device Upload Zone */}
+
+              {/* Single Unified Media Upload Zone */}
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-cyan-300 dark:border-cyan-800 bg-cyan-50/30 dark:bg-cyan-950/20 rounded-2xl p-4 text-center cursor-pointer flex flex-col items-center justify-center space-y-2 hover:bg-cyan-50/50 transition-colors"
+                className="border-2 border-dashed border-cyan-300 dark:border-cyan-800 bg-cyan-50/30 dark:bg-cyan-950/20 rounded-2xl p-6 sm:p-8 text-center cursor-pointer flex flex-col items-center justify-center space-y-2.5 hover:bg-cyan-50/60 dark:hover:bg-cyan-950/30 transition-all active:scale-[0.99]"
               >
-                <Upload className="w-6 h-6 text-cyan-600" />
-                <p className="text-sm font-medium text-slate-900 dark:text-white">
-                  Click to select photos or videos from your device (Phone, PC, Laptop)
-                </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Photos auto-converted to WebP • Total batch max 300MB • Requires Admin approval before Google Drive / YouTube auto-sync
-                </p>
-              </div>
-
-              {/* YouTube Video URL / Direct Upload Section */}
-              <div className="p-3 rounded-2xl border border-red-200 dark:border-red-950 bg-red-50/40 dark:bg-red-950/20 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold text-red-700 dark:text-red-400 flex items-center gap-1.5">
-                    <Video className="w-4 h-4 text-red-600" />
-                    <span>YouTube Video Integration</span>
-                  </label>
-                  <a
-                    href="https://www.youtube.com/upload"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-medium text-red-600 hover:text-red-700 flex items-center gap-1 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-lg border border-red-200 dark:border-red-900 shadow-sm transition-colors"
-                  >
-                    <ExternalLink className="w-3 h-3" />
-                    <span>Upload to YouTube Studio</span>
-                  </a>
+                <div className="w-12 h-12 rounded-2xl bg-cyan-100 dark:bg-cyan-900/60 flex items-center justify-center text-cyan-600 dark:text-cyan-300 shadow-xs">
+                  <Upload className="w-6 h-6" />
                 </div>
-                <input
-                  type="url"
-                  value={youtubeUrlInput}
-                  onChange={(e) => setYoutubeUrlInput(e.target.value)}
-                  placeholder="Paste YouTube Video link (e.g. https://www.youtube.com/watch?v=... or https://youtu.be/...)"
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500"
-                />
-                <p className="text-[0.8rem] text-slate-500 dark:text-slate-400">
-                  Tip: Upload videos to YouTube directly for zero file size limits, then paste the YouTube link here to embed it in event galleries.
-                </p>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Tap to select photos or videos from your phone or computer
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Supports MP4, MOV, WebM, JPEG, PNG, WebP • Up to 300MB per batch
+                  </p>
+                </div>
               </div>
 
               {mediaItems.length > 0 && (
-                <div className="space-y-2 pt-1">
-                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                    <span>Total: {totalBatchSizeMB.toFixed(1)} MB / 300 MB</span>
-                    <span>{mediaItems.length} file{mediaItems.length !== 1 ? 's' : ''} selected</span>
+                <div className="space-y-2.5 pt-2">
+                  <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      Selected Files ({mediaItems.length})
+                    </span>
+                    <span>Total Batch: {totalBatchSizeMB.toFixed(1)} MB / 300 MB</span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-60 overflow-y-auto">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-72 overflow-y-auto">
                     {mediaItems.map((item) => (
                       <div
                         key={item.id}
-                        className="p-3 rounded-2xl border flex items-center space-x-3 bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800"
+                        className="p-3 rounded-2xl border flex items-center space-x-3 bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 shadow-xs"
                       >
-                        <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0 relative flex items-center justify-center">
-                          {item.type === "photo" ? (
-                            <img src={item.previewUrl} alt="preview" className="w-full h-full object-cover" />
+                        <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-900 border border-slate-700/80 shrink-0 relative flex items-center justify-center">
+                          {item.type === "video" ? (
+                            <>
+                              <video src={item.previewUrl} className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                <Play className="w-4 h-4 text-white fill-current ml-0.5" />
+                              </div>
+                            </>
                           ) : (
-                            <Video className="w-6 h-6 text-red-500" />
+                            <img src={item.previewUrl} alt="preview" className="w-full h-full object-cover" />
                           )}
                         </div>
-                        <div className="flex-1 min-w-0 text-sm">
-                          <p className="text-slate-900 dark:text-white truncate">{item.file.name}</p>
-                          <p className="text-sm text-slate-500">{item.sizeMB} MB</p>
+                        <div className="flex-1 min-w-0 text-xs">
+                          <p className="font-medium text-slate-900 dark:text-white truncate">
+                            {item.file.name}
+                          </p>
+                          <p className="text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5">
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] uppercase font-bold ${
+                              item.type === "video" ? "bg-red-500/20 text-red-600 dark:text-red-400" : "bg-teal-500/20 text-teal-600 dark:text-teal-400"
+                            }`}>
+                              {item.type === "video" ? "Video" : "Photo"}
+                            </span>
+                            <span>•</span>
+                            <span>{item.sizeMB} MB</span>
+                          </p>
                         </div>
-                        <button type="button" onClick={() => handleRemoveItem(item.id)}>
-                          <X className="w-4 h-4 text-slate-400" />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(item.id)}
+                          className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition cursor-pointer"
+                          title="Remove item"
+                        >
+                          <X className="w-4 h-4" />
                         </button>
                       </div>
                     ))}
@@ -672,15 +653,17 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           </div>
 
           {isUploading && (
-            <div className="space-y-2 animate-fadeIn">
-              <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-                <span className="flex items-center gap-2">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-600" />
-                  {uploadProgressText}
+            <div className="space-y-2.5 p-4 rounded-2xl bg-cyan-50/50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800/80 animate-fadeIn">
+              <div className="flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
+                <span className="flex items-center gap-2 font-medium">
+                  <Loader2 className="w-4 h-4 animate-spin text-cyan-600 dark:text-cyan-400 shrink-0" />
+                  <span>{uploadProgressText}</span>
                 </span>
-                <span className="font-mono font-semibold text-cyan-700 dark:text-cyan-300">{uploadProgress}%</span>
+                <span className="font-mono font-bold text-cyan-700 dark:text-cyan-300 text-sm">
+                  {uploadProgress}%
+                </span>
               </div>
-              <div className="w-full h-2.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-200 dark:border-slate-700">
+              <div className="w-full h-3 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-300 dark:border-slate-700">
                 <div
                   className="h-full bg-gradient-to-r from-cyan-500 to-teal-500 rounded-full transition-all duration-300 ease-out"
                   style={{ width: `${uploadProgress}%` }}
@@ -694,12 +677,12 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
               type="submit"
               disabled={!isFormValid || isUploading}
               style={{ cursor: !isFormValid || isUploading ? "not-allowed" : "pointer" }}
-              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 active:scale-95 text-white font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center space-x-2 transition-all shadow-md"
+              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 active:scale-95 text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center space-x-2 transition-all shadow-md"
             >
               {isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 text-white animate-spin" />
-                  <span>Publishing...</span>
+                  <span>Uploading & Processing...</span>
                 </>
               ) : (
                 <>

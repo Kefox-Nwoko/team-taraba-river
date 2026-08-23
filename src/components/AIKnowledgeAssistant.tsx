@@ -87,7 +87,7 @@ export const AIKnowledgeAssistant: React.FC<AIKnowledgeAssistantProps> = ({
   const samplePrompts = [
     "Who has birthdays coming up in July or August?",
     "Show me upcoming river cleanup events and location",
-    "Where can I find Google Drive photos & YouTube videos?",
+    "Where can I view event media albums and videos?",
   ];
   return (
     <div className="max-w-4xl mx-auto flex flex-col h-[650px] animate-fadeIn font-normal relative">

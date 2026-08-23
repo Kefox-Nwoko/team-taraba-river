@@ -4,6 +4,7 @@ import { loginMember } from "../services/apiClient";
 import { signInWithCustomToken, triggerGoogleAdminSignIn, FirebaseSyncManager } from "../services/firebaseService";
 import { AppStateManager } from "../services/storage";
 import { isMemberCredentialMatch } from "../lib/authMatching";
+import { INITIAL_MEMBERS } from "../data/seedData";
 import { LogIn, UserPlus, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck } from "lucide-react";
 import { BRAND_LOGO, LOGIN_WALL_BG } from "../constants/assets";
 import { clientConfig } from "../lib/config";
@@ -59,10 +60,18 @@ export const LoginGate: React.FC<LoginGateProps> = ({
       const rawCred = credential.trim();
 
       // 1. Instant local memory / state match (< 1ms)
-      let membersList = availableMembers.length > 0 ? availableMembers : AppStateManager.getMembers();
+      const cached = AppStateManager.getMembers();
+      let membersList = availableMembers.length > 0 
+        ? availableMembers 
+        : (cached.length > 0 ? cached : INITIAL_MEMBERS);
       let matched: Member | undefined = membersList.find((m) => isMemberCredentialMatch(m, rawCred));
 
-      // 2. If not found in memory, query live Firestore members immediately
+      // 2. Direct check against INITIAL_MEMBERS if still not matched
+      if (!matched) {
+        matched = INITIAL_MEMBERS.find((m) => isMemberCredentialMatch(m, rawCred));
+      }
+
+      // 3. If not found in memory, query live Firestore members immediately
       if (!matched) {
         try {
           const liveMembers = await FirebaseSyncManager.seedCSVDataIfNeeded();
@@ -188,7 +197,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
               {" "}
               <LogIn className="w-3.5 h-3.5" />{" "}
               <span>
-                {isLoading ? "Verifying..." : "Sign In To Access Community"}
+                {isLoading ? "Verifying..." : "Sign In"}
               </span>{" "}
             </button>{" "}
           </div>

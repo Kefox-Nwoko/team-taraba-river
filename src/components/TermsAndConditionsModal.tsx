@@ -157,7 +157,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                 {/* [AMENDED] Added specific no-show notification requirement */}
                 <li>When you RSVP to an event, you are making a commitment to attend. Excessive no-shows without <strong className="text-slate-700 dark:text-slate-200">prior notification</strong> to the event organizer reflect poorly on the group and may affect your standing and activity points.</li>
                 <li>Events may include social outings, sports activities, educational forums, community service initiatives, and celebratory gatherings — all organized in the spirit of fun, unity, and fellowship.</li>
-                <li>Members wishing to share event photos or videos may link publicly accessible Google Drive folders or YouTube videos. All Drive links must have "Viewer" access enabled. Submissions are reviewed by Team Taraba River administrators before featured placement.</li>
+                <li>Members wishing to share event photos or videos may submit high-resolution media albums or videos. Submissions are reviewed by Team Taraba River administrators before featured placement.</li>
                 {/* [AMENDED] Added safety and emergency provisions */}
                 <li>Members are expected to uphold decency and safety at all physical events. Behavior that endangers others, causes disruption, or embarrasses the group will not be tolerated.</li>
               </ul>
@@ -186,7 +186,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                 </h4>
                 <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
                   {/* [NEW] */}
-                  Submitted media (Google Drive folders, YouTube videos) is reviewed within <strong>5 business days</strong>. If your submission is rejected, you will receive a brief explanation. If no response is received within 5 business days, you may follow up via the official portal communication channel. Expedited review may be requested for time-sensitive content.
+                  Submitted media (photos and videos) is reviewed within <strong>5 business days</strong>. If your submission is rejected, you will receive a brief explanation. If no response is received within 5 business days, you may follow up via the official portal communication channel. Expedited review may be requested for time-sensitive content.
                 </p>
               </div>
             </section>
@@ -333,7 +333,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
                 {/* [NEW] */}
-                <li>The portal may link to or integrate with third-party services, including but not limited to Google Drive, YouTube, Firebase, and email providers. These services are not owned or controlled by Team Taraba River.</li>
+                <li>The portal may link to or integrate with third-party services, including cloud media storage, database backends, and email providers. These services are not owned or controlled by Team Taraba River.</li>
                 {/* [NEW] */}
                 <li>We are not responsible for the availability, accuracy, legality, or content of any third-party services. Your use of third-party services is governed by their respective terms of service and privacy policies.</li>
                 {/* [NEW] */}

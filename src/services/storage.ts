@@ -1,7 +1,8 @@
 import { Member, GroupEvent, PhotoApprovalRequest, ActivityLog } from "../types";
 import { clientConfig } from "../lib/config";
 import { isMemberCredentialMatch } from "../lib/authMatching";
-const LOCAL_STORAGE_KEY_MEMBERS = "taraba_river_members_v6_csv_db";
+import { INITIAL_MEMBERS } from "../data/seedData";
+const LOCAL_STORAGE_KEY_MEMBERS = "taraba_river_members_v7_live";
 const LOCAL_STORAGE_KEY_EVENTS = "taraba_river_events_v1";
 const LOCAL_STORAGE_KEY_APPROVALS = "taraba_river_approvals_v1";
 const LOCAL_STORAGE_KEY_LOGS = "taraba_river_logs_v1";
@@ -95,15 +96,20 @@ export class AppStateManager {
         .map(sanitizeMember);
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY_MEMBERS);
     if (!raw) {
-      const clean = filterAdminAcc([]);
+      const clean = filterAdminAcc(INITIAL_MEMBERS);
       localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(clean));
       return clean;
     }
     try {
       const parsed = JSON.parse(raw);
-      return filterAdminAcc(parsed);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return filterAdminAcc(parsed);
+      }
+      const clean = filterAdminAcc(INITIAL_MEMBERS);
+      localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(clean));
+      return clean;
     } catch {
-      const clean = filterAdminAcc([]);
+      const clean = filterAdminAcc(INITIAL_MEMBERS);
       return clean;
     }
   }
@@ -331,7 +337,7 @@ export class AppStateManager {
   // Session & Counter Logic
   public static getSessionCount(): number {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY_SESSION_COUNT);
-    return raw ? parseInt(raw, 10) : 342;
+    return raw ? parseInt(raw, 10) : 0;
   }
   public static getActiveSessionUser(): SessionUserRecord | null {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY_ACTIVE_SESSION);

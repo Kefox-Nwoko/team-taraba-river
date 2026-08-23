@@ -156,15 +156,16 @@ export default function App() {
     });
 
     // 2. Real-time synchronized subscription across all active clients
+    //    This is the single source of truth — once it fires, it supersedes all fallbacks.
     const unsubscribe = FirebaseService.subscribeVisitMetrics((liveVisits) => {
       setTotalVisits(liveVisits);
     });
 
-    // 3. Backend fallback sync
+    // 3. Backend fallback sync — only used if Firestore listener hasn't fired yet
     fetchVisitMetrics()
       .then((metrics) => {
         if (metrics.totalVisits > 0) {
-          setTotalVisits((prev) => Math.max(prev, metrics.totalVisits));
+          setTotalVisits((prev) => (prev === 0 ? metrics.totalVisits : prev));
         }
         setLastVisitTimestamp(metrics.lastVisitTimestamp);
         setLatestUniqueUser(metrics.latestUniqueUser);

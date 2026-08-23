@@ -147,7 +147,7 @@ export const MediaShareModal: React.FC<MediaShareModalProps> = ({
             }`}
           >
             <Video className="w-4 h-4" />
-            <span>YouTube Videos ({videoItems.length})</span>
+            <span>Event Videos ({videoItems.length})</span>
           </button>
         </div>
 
@@ -197,10 +197,10 @@ export const MediaShareModal: React.FC<MediaShareModalProps> = ({
                     href={item.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full py-1.5 px-3 bg-red-600 text-white text-xs rounded-xl flex items-center justify-center space-x-2"
+                    className="w-full py-1.5 px-3 bg-red-600 hover:bg-red-700 text-white text-xs rounded-xl flex items-center justify-center space-x-2 transition"
                   >
                     <Play className="w-4 h-4 fill-current" />
-                    <span>View Video on YouTube</span>
+                    <span>Watch Video</span>
                   </a>
                 </div>
               ))}

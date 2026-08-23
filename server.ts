@@ -28,6 +28,8 @@ import {
   MediaFinalizeSchema,
 } from "./server/validation";
 import { uploadIntermediateMedia, finalizeMedia, getMediaStatus } from "./server/mediaPipeline";
+import { isMemberCredentialMatch } from "./src/lib/authMatching";
+import { CSV_SEED_MEMBERS } from "./src/data/csvMembers";
 
 dotenv.config();
 
@@ -149,7 +151,7 @@ setInterval(async () => {
 }, 15 * 60 * 1000); // Runs every 15 minutes
 
 // --- In-Memory Fallback Stores (used when Firestore Admin SDK is not available) ---
-let fallbackMembers: Member[] = [];
+let fallbackMembers: Member[] = [...(CSV_SEED_MEMBERS as Member[])];
 let fallbackEvents: GroupEvent[] = [];
 let fallbackApprovals: PhotoApprovalRequest[] = [];
 let fallbackLogs: ActivityLog[] = [];
@@ -373,7 +375,7 @@ async function incrementGlobalVisits(visitorName: string) {
       const docSnap = await docRef.get();
       if (docSnap.exists) {
         const data = docSnap.data();
-        const currentVisits = data?.totalVisits ?? 1428;
+        const currentVisits = data?.totalVisits ?? 0;
         await docRef.update({
           totalVisits: currentVisits + 1,
           lastVisitTimestamp: new Date().toISOString(),
@@ -535,18 +537,11 @@ app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => 
   }
 
   const { credential } = validation.data;
-  const normalized = credential.trim().toLowerCase();
-  const cleanInput = normalized.replace(/\s/g, '');
+  const rawCred = credential.trim();
 
   // Local dev fallback: search in-memory
   if (!isFirestoreAvailable()) {
-    const matched = fallbackMembers.find(m => {
-      const emailMatch = m.email && m.email.trim().toLowerCase() === normalized;
-      const mPhone = (m.phoneNumber || '').replace(/\s/g, '');
-      const mWhatsapp = (m.whatsappNumber || '').replace(/\s/g, '');
-      const phoneMatch = cleanInput.length >= 7 && (mPhone === cleanInput || mWhatsapp === cleanInput);
-      return emailMatch || phoneMatch;
-    });
+    const matched = fallbackMembers.find(m => isMemberCredentialMatch(m, rawCred));
 
     if (!matched) {
       res.status(404).json({
@@ -567,62 +562,20 @@ app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => 
     let memberData: Member | null = null;
     let memberDocId: string | null = null;
 
-    // 1. Fast indexed email query
-    const emailQuery = await db.collection(COLLECTIONS.members)
-      .where('email', '==', normalized).limit(1).get();
-
-    if (!emailQuery.empty) {
-      memberData = emailQuery.docs[0].data() as Member;
-      memberDocId = emailQuery.docs[0].id;
+    // 1. Check in-memory fallback list first
+    const matchedLocal = fallbackMembers.find(m => isMemberCredentialMatch(m, rawCred));
+    if (matchedLocal) {
+      memberData = matchedLocal;
+      memberDocId = matchedLocal.id;
     } else {
-      // 2. Fast check against fallback members list in memory
-      const inputDigits = cleanInput.replace(/\D/g, '');
-      const matchedLocal = fallbackMembers.find(m => {
-        const mEmail = (m.email || '').trim().toLowerCase();
-        const mPhoneDigits = (m.phoneNumber || '').replace(/\D/g, '');
-        const mWaDigits = (m.whatsappNumber || '').replace(/\D/g, '');
-        if (mEmail === normalized) return true;
-        if (inputDigits.length >= 7) {
-          const s10 = inputDigits.slice(-10);
-          const s9 = inputDigits.slice(-9);
-          const s8 = inputDigits.slice(-8);
-          if (mPhoneDigits.length >= 7 && (mPhoneDigits === inputDigits || mPhoneDigits.slice(-10) === s10 || mPhoneDigits.slice(-9) === s9 || mPhoneDigits.slice(-8) === s8)) return true;
-          if (mWaDigits.length >= 7 && (mWaDigits === inputDigits || mWaDigits.slice(-10) === s10 || mWaDigits.slice(-9) === s9 || mWaDigits.slice(-8) === s8)) return true;
-        }
-        return false;
-      });
-
-      if (matchedLocal) {
-        memberData = matchedLocal;
-        memberDocId = matchedLocal.id;
-      } else {
-        // 3. Query all members in Firestore and match with flexible phone formats
-        const allMembersSnap = await db.collection(COLLECTIONS.members).get();
-        for (const d of allMembersSnap.docs) {
-          const m = d.data() as Member;
-          const mEmail = (m.email || '').trim().toLowerCase();
-          const mPhoneDigits = (m.phoneNumber || '').replace(/\D/g, '');
-          const mWaDigits = (m.whatsappNumber || '').replace(/\D/g, '');
-          if (mEmail === normalized) {
-            memberData = m;
-            memberDocId = d.id;
-            break;
-          }
-          if (inputDigits.length >= 7) {
-            const s10 = inputDigits.slice(-10);
-            const s9 = inputDigits.slice(-9);
-            const s8 = inputDigits.slice(-8);
-            if (mPhoneDigits.length >= 7 && (mPhoneDigits === inputDigits || mPhoneDigits.slice(-10) === s10 || mPhoneDigits.slice(-9) === s9 || mPhoneDigits.slice(-8) === s8)) {
-              memberData = m;
-              memberDocId = d.id;
-              break;
-            }
-            if (mWaDigits.length >= 7 && (mWaDigits === inputDigits || mWaDigits.slice(-10) === s10 || mWaDigits.slice(-9) === s9 || mWaDigits.slice(-8) === s8)) {
-              memberData = m;
-              memberDocId = d.id;
-              break;
-            }
-          }
+      // 2. Query all members in Firestore and match with isMemberCredentialMatch
+      const allMembersSnap = await db.collection(COLLECTIONS.members).get();
+      for (const d of allMembersSnap.docs) {
+        const m = { id: d.id, ...d.data() } as Member;
+        if (isMemberCredentialMatch(m, rawCred)) {
+          memberData = m;
+          memberDocId = d.id;
+          break;
         }
       }
     }
@@ -2175,11 +2128,11 @@ app.post("/api/ai/stats-insights", conditionalAuth, async (req: Request, res: Re
 
     const totalMembers = metrics?.totalMembers || members.length;
     const totalEvents = metrics?.totalEvents || events.length;
-    const totalVisits = metrics?.totalVisits ?? 1428;
+    const totalVisits = metrics?.totalVisits ?? 0;
     const lastVisit = metrics?.lastVisitTimestamp || new Date().toISOString();
     const highestExplorer = metrics?.highestExplorer || 'Bako Danladi';
     const mostInteractive = metrics?.mostInteractiveUser || 'Aisha Hassan';
-    const sessionCount = metrics?.sessionCount || 342;
+    const sessionCount = metrics?.sessionCount || 0;
     const latestUser = metrics?.latestUser || 'Aisha Hassan';
 
     if (!ai) {
@@ -2258,7 +2211,10 @@ const NEWS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const LIVE_EXTERNAL_FEEDS = [
   { url: 'https://news.google.com/rss/search?q=USOSA+Nigeria&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: 'Google News / USOSA' },
   { url: 'https://news.google.com/rss/search?q=Unity+Schools+Nigeria&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: 'Google News / Unity Schools' },
+  { url: 'https://news.google.com/rss/search?q=Federal+Unity+Colleges+Nigeria&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: 'Google News / Unity Colleges' },
   { url: 'https://news.google.com/rss/search?q=Federal+Government+College+Nigeria&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: 'Google News / FGC' },
+  { url: 'https://news.google.com/rss/search?q=Kings+College+Lagos&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: "Google News / King's College" },
+  { url: 'https://news.google.com/rss/search?q=Queens+College+Lagos&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: "Google News / Queen's College" },
   { url: 'https://punchng.com/feed/', defaultSource: 'Punch Nigeria' },
   { url: 'https://guardian.ng/feed/', defaultSource: 'Guardian Nigeria' },
   { url: 'https://www.vanguardngr.com/feed/', defaultSource: 'Vanguard Nigeria' },
@@ -2398,30 +2354,40 @@ function cleanNewsHtmlAndJunk(str: string): string {
 async function aiChiefEditorCurate(rawItems: Array<{ title: string; snippet: string; url: string; source: string; pubDate: string; timestamp: number }>): Promise<any[]> {
   const ai = getGeminiClient();
 
-  // If Gemini is available, run through AI Chief Editor with 50+ years experience persona
-  if (ai && rawItems.length > 0) {
+  // De-duplicate raw items by normalized title before sending to AI
+  const seen = new Set<string>();
+  const dedupedItems = rawItems.filter(item => {
+    const key = item.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  if (ai && dedupedItems.length > 0) {
     try {
-      const prompt = `You are an elite Senior Chief News Bureau Editor and AI Journalism Agent specializing in Nigerian education, USOSA (Unity Schools Old Students Association), Unity Colleges (Federal Government Colleges), and national policy developments.
+      const prompt = `You are a professional news editor for a Nigerian Unity Schools alumni community portal. Your readers are alumni of Federal Government Colleges (FGC, FGGC, FSTC) and members of USOSA.
 
-Below is a live batch of raw external news feeds gathered right now:
-${JSON.stringify(rawItems, null, 2)}
+Here are today's raw news items:
+${JSON.stringify(dedupedItems.slice(0, 12), null, 2)}
 
-Your task as Chief Editor:
-1. Select the top 6 most important news stories concerning USOSA, Unity Colleges, FGC/FGGC alumni, or Nigerian public education.
-2. Edit each headline to be sharp, authoritative, and professional. DO NOT include markdown links, code blocks, or HTML tags.
-3. CRITICAL REQUIREMENT FOR SUMMARY: For EACH story, write a comprehensive 5 to 6 line journalistic summary (around 50 to 75 words) that provides full background context, key actions taken, stakeholders involved, and implications for USOSA and Unity College alumni. DO NOT repeat or restate the headline title.
-4. Keep the exact source name, publication URL, and publishedAt from the input item.
-5. Arrange output headlines in strict descending chronological order (newest/latest news on top).
+Instructions:
+- Pick the top 6 most relevant stories. Do NOT repeat the same story twice even if reported by different outlets.
+- For each story, write a clean headline and a comprehensive, well-articulated, professionally executed narrative story summary of 10 to 15 lines (around 120-180 words, formatted across 2 to 3 fluid paragraphs).
+- STRICT RULE: This must be a pure, readable story summary, NOT an analysis. DO NOT use corporate headings or analytical section headers like "Executive Summary:", "Key Stakeholders:", "Strategic Implications:", or bullet points.
+- Write in fluent, articulate journalistic prose detailing what happened, who was involved, the facts, quotes or context, and how it impacts Federal Unity Colleges / USOSA stakeholders.
+- DO NOT fabricate facts, dates, or quotes.
+- Keep the original source name, URL, and publishedAt date from the input.
+- Order from newest to oldest.
 
-Return ONLY a valid JSON object matching this structure (no markdown fences):
+Return ONLY valid JSON (no markdown fences):
 {
   "headlines": [
     {
-      "title": "Sharpened Headline",
-      "summary": "Full 5 to 6 line journalistic summary providing thorough background, key developments, and alumni implications.",
-      "source": "News Source",
-      "url": "https://direct-link",
-      "publishedAt": "Date or Recent"
+      "title": "Clean headline",
+      "summary": "Cohesive 10 to 15 line narrative story summary in 2-3 readable paragraphs without analytical headers.",
+      "source": "Source Name",
+      "url": "https://link",
+      "publishedAt": "Date"
     }
   ]
 }`;
@@ -2429,13 +2395,21 @@ Return ONLY a valid JSON object matching this structure (no markdown fences):
       const response = await ai.models.generateContent({
         model: 'gemini-3.6-flash',
         contents: prompt,
-        config: { temperature: 0.2 },
+        config: { temperature: 0.15 },
       });
 
       let rawText = (response.text || '').replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(rawText);
       if (Array.isArray(parsed.headlines) && parsed.headlines.length > 0) {
-        return parsed.headlines.slice(0, 6).map((h: any) => ({
+        // Final de-dup pass on AI output
+        const outputSeen = new Set<string>();
+        const cleaned = parsed.headlines.filter((h: any) => {
+          const k = (h.title || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
+          if (outputSeen.has(k)) return false;
+          outputSeen.add(k);
+          return true;
+        });
+        return cleaned.slice(0, 6).map((h: any) => ({
           title: cleanNewsHtmlAndJunk(cleanText(h.title)),
           summary: cleanNewsHtmlAndJunk(cleanText(h.summary)),
           source: cleanNewsHtmlAndJunk(cleanText(h.source)),
@@ -2448,18 +2422,25 @@ Return ONLY a valid JSON object matching this structure (no markdown fences):
     }
   }
 
-  // Fallback: Clean raw items into well-structured 5-line summaries without repeating headlines or HTML tags
-  return rawItems.slice(0, 6).map(item => {
+  // Fallback: Clean raw items into simple summaries without AI
+  const fallbackSeen = new Set<string>();
+  return dedupedItems.slice(0, 6).filter(item => {
+    const key = item.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
+    if (fallbackSeen.has(key)) return false;
+    fallbackSeen.add(key);
+    return true;
+  }).map(item => {
     const title = cleanNewsHtmlAndJunk(cleanText(item.title));
-    let rawSnip = cleanNewsHtmlAndJunk(item.snippet || "");
-    if (rawSnip.toLowerCase().startsWith(title.toLowerCase())) {
-      rawSnip = rawSnip.slice(title.length).trim();
+    let snippet = cleanNewsHtmlAndJunk(item.snippet || "");
+    // Remove the title if the snippet starts with it
+    if (snippet.toLowerCase().startsWith(title.toLowerCase())) {
+      snippet = snippet.slice(title.length).trim();
     }
-    rawSnip = cleanNewsHtmlAndJunk(rawSnip);
+    snippet = cleanNewsHtmlAndJunk(snippet);
 
-    const summary = rawSnip.length > 50
-      ? `${rawSnip}. This national report details critical educational policies, alumni mobilisation, and institutional advocacy across Nigerian Unity Colleges. USOSA members are encouraged to read the full story on the publisher portal.`
-      : `${title}. This news report outlines recent policy developments, alumni advocacy, and educational initiatives reported by ${item.source || 'national news outlets'}. USOSA members and alumni can access the complete coverage via the story link.`;
+    const summary = snippet.length > 30
+      ? snippet
+      : `${title}. Read the full story from ${item.source || 'the source'} via the link below.`;
 
     return {
       title,
