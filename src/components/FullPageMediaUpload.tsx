@@ -18,7 +18,7 @@ import {
   ChevronDown,
   Play,
 } from "lucide-react";
-import { uploadVideoToYouTubeBridge } from "../services/apiClient";
+import { uploadVideoDirectToYouTube } from "../services/youtubeDirectUpload";
 
 interface MediaItem {
   id: string;
@@ -140,16 +140,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   ): Promise<string> => {
     const isVideo = item.type === "video";
 
-    // 1. For Videos: Attempt automated streaming to YouTube Bridge
+    // 1. For Videos: Stream directly to YouTube Channel with real-time resumable chunks
     if (isVideo) {
-      try {
-        const ytUrl = await uploadVideoToYouTubeBridge(item.file, folderName, onFileProgress);
-        if (ytUrl && ytUrl.startsWith("http")) {
-          return ytUrl;
-        }
-      } catch (bridgeErr: any) {
-        logger.warn("YouTube Bridge direct stream notice, attempting Cloud Storage fallback:", bridgeErr);
-      }
+      const ytUrl = await uploadVideoDirectToYouTube(item.file, folderName, onFileProgress);
+      return ytUrl;
     }
 
     // 2. For Photos (WebP compressed) or Video Fallback
