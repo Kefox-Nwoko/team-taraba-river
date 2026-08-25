@@ -312,7 +312,11 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           if (errorText.includes("quota-exceeded") || itemErr?.code === "storage/quota-exceeded") {
             throw new Error("Cloud Storage daily free quota reached. Please try smaller files or wait for quota reset.");
           }
-          throw itemErr;
+          // Preserve YouTube-specific error messages for user visibility
+          if (errorText.includes("YouTube") || errorText.includes("youtube") || errorText.includes("token")) {
+            throw new Error(`Video upload error: ${errorText}`);
+          }
+          throw new Error(`Upload failed for "${item.file.name}": ${errorText || "Unknown error"}`);
         }
 
         if (finalUrl) {
