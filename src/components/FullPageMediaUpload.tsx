@@ -279,167 +279,193 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     const folderDescription = folderMode === "new" ? newDescription.trim() : (events.find((e) => e.id === selectedFolderId)?.description || "");
     const isAdmin = currentUser?.role === "admin";
 
+    // ──────────────────────────────────────────────────────────────────
+    // FAULT-TOLERANT UPLOAD: Each file is independent — one failure
+    // does NOT kill the others. Results are tracked per-file.
+    // ──────────────────────────────────────────────────────────────────
     const photoFinalUrls: string[] = [];
     const videoFinalUrls: string[] = [];
-    const approvalsToSave: Array<{ id: string; type: "photo" | "video"; url: string }> = [];
+    const failedFiles: Array<{ name: string; reason: string }> = [];
 
-    try {
-      // Track individual item progress
-      const fileProgresses = new Array(mediaItems.length).fill(0);
-      const updateOverallProgress = () => {
-        const totalPct = fileProgresses.reduce((a, b) => a + b, 0) / (mediaItems.length || 1);
-        const overall = Math.round(10 + totalPct * 0.8);
-        setUploadProgress(Math.min(90, Math.max(10, overall)));
-      };
+    const fileProgresses = new Array(mediaItems.length).fill(0);
+    const updateOverallProgress = () => {
+      const totalPct = fileProgresses.reduce((a, b) => a + b, 0) / (mediaItems.length || 1);
+      const overall = Math.round(10 + totalPct * 0.8);
+      setUploadProgress(Math.min(90, Math.max(10, overall)));
+    };
 
-      for (let i = 0; i < mediaItems.length; i++) {
-        const item = mediaItems[i];
-        const isVideo = item.type === "video";
+    // Upload all files concurrently with per-file progress tracking
+    const uploadPromises = mediaItems.map((item, i) => {
+      const isVideo = item.type === "video";
+      return (async () => {
         setUploadProgressText(
           `Uploading ${isVideo ? "video" : "photo"} ${i + 1} of ${mediaItems.length} (${item.file.name || "asset"})...`
         );
+        const finalUrl = await uploadMediaFileWithProgress(item, eventId, folderNameTitle, i, (pct) => {
+          fileProgresses[i] = pct;
+          updateOverallProgress();
+        });
+        return { index: i, url: finalUrl, type: item.type, name: item.file.name };
+      })();
+    });
 
-        let finalUrl = "";
-        try {
-          finalUrl = await uploadMediaFileWithProgress(item, eventId, folderNameTitle, i, (pct) => {
-            fileProgresses[i] = pct;
-            setUploadProgressText(`Uploading ${isVideo ? "video" : "photo"} ${i + 1} of ${mediaItems.length} (${pct}%)...`);
-            updateOverallProgress();
-          });
-        } catch (itemErr: any) {
-          logger.error(`Upload error on item ${i + 1}`, itemErr);
-          const errorText = itemErr?.message || "";
-          if (errorText.includes("quota-exceeded") || itemErr?.code === "storage/quota-exceeded") {
-            throw new Error("Cloud Storage daily free quota reached. Please try smaller files or wait for quota reset.");
-          }
-          // Preserve YouTube-specific error messages for user visibility
-          if (errorText.includes("YouTube") || errorText.includes("youtube") || errorText.includes("token")) {
-            throw new Error(`Video upload error: ${errorText}`);
-          }
-          throw new Error(`Upload failed for "${item.file.name}": ${errorText || "Unknown error"}`);
+    const results = await Promise.allSettled(uploadPromises);
+
+    // Process results — separate successes from failures
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const item = mediaItems[i];
+
+      if (result.status === "fulfilled" && result.value.url) {
+        const finalUrl = result.value.url;
+        if (item.type === "video") {
+          videoFinalUrls.push(finalUrl);
+        } else {
+          photoFinalUrls.push(finalUrl);
         }
 
-        if (finalUrl) {
-          if (isVideo) {
-            videoFinalUrls.push(finalUrl);
-          } else {
-            photoFinalUrls.push(finalUrl);
+        // Save approval for non-admin members immediately
+        if (!isAdmin) {
+          try {
+            await FirebaseSyncManager.saveApproval({
+              id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              memberId: currentUser?.id || "mem_guest",
+              memberName: currentUser?.fullName || "Community Member",
+              memberEmail: currentUser?.email || "member@tarabateam.org",
+              photoUrl: finalUrl,
+              uploadedAt: new Date().toISOString(),
+              status: "pending",
+              adminNotes: `${item.type === "video" ? "Video" : "Photo"} submission for folder: ${folderNameTitle}`,
+              type: item.type === "video" ? "video" : "photo",
+              eventId,
+              folderName: folderNameTitle,
+              date: folderEventDate,
+              location: folderLocation,
+              category: folderCategory,
+              description: folderDescription,
+            });
+          } catch (syncErr) {
+            logger.warn("Per-item approval save notice:", syncErr);
           }
-
-          const approvalItem = {
-            id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-            type: (isVideo ? "video" : "photo") as "photo" | "video",
-            url: finalUrl,
-          };
-          
-          if (!isAdmin) {
-            approvalsToSave.push(approvalItem);
-            // Save individual item to Firestore immediately
-            try {
-              await FirebaseSyncManager.saveApproval({
-                id: approvalItem.id,
-                memberId: currentUser?.id || "mem_guest",
-                memberName: currentUser?.fullName || "Community Member",
-                memberEmail: currentUser?.email || "member@tarabateam.org",
-                photoUrl: approvalItem.url,
-                uploadedAt: new Date().toISOString(),
-                status: "pending",
-                adminNotes: `${isVideo ? "Video" : "Photo"} submission for folder: ${folderNameTitle}`,
-                type: isVideo ? "video" : "photo",
-                eventId,
-                folderName: folderNameTitle,
-                date: folderEventDate,
-                location: folderLocation,
-                category: folderCategory,
-                description: folderDescription,
-              });
-            } catch (syncErr) {
-              logger.warn("Per-item approval save notice:", syncErr);
-            }
-          }
-        }
-      }
-
-      setUploadProgressText("Registering media in Event Gallery & Admin review...");
-      setUploadProgress(95);
-
-      let targetEvent: GroupEvent;
-      if (folderMode === "existing") {
-        const existingEvent = events.find((e) => e.id === selectedFolderId);
-        if (!existingEvent) throw new Error("Selected existing event folder not found.");
-        targetEvent = {
-          ...existingEvent,
-          driveImageUrls: isAdmin
-            ? [...(existingEvent.driveImageUrls || []), ...photoFinalUrls]
-            : (existingEvent.driveImageUrls || []),
-          driveFolderId: existingEvent.driveFolderId || `drive_folder_${Date.now()}`,
-          youtubeVideoUrl: isAdmin
-            ? (videoFinalUrls[0] || existingEvent.youtubeVideoUrl || "")
-            : (existingEvent.youtubeVideoUrl || ""),
-        };
-        // If Admin, directly publish changes to Event
-        if (isAdmin) {
-          await FirebaseSyncManager.saveEvent(targetEvent);
         }
       } else {
-        targetEvent = {
-          id: eventId,
-          title: folderNameTitle,
-          date: newDate,
-          time: "09:00",
-          location: newLocation.trim(),
-          category: newCategory,
-          description: newDescription.trim() || `Archival media collection for ${folderNameTitle}.`,
-          driveImageUrls: isAdmin ? photoFinalUrls : [],
-          driveFolderId: `drive_folder_${Date.now()}`,
-          youtubeVideoUrl: isAdmin ? (videoFinalUrls[0] || "") : "",
-          createdBy: currentUser?.fullName || "Community Member",
-          createdById: currentUser?.id || "mem_guest",
-          attendeeIds: currentUser ? [currentUser.id] : [],
-          maxCapacity: 100,
-          createdAt: new Date().toISOString(),
-        };
-        // If Admin, directly publish new Event folder
-        if (isAdmin) {
-          await FirebaseSyncManager.saveEvent(targetEvent);
+        const reason = result.status === "rejected"
+          ? (result.reason?.message || result.reason || "Unknown error")
+          : "No URL returned";
+        failedFiles.push({ name: item.file.name || `File ${i + 1}`, reason: String(reason) });
+        logger.error(`Upload failed for item ${i + 1} (${item.file.name}):`, reason);
+      }
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // SAVE EVENT: Register all successful uploads to the event folder.
+    // Runs even if some files failed — successful files are still saved.
+    // Admin uploads are published directly (no approval queue).
+    // ──────────────────────────────────────────────────────────────────
+    const totalSucceeded = photoFinalUrls.length + videoFinalUrls.length;
+
+    if (totalSucceeded > 0) {
+      setUploadProgressText("Registering media in Event Gallery...");
+      setUploadProgress(95);
+
+      try {
+        let targetEvent: GroupEvent;
+        if (folderMode === "existing") {
+          const existingEvent = events.find((e) => e.id === selectedFolderId);
+          if (!existingEvent) throw new Error("Selected existing event folder not found.");
+          targetEvent = {
+            ...existingEvent,
+            driveImageUrls: isAdmin
+              ? [...(existingEvent.driveImageUrls || []), ...photoFinalUrls]
+              : (existingEvent.driveImageUrls || []),
+            driveFolderId: existingEvent.driveFolderId || `drive_folder_${Date.now()}`,
+            youtubeVideoUrl: isAdmin
+              ? (videoFinalUrls[videoFinalUrls.length - 1] || existingEvent.youtubeVideoUrl || "")
+              : (existingEvent.youtubeVideoUrl || ""),
+            // Store ALL video URLs (not just the first one)
+            youtubeVideoUrls: isAdmin
+              ? [...((existingEvent as any).youtubeVideoUrls || (existingEvent.youtubeVideoUrl ? [existingEvent.youtubeVideoUrl] : [])), ...videoFinalUrls]
+              : ((existingEvent as any).youtubeVideoUrls || (existingEvent.youtubeVideoUrl ? [existingEvent.youtubeVideoUrl] : [])),
+          };
+          // Admin: directly publish to Event Gallery (no approval needed)
+          if (isAdmin) {
+            await FirebaseSyncManager.saveEvent(targetEvent);
+          }
+        } else {
+          targetEvent = {
+            id: eventId,
+            title: folderNameTitle,
+            date: newDate,
+            time: "09:00",
+            location: newLocation.trim(),
+            category: newCategory,
+            description: newDescription.trim() || `Archival media collection for ${folderNameTitle}.`,
+            driveImageUrls: isAdmin ? photoFinalUrls : [],
+            driveFolderId: `drive_folder_${Date.now()}`,
+            youtubeVideoUrl: isAdmin ? (videoFinalUrls[videoFinalUrls.length - 1] || "") : "",
+            youtubeVideoUrls: isAdmin ? videoFinalUrls : [],
+            createdBy: currentUser?.fullName || "Community Member",
+            createdById: currentUser?.id || "mem_guest",
+            attendeeIds: currentUser ? [currentUser.id] : [],
+            maxCapacity: 100,
+            createdAt: new Date().toISOString(),
+          } as any;
+          // Admin: directly publish new Event folder (no approval needed)
+          if (isAdmin) {
+            await FirebaseSyncManager.saveEvent(targetEvent);
+          }
         }
+
+        setUploadProgress(100);
+        setIsUploading(false);
+
+        // ──────────────────────────────────────────────────────────────
+        // SMART NOTIFICATION: Shows exactly what succeeded and what failed
+        // ──────────────────────────────────────────────────────────────
+        if (failedFiles.length === 0) {
+          // All files succeeded
+          notify(
+            isAdmin
+              ? `✅ ${totalSucceeded} media item${totalSucceeded !== 1 ? "s" : ""} published to the Event Gallery.`
+              : `✅ ${totalSucceeded} media item${totalSucceeded !== 1 ? "s" : ""} submitted for Admin review.`,
+            "success"
+          );
+        } else {
+          // Partial success — some succeeded, some failed
+          const failReasons = failedFiles.map((f) => `"${f.name}"`).join(", ");
+          notify(
+            `⚠️ ${totalSucceeded} of ${mediaItems.length} uploaded successfully. Failed: ${failReasons}. ${failedFiles[0].reason}`,
+            "info"
+          );
+        }
+
+        // Reset form state
+        mediaItems.forEach((it) => {
+          try { URL.revokeObjectURL(it.previewUrl); } catch {}
+        });
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        setMediaItems([]);
+        setNewFolderTitle("");
+        setNewLocation("");
+        setNewDescription("");
+        setNewDate(() => new Date().toISOString().split("T")[0]);
+        setSelectedFolderId(initialFolderId || "");
+        setFolderMode(initialFolderId ? "existing" : "new");
+        setUploadProgress(0);
+        setErrorMessage(null);
+
+        onSuccess(targetEvent);
+      } catch (saveErr) {
+        logger.error("Event save error after successful uploads:", saveErr);
+        const msg = saveErr instanceof Error ? saveErr.message : "Failed to register media in event gallery.";
+        setErrorMessage(`Uploads completed but event save failed: ${msg}`);
+        setUploadProgress(0);
+        setIsUploading(false);
       }
-
-      setUploadProgress(100);
-      setIsUploading(false);
-
-      const totalItemsCount = photoFinalUrls.length + videoFinalUrls.length;
-      notify(
-        isAdmin
-          ? `${totalItemsCount} media item${totalItemsCount !== 1 ? 's' : ''} published successfully to the Event Gallery.`
-          : `${totalItemsCount} media item${totalItemsCount !== 1 ? 's' : ''} submitted for Admin review. They will become visible on the public Media page once approved by an Admin.`,
-        "success"
-      );
-
-      // Cleanly reset upload form state and native file input
-      mediaItems.forEach((it) => {
-        try {
-          URL.revokeObjectURL(it.previewUrl);
-        } catch {}
-      });
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-      setMediaItems([]);
-      setNewFolderTitle("");
-      setNewLocation("");
-      setNewDescription("");
-      setNewDate(() => new Date().toISOString().split("T")[0]);
-      setSelectedFolderId(initialFolderId || "");
-      setFolderMode(initialFolderId ? "existing" : "new");
-      setUploadProgress(0);
-      setErrorMessage(null);
-
-      onSuccess(targetEvent);
-    } catch (err) {
-      logger.error("Full page media upload error", err);
-      const message = err instanceof Error ? err.message : "Failed to upload media.";
-      setErrorMessage(message.includes("NetworkError") ? "Check internet connection or network status." : message);
+    } else {
+      // ALL files failed — show the error clearly
+      const allReasons = failedFiles.map((f) => `"${f.name}": ${f.reason}`).join(" | ");
+      setErrorMessage(`❌ All ${mediaItems.length} upload${mediaItems.length !== 1 ? "s" : ""} failed. ${allReasons}`);
       setUploadProgress(0);
       setIsUploading(false);
     }
