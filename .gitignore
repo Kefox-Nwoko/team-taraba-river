@@ -8,3 +8,5 @@ coverage/
 !.env.example
 service-account.json
 functions/
+.firebase/
+scratch/
