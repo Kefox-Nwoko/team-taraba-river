@@ -46,6 +46,7 @@ export interface GroupEvent {
   driveImageUrls: string[]; // Google Drive links or direct image URLs
   driveFolderId?: string;
   youtubeVideoUrl?: string; // YouTube video link or video ID
+  youtubeVideoUrls?: string[]; // Multiple YouTube video links
   youtubeTitle?: string;
   createdBy: string; // Member Name
   createdById: string; // Member ID

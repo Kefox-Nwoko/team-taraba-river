@@ -6,6 +6,7 @@ import { MemberDirectoryView } from "./MemberDirectoryView";
 import { AppStateManager } from "../services/storage";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import { triggerCloudSyncAll, triggerYouTubeBackSync, resetSystemData, deleteEvent as deleteEventApi } from "../services/apiClient";
+import { deleteYouTubeVideo } from "../services/youtubeDirectUpload";
 import { CreateEventModal } from "./CreateEventModal";
 import { ReturnButton } from "./ReturnButton";
 import {
@@ -245,7 +246,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     if (targetEvt) {
       // Event exists — add the approved photo/video to it
       if (req.type === "video") {
-        targetEvt.youtubeVideoUrl = req.photoUrl;
+        const existingVideos = targetEvt.youtubeVideoUrls || (targetEvt.youtubeVideoUrl ? [targetEvt.youtubeVideoUrl] : []);
+        if (!existingVideos.includes(req.photoUrl)) {
+          targetEvt.youtubeVideoUrls = [req.photoUrl, ...existingVideos];
+          targetEvt.youtubeVideoUrl = targetEvt.youtubeVideoUrls[0] || req.photoUrl;
+        }
       } else {
         const existingImgs = targetEvt.driveImageUrls || [];
         if (!existingImgs.includes(req.photoUrl)) {
@@ -269,6 +274,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         driveImageUrls: req.type === "photo" ? [req.photoUrl] : [],
         driveFolderId: `drive_folder_${Date.now()}`,
         youtubeVideoUrl: req.type === "video" ? req.photoUrl : "",
+        youtubeVideoUrls: req.type === "video" ? [req.photoUrl] : [],
         createdBy: req.memberName || "Community Member",
         createdById: req.memberId || "mem_guest",
         attendeeIds: [],
@@ -294,20 +300,33 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   };
 
   const handleRejectPhoto = async (req: PhotoApprovalRequest) => {
+    // If rejecting a video, also delete it from YouTube to prevent orphaned assets
+    if (req.type === "video" && req.photoUrl) {
+      try {
+        await deleteYouTubeVideo(req.photoUrl);
+      } catch (ytErr) {
+        logger.warn("YouTube video delete on reject notice", ytErr);
+      }
+    }
+
     const allEvents = AppStateManager.getEvents();
     let targetEvt = req.eventId
       ? allEvents.find((e) => e.id === req.eventId)
-      : allEvents.find((e) => (e.driveImageUrls || []).includes(req.photoUrl) || e.youtubeVideoUrl === req.photoUrl);
+      : allEvents.find((e) => (e.driveImageUrls || []).includes(req.photoUrl) || (e.youtubeVideoUrls || []).includes(req.photoUrl) || e.youtubeVideoUrl === req.photoUrl);
 
     if (targetEvt) {
-      if (req.type === "video" && targetEvt.youtubeVideoUrl === req.photoUrl) {
-        targetEvt.youtubeVideoUrl = "";
+      if (req.type === "video") {
+        targetEvt.youtubeVideoUrls = (targetEvt.youtubeVideoUrls || []).filter((u) => u !== req.photoUrl);
+        if (targetEvt.youtubeVideoUrl === req.photoUrl) {
+          targetEvt.youtubeVideoUrl = targetEvt.youtubeVideoUrls[0] || "";
+        }
       } else if (req.type === "photo") {
         targetEvt.driveImageUrls = (targetEvt.driveImageUrls || []).filter((u) => u !== req.photoUrl);
       }
 
       // If the event now has no media and was created specifically for this upload batch, clean it up
-      if ((targetEvt.driveImageUrls || []).length === 0 && !targetEvt.youtubeVideoUrl && targetEvt.id.startsWith("evt_folder_")) {
+      const hasVideos = (targetEvt.youtubeVideoUrls || []).length > 0 || !!targetEvt.youtubeVideoUrl;
+      if ((targetEvt.driveImageUrls || []).length === 0 && !hasVideos && targetEvt.id.startsWith("evt_folder_")) {
         const remainingEvents = allEvents.filter((e) => e.id !== targetEvt!.id);
         AppStateManager.saveEvents(remainingEvents);
         try {

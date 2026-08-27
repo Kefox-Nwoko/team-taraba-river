@@ -19,6 +19,7 @@ import {
   Play,
 } from "lucide-react";
 import { uploadVideoDirectToYouTube } from "../services/youtubeDirectUpload";
+import { AppStateManager } from "../services/storage";
 
 interface MediaItem {
   id: string;
@@ -373,23 +374,32 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         if (folderMode === "existing") {
           const existingEvent = events.find((e) => e.id === selectedFolderId);
           if (!existingEvent) throw new Error("Selected existing event folder not found.");
+
+          const existingYtList = ((existingEvent.youtubeVideoUrls || (existingEvent.youtubeVideoUrl ? [existingEvent.youtubeVideoUrl] : [])) as string[]).filter(Boolean);
+          const updatedYtList = isAdmin
+            ? Array.from(new Set([...existingYtList, ...videoFinalUrls]))
+            : existingYtList;
+
           targetEvent = {
             ...existingEvent,
             driveImageUrls: isAdmin
-              ? [...(existingEvent.driveImageUrls || []), ...photoFinalUrls]
+              ? Array.from(new Set([...(existingEvent.driveImageUrls || []), ...photoFinalUrls]))
               : (existingEvent.driveImageUrls || []),
             driveFolderId: existingEvent.driveFolderId || `drive_folder_${Date.now()}`,
-            youtubeVideoUrl: isAdmin
-              ? (videoFinalUrls[videoFinalUrls.length - 1] || existingEvent.youtubeVideoUrl || "")
-              : (existingEvent.youtubeVideoUrl || ""),
-            // Store ALL video URLs (not just the first one)
-            youtubeVideoUrls: isAdmin
-              ? [...((existingEvent as any).youtubeVideoUrls || (existingEvent.youtubeVideoUrl ? [existingEvent.youtubeVideoUrl] : [])), ...videoFinalUrls]
-              : ((existingEvent as any).youtubeVideoUrls || (existingEvent.youtubeVideoUrl ? [existingEvent.youtubeVideoUrl] : [])),
+            youtubeVideoUrls: updatedYtList,
+            youtubeVideoUrl: updatedYtList[0] || "",
           };
           // Admin: directly publish to Event Gallery (no approval needed)
           if (isAdmin) {
             await FirebaseSyncManager.saveEvent(targetEvent);
+            const currentEvents = AppStateManager.getEvents();
+            const existingIndex = currentEvents.findIndex((e) => e.id === targetEvent.id);
+            if (existingIndex !== -1) {
+              currentEvents[existingIndex] = targetEvent;
+            } else {
+              currentEvents.unshift(targetEvent);
+            }
+            AppStateManager.saveEvents(currentEvents);
           }
         } else {
           targetEvent = {
@@ -402,7 +412,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             description: newDescription.trim() || `Archival media collection for ${folderNameTitle}.`,
             driveImageUrls: isAdmin ? photoFinalUrls : [],
             driveFolderId: `drive_folder_${Date.now()}`,
-            youtubeVideoUrl: isAdmin ? (videoFinalUrls[videoFinalUrls.length - 1] || "") : "",
+            youtubeVideoUrl: isAdmin ? (videoFinalUrls[0] || "") : "",
             youtubeVideoUrls: isAdmin ? videoFinalUrls : [],
             createdBy: currentUser?.fullName || "Community Member",
             createdById: currentUser?.id || "mem_guest",
@@ -413,6 +423,9 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           // Admin: directly publish new Event folder (no approval needed)
           if (isAdmin) {
             await FirebaseSyncManager.saveEvent(targetEvent);
+            const currentEvents = AppStateManager.getEvents();
+            currentEvents.unshift(targetEvent);
+            AppStateManager.saveEvents(currentEvents);
           }
         }
 

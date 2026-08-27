@@ -7,6 +7,9 @@ import { ReturnButton } from "./ReturnButton";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import { AppStateManager } from "../services/storage";
 import { deleteEvent as deleteEventApi, updateEvent } from "../services/apiClient";
+import { deleteYouTubeVideo, extractYouTubeId, getYouTubeThumbnail } from "../services/youtubeDirectUpload";
+import { storage } from "../lib/firebase";
+import { ref, deleteObject } from "firebase/storage";
 import {
   FolderOpen,
   Folder,
@@ -42,19 +45,6 @@ interface EventMediaViewProps {
   syncStatus?: "idle" | "syncing" | "success" | "error";
   syncAttemptCount?: number;
   syncErrorMessage?: string | null;
-}
-
-function extractYouTubeId(url?: string): string | null {
-  if (!url) return null;
-  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-  const match = url.match(regExp);
-  return match && match[2].length === 11 ? match[2] : null;
-}
-
-function getYouTubeThumbnail(url?: string): string | null {
-  const id = extractYouTubeId(url);
-  if (!id) return null;
-  return `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
 }
 
 function handleGoogleDriveImageError(e: React.SyntheticEvent<HTMLImageElement, Event>): void {
@@ -139,17 +129,35 @@ function sanitizeUIField(val: string | undefined): string {
   return clean;
 }
 
-const FolderCollagePreview: React.FC<{ images: string[]; youtubeVideoUrl?: string; eventTitle: string; heightClass?: string }> = ({
+const FolderCollagePreview: React.FC<{
+  images: string[];
+  youtubeVideoUrl?: string;
+  youtubeVideoUrls?: string[];
+  eventTitle: string;
+  heightClass?: string;
+}> = ({
   images,
   youtubeVideoUrl,
+  youtubeVideoUrls,
   eventTitle,
   heightClass = "h-full w-full aspect-square",
 }) => {
-  const videoThumb = getYouTubeThumbnail(youtubeVideoUrl) || (youtubeVideoUrl ? "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80" : null);
+  const allYtUrls = Array.from(
+    new Set(
+      (youtubeVideoUrls && youtubeVideoUrls.length > 0
+        ? youtubeVideoUrls
+        : (youtubeVideoUrl ? [youtubeVideoUrl] : [])
+      ).filter(Boolean)
+    )
+  );
+
   const mediaList: Array<{ src: string; isVideo?: boolean }> = [];
-  if (videoThumb) {
+
+  allYtUrls.forEach((ytUrl) => {
+    const videoThumb = getYouTubeThumbnail(ytUrl) || "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80";
     mediaList.push({ src: videoThumb, isVideo: true });
-  }
+  });
+
   (images || []).forEach((img) => {
     if (!img || typeof img !== "string") return;
     const isDirectVideo = img.startsWith("data:video") || img.endsWith(".mp4") || img.endsWith(".webm") || (img.includes("/events%2F") && img.includes(".mp4"));
@@ -377,7 +385,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     const completed: GroupEvent[] = [];
     mappedEvents.forEach((event) => {
       if (!event) return;
-      const hasMedia = (event.driveImageUrls && event.driveImageUrls.length > 0) || !!event.youtubeVideoUrl;
+      const hasVideos = (event.youtubeVideoUrls && event.youtubeVideoUrls.length > 0) || !!event.youtubeVideoUrl;
+      const hasMedia = (event.driveImageUrls && event.driveImageUrls.length > 0) || hasVideos;
       if (event.date <= currentDateStr || hasMedia) {
         completed.push(event);
       }
@@ -401,8 +410,10 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
         if (sortBy === "oldest") return (a.date || "").localeCompare(b.date || "");
         if (sortBy === "name") return (a.title || "").localeCompare(b.title || "");
         if (sortBy === "mediaCount") {
-          const countA = (a.driveImageUrls?.length || 0) + (a.youtubeVideoUrl ? 1 : 0);
-          const countB = (b.driveImageUrls?.length || 0) + (b.youtubeVideoUrl ? 1 : 0);
+          const vidsA = folder.youtubeVideoUrls?.length || (a.youtubeVideoUrl ? 1 : 0);
+          const vidsB = folder.youtubeVideoUrls?.length || (b.youtubeVideoUrl ? 1 : 0);
+          const countA = (a.driveImageUrls?.length || 0) + vidsA;
+          const countB = (b.driveImageUrls?.length || 0) + vidsB;
           return countB - countA;
         }
         return (b.date || "").localeCompare(a.date || "");
@@ -424,15 +435,26 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       title: string;
     }> = [];
 
-    if (activeFolder.youtubeVideoUrl) {
-      const ytThumb = getYouTubeThumbnail(activeFolder.youtubeVideoUrl);
+    const allVideoUrls = Array.from(
+      new Set(
+        (activeFolder.youtubeVideoUrls && activeFolder.youtubeVideoUrls.length > 0
+          ? activeFolder.youtubeVideoUrls
+          : (activeFolder.youtubeVideoUrl ? [activeFolder.youtubeVideoUrl] : [])
+        ).filter(Boolean)
+      )
+    );
+
+    allVideoUrls.forEach((vUrl, i) => {
+      const ytThumb = getYouTubeThumbnail(vUrl);
       items.push({
         type: "video",
         url: ytThumb || "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80",
-        videoUrl: activeFolder.youtubeVideoUrl,
-        title: activeFolder.youtubeTitle || `${activeFolder.title} Video Highlights`,
+        videoUrl: vUrl,
+        title: allVideoUrls.length > 1
+          ? `${activeFolder.title} Video ${i + 1}`
+          : (activeFolder.youtubeTitle || `${activeFolder.title} Video Highlights`),
       });
-    }
+    });
 
     (activeFolder.driveImageUrls || []).forEach((imgUrl, i) => {
       if (!imgUrl || typeof imgUrl !== "string") return;
@@ -442,7 +464,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
           type: "video",
           url: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80",
           videoUrl: imgUrl,
-          title: `${activeFolder.title} Video ${i + 1}`,
+          title: `${activeFolder.title} Video ${allVideoUrls.length + i + 1}`,
         });
       } else {
         items.push({
@@ -509,6 +531,35 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
   }
 
   const performDeleteFolder = async (folderId: string) => {
+    // 1. Instantly close lightbox and folder view to provide immediate feedback
+    setLightboxIndex(null);
+    setSelectedFolder(null);
+
+    const folderToDelete = mappedEvents.find((e) => e.id === folderId) || selectedFolder;
+
+    // 2. Permanently delete all cloud storage files and YouTube videos
+    if (folderToDelete) {
+      const allVideos = Array.from(
+        new Set(
+          (folderToDelete.youtubeVideoUrls || (folderToDelete.youtubeVideoUrl ? [folderToDelete.youtubeVideoUrl] : [])).filter(Boolean)
+        )
+      );
+
+      for (const vUrl of allVideos) {
+        deleteYouTubeVideo(vUrl).catch(() => {});
+      }
+
+      for (const imgUrl of folderToDelete.driveImageUrls || []) {
+        if (imgUrl && imgUrl.includes("firebasestorage.googleapis.com")) {
+          try {
+            const fileRef = ref(storage, imgUrl);
+            deleteObject(fileRef).catch(() => {});
+          } catch (e) {}
+        }
+      }
+    }
+
+    // 3. Delete from Firestore & local state
     try {
       await FirebaseSyncManager.deleteEvent(folderId);
       await deleteEventApi(folderId);
@@ -518,7 +569,6 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     const current = AppStateManager.getEvents();
     const clean = current.filter((evt) => evt.id !== folderId);
     AppStateManager.saveEvents(clean);
-    setSelectedFolder(null);
     if (onRefreshEvents) onRefreshEvents();
   };
 
@@ -566,21 +616,56 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     await performDeleteFolder(folderId);
   };
 
-  const handleDeleteSingleAsset = async (assetUrl: string, e?: React.MouseEvent) => {
+  const handleDeleteSingleAsset = async (
+    item: { url: string; videoUrl?: string; type: "photo" | "video"; title?: string },
+    e?: React.MouseEvent
+  ) => {
     if (e) e.stopPropagation();
     if (!selectedFolder) return;
-    if (!window.confirm("Are you sure you want to remove this photo/video from this event folder?")) return;
+    if (!window.confirm("Are you sure you want to permanently delete this photo/video asset? It will be removed immediately from the gallery and cloud storage.")) return;
+
+    // 1. Immediately close the lightbox viewer
+    setLightboxIndex(null);
+
+    const targetUrl = item.videoUrl || item.url;
+    const isVideo = item.type === "video" || !!item.videoUrl;
+
+    // 2. Delete from YouTube if it's a YouTube video
+    if (isVideo && item.videoUrl) {
+      deleteYouTubeVideo(item.videoUrl).catch((err) => {
+        logger.warn("YouTube video delete notice:", err);
+      });
+    }
+
+    // 3. Delete from Firebase Storage if it's a Storage file
+    if (targetUrl && targetUrl.includes("firebasestorage.googleapis.com")) {
+      try {
+        const fileRef = ref(storage, targetUrl);
+        deleteObject(fileRef).catch((err) => {
+          logger.warn("Firebase storage delete notice:", err);
+        });
+      } catch (e) {}
+    }
+
+    // 4. Filter remaining images and videos cleanly
+    const remainingImages = (selectedFolder.driveImageUrls || []).filter((u) => u !== item.url && u !== item.videoUrl);
+    const existingVideos = Array.from(
+      new Set(
+        (selectedFolder.youtubeVideoUrls || (selectedFolder.youtubeVideoUrl ? [selectedFolder.youtubeVideoUrl] : [])).filter(Boolean)
+      )
+    );
+    const remainingVideos = existingVideos.filter((u) => u !== item.url && u !== item.videoUrl);
 
     const updatedFolder: GroupEvent = {
       ...selectedFolder,
-      driveImageUrls: (selectedFolder.driveImageUrls || []).filter((u) => u !== assetUrl),
-      youtubeVideoUrl: selectedFolder.youtubeVideoUrl === assetUrl ? "" : selectedFolder.youtubeVideoUrl,
+      driveImageUrls: remainingImages,
+      youtubeVideoUrls: remainingVideos,
+      youtubeVideoUrl: remainingVideos[0] || "",
     };
 
-    const isFolderEmpty = (updatedFolder.driveImageUrls || []).length === 0 && !updatedFolder.youtubeVideoUrl;
+    const isFolderEmpty = remainingImages.length === 0 && remainingVideos.length === 0;
 
     if (isFolderEmpty) {
-      alert("This folder has become empty and will be automatically deleted.");
       await performDeleteFolder(selectedFolder.id);
       return;
     }
@@ -596,7 +681,6 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     if (idx !== -1) current[idx] = updatedFolder;
     AppStateManager.saveEvents(current);
     setSelectedFolder(updatedFolder);
-    setLightboxIndex(null);
     if (onRefreshEvents) onRefreshEvents();
   };
 
@@ -604,21 +688,33 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     if (!selectedFolder) return;
     
     // 1. Remove asset from current folder
+    const remainingImages = (selectedFolder.driveImageUrls || []).filter((u) => u !== assetUrl);
+    const existingVideos = Array.from(
+      new Set(
+        (selectedFolder.youtubeVideoUrls || (selectedFolder.youtubeVideoUrl ? [selectedFolder.youtubeVideoUrl] : [])).filter(Boolean)
+      )
+    );
+    const remainingVideos = existingVideos.filter((u) => u !== assetUrl);
+
     const sourceUpdatedFolder: GroupEvent = {
       ...selectedFolder,
-      driveImageUrls: (selectedFolder.driveImageUrls || []).filter((u) => u !== assetUrl),
-      youtubeVideoUrl: selectedFolder.youtubeVideoUrl === assetUrl ? "" : selectedFolder.youtubeVideoUrl,
+      driveImageUrls: remainingImages,
+      youtubeVideoUrls: remainingVideos,
+      youtubeVideoUrl: remainingVideos[0] || "",
     };
     
     // 2. Add asset to target folder
     const targetFolder = mappedEvents.find((e) => e.id === destinationFolderId);
     if (!targetFolder) return;
+    const isVideo = existingVideos.includes(assetUrl);
     const targetUpdatedFolder: GroupEvent = {
       ...targetFolder,
-      driveImageUrls: [...(targetFolder.driveImageUrls || []), assetUrl],
+      driveImageUrls: isVideo ? (targetFolder.driveImageUrls || []) : [...(targetFolder.driveImageUrls || []), assetUrl],
+      youtubeVideoUrls: isVideo ? Array.from(new Set([...(targetFolder.youtubeVideoUrls || []), assetUrl])) : (targetFolder.youtubeVideoUrls || []),
+      youtubeVideoUrl: isVideo ? assetUrl : targetFolder.youtubeVideoUrl,
     };
     
-    const isSourceFolderEmpty = (sourceUpdatedFolder.driveImageUrls || []).length === 0 && !sourceUpdatedFolder.youtubeVideoUrl;
+    const isSourceFolderEmpty = remainingImages.length === 0 && remainingVideos.length === 0;
     
     try {
       if (isSourceFolderEmpty) {
@@ -640,7 +736,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       if (targetIdx !== -1) clean[targetIdx] = targetUpdatedFolder;
       AppStateManager.saveEvents(clean);
       setSelectedFolder(null);
-      alert(`Photo moved successfully. The source folder became empty and was automatically deleted.`);
+      alert(`Asset moved successfully. The source folder became empty and was automatically deleted.`);
     } else {
       const sourceIdx = current.findIndex((evt) => evt.id === selectedFolder.id);
       if (sourceIdx !== -1) current[sourceIdx] = sourceUpdatedFolder;
@@ -788,7 +884,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
           ) : viewMode === "grid" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredFolders.map((folder) => {
-                const mediaCount = (folder.driveImageUrls?.length || 0) + (folder.youtubeVideoUrl ? 1 : 0);
+                const totalVideos = folder.youtubeVideoUrls?.length || (folder.youtubeVideoUrl ? 1 : 0);
+                const mediaCount = (folder.driveImageUrls?.length || 0) + totalVideos;
                 return (
                   <div
                     key={folder.id}
@@ -800,6 +897,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                         <FolderCollagePreview
                           images={folder.driveImageUrls || []}
                           youtubeVideoUrl={folder.youtubeVideoUrl}
+                          youtubeVideoUrls={folder.youtubeVideoUrls}
                           eventTitle={folder.title}
                           heightClass="h-full w-full"
                         />
@@ -831,7 +929,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
           ) : (
             <div className="space-y-3">
               {filteredFolders.map((folder) => {
-                const mediaCount = (folder.driveImageUrls?.length || 0) + (folder.youtubeVideoUrl ? 1 : 0);
+                const totalVideos = folder.youtubeVideoUrls?.length || (folder.youtubeVideoUrl ? 1 : 0);
+                const mediaCount = (folder.driveImageUrls?.length || 0) + totalVideos;
                 return (
                   <div
                     key={folder.id}
@@ -843,6 +942,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                         <FolderCollagePreview
                           images={folder.driveImageUrls || []}
                           youtubeVideoUrl={folder.youtubeVideoUrl}
+                          youtubeVideoUrls={folder.youtubeVideoUrls}
                           eventTitle={folder.title}
                           heightClass="w-full h-full"
                         />
@@ -1072,7 +1172,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               )}
               {canEditOrDeleteFolder(selectedFolder) && (
                 <button
-                  onClick={(e) => handleDeleteSingleAsset(galleryItems[lightboxIndex].url, e)}
+                  onClick={(e) => handleDeleteSingleAsset(galleryItems[lightboxIndex], e)}
                   className="px-3 py-1 rounded-xl bg-red-600/80 hover:bg-red-600 text-white text-xs font-normal transition flex items-center space-x-1.5 cursor-pointer"
                   title="Delete this photo/video asset"
                 >
