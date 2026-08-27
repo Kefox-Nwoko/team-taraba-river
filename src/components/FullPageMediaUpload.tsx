@@ -4,7 +4,7 @@ import { logger } from "../lib/logger";
 import { GroupEvent, Member } from "../types";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import { storage } from "../lib/firebase";
-import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { ReturnButton } from "./ReturnButton";
 import { useToast } from "./ui/Toast";
 import {
@@ -17,8 +17,13 @@ import {
   X,
   ChevronDown,
   Play,
+  Copy,
+  AlertTriangle,
+  FileText,
+  Edit2,
+  RefreshCw,
 } from "lucide-react";
-import { uploadVideoDirectToYouTube } from "../services/youtubeDirectUpload";
+import { uploadVideoDirectToYouTube, deleteYouTubeVideo } from "../services/youtubeDirectUpload";
 import { AppStateManager } from "../services/storage";
 
 interface MediaItem {
@@ -28,6 +33,18 @@ interface MediaItem {
   previewUrl: string;
   sizeMB: number;
   status: "ready";
+  replaceTargetUrl?: string; // If replacing an existing asset
+}
+
+interface DuplicateCandidate {
+  itemId: string;
+  file: File;
+  type: "photo" | "video";
+  previewUrl: string;
+  sizeMB: number;
+  matchedName: string;
+  matchedUrl?: string;
+  suggestedName: string;
 }
 
 interface FullPageMediaUploadProps {
@@ -63,6 +80,16 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadProgressText, setUploadProgressText] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Duplicate Resolution State
+  const [duplicateQueue, setDuplicateQueue] = useState<DuplicateCandidate[]>([]);
+  const [currentDupIdx, setCurrentDupIdx] = useState(0);
+  const [dupCustomName, setDupCustomName] = useState("");
+  const [applyToAll, setApplyToAll] = useState(false);
+
+  // Manual Rename Modal State
+  const [renameTargetItem, setRenameTargetItem] = useState<MediaItem | null>(null);
+  const [manualNewName, setManualNewName] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -147,10 +174,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       return ytUrl;
     }
 
-    // 2. For Photos (WebP compressed) or Video Fallback
+    // 2. For Photos (WebP compressed)
     let uploadPayload: Blob = item.file;
-    let contentType = item.file.type || (isVideo ? "video/mp4" : "image/jpeg");
-    let ext = isVideo ? "mp4" : "webp";
+    let contentType = item.file.type || "image/jpeg";
+    let ext = "webp";
 
     if (!isVideo) {
       try {
@@ -159,6 +186,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         ext = "webp";
       } catch {
         uploadPayload = item.file;
+        ext = "jpg";
       }
     }
 
@@ -193,6 +221,94 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         }
       );
     });
+  };
+
+  /**
+   * Helper to scan for duplicates in selected items against current list and target folder.
+   */
+  const detectDuplicates = (
+    newCandidates: MediaItem[],
+    currentItems: MediaItem[],
+    targetEvt?: GroupEvent
+  ): DuplicateCandidate[] => {
+    const duplicates: DuplicateCandidate[] = [];
+    const existingMedia: Array<{ name: string; url: string; type: "photo" | "video" }> = [];
+
+    // Extract names from target folder
+    if (targetEvt) {
+      (targetEvt.driveImageUrls || []).forEach((u) => {
+        try {
+          const decoded = decodeURIComponent(u);
+          const match = decoded.match(/([^\/?#]+)\.(webp|jpg|jpeg|png|mp4|mov|webm)/i);
+          if (match) {
+            const clean = match[1].replace(/^\d+_\d+_/, "").toLowerCase();
+            existingMedia.push({ name: clean, url: u, type: "photo" });
+          }
+        } catch {}
+      });
+
+      const ytVids = (targetEvt.youtubeVideoUrls || (targetEvt.youtubeVideoUrl ? [targetEvt.youtubeVideoUrl] : [])).filter(Boolean);
+      ytVids.forEach((u, idx) => {
+        existingMedia.push({
+          name: `${targetEvt.title.toLowerCase()} video ${idx + 1}`,
+          url: u,
+          type: "video",
+        });
+      });
+    }
+
+    // Add currentItems to existing list
+    currentItems.forEach((ci) => {
+      existingMedia.push({
+        name: ci.file.name.replace(/\.[^/.]+$/, "").toLowerCase(),
+        url: ci.previewUrl,
+        type: ci.type,
+      });
+    });
+
+    const seenInBatch = new Set<string>();
+
+    newCandidates.forEach((item) => {
+      const originalFullName = item.file.name;
+      const baseName = originalFullName.replace(/\.[^/.]+$/, "");
+      const ext = originalFullName.includes(".") ? originalFullName.split(".").pop() : (item.type === "video" ? "mp4" : "jpg");
+      const lowerBase = baseName.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+      // Match against existing
+      const matchedEx = existingMedia.find((ex) => {
+        const cleanEx = ex.name.replace(/[^a-z0-9]/g, "");
+        return cleanEx.length > 2 && lowerBase.length > 2 && (cleanEx.includes(lowerBase) || lowerBase.includes(cleanEx));
+      });
+
+      const isBatchDuplicate = seenInBatch.has(lowerBase);
+      seenInBatch.add(lowerBase);
+
+      if (matchedEx || isBatchDuplicate) {
+        let copyNum = 1;
+        let candidateName = `${baseName} (Copy ${copyNum}).${ext}`;
+        const allNames = [
+          ...currentItems.map((c) => c.file.name.toLowerCase()),
+          ...newCandidates.map((c) => c.file.name.toLowerCase()),
+        ];
+        while (allNames.includes(candidateName.toLowerCase())) {
+          copyNum++;
+          candidateName = `${baseName} (Copy ${copyNum}).${ext}`;
+        }
+
+        duplicates.push({
+          itemId: item.id,
+          file: item.file,
+          type: item.type,
+          previewUrl: item.previewUrl,
+          sizeMB: item.sizeMB,
+          matchedName: matchedEx ? matchedEx.name : originalFullName,
+          matchedUrl: matchedEx ? matchedEx.url : undefined,
+          suggestedName: candidateName,
+        });
+      }
+    });
+
+    return duplicates;
   };
 
   const handleFilesSelected = (files: FileList | null) => {
@@ -233,7 +349,146 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       return;
     }
 
-    setMediaItems((prev) => [...prev, ...newItems]);
+    const targetEvt = folderMode === "existing" ? events.find((e) => e.id === selectedFolderId) : undefined;
+    const foundDuplicates = detectDuplicates(newItems, mediaItems, targetEvt);
+
+    if (foundDuplicates.length > 0) {
+      const duplicateIds = new Set(foundDuplicates.map((d) => d.itemId));
+      const nonDuplicates = newItems.filter((it) => !duplicateIds.has(it.id));
+      
+      setMediaItems((prev) => [...prev, ...nonDuplicates, ...foundDuplicates.map((d) => newItems.find((it) => it.id === d.itemId)!)]);
+      setDuplicateQueue(foundDuplicates);
+      setCurrentDupIdx(0);
+      setDupCustomName(foundDuplicates[0].suggestedName);
+      setApplyToAll(false);
+    } else {
+      setMediaItems((prev) => [...prev, ...newItems]);
+    }
+  };
+
+  // Duplicate Resolution Actions
+  const handleResolveDuplicateAsCopy = (customName?: string) => {
+    if (duplicateQueue.length === 0) return;
+    const currentDup = duplicateQueue[currentDupIdx];
+    const targetName = (customName || dupCustomName || currentDup.suggestedName).trim();
+
+    const renamedFile = new File([currentDup.file], targetName, {
+      type: currentDup.file.type,
+      lastModified: currentDup.file.lastModified || Date.now(),
+    });
+
+    setMediaItems((prev) =>
+      prev.map((it) => (it.id === currentDup.itemId ? { ...it, file: renamedFile } : it))
+    );
+
+    notify(`📋 Saved "${targetName}" as a new copy`, "info");
+    advanceDuplicateQueue("copy");
+  };
+
+  const handleResolveDuplicateReplace = () => {
+    if (duplicateQueue.length === 0) return;
+    const currentDup = duplicateQueue[currentDupIdx];
+
+    setMediaItems((prev) =>
+      prev.map((it) =>
+        it.id === currentDup.itemId
+          ? { ...it, replaceTargetUrl: currentDup.matchedUrl }
+          : it
+      )
+    );
+
+    notify(`🔄 Set to replace existing media for "${currentDup.file.name}"`, "info");
+    advanceDuplicateQueue("replace");
+  };
+
+  const handleResolveDuplicateSkip = () => {
+    if (duplicateQueue.length === 0) return;
+    const currentDup = duplicateQueue[currentDupIdx];
+
+    handleRemoveItem(currentDup.itemId);
+    notify(`⏭️ Skipped duplicate "${currentDup.file.name}"`, "info");
+    advanceDuplicateQueue("skip");
+  };
+
+  const advanceDuplicateQueue = (lastAction: "copy" | "replace" | "skip") => {
+    if (applyToAll) {
+      const remaining = duplicateQueue.slice(currentDupIdx + 1);
+      remaining.forEach((dup) => {
+        if (lastAction === "copy") {
+          const autoName = dup.suggestedName;
+          const renamed = new File([dup.file], autoName, {
+            type: dup.file.type,
+            lastModified: dup.file.lastModified || Date.now(),
+          });
+          setMediaItems((prev) =>
+            prev.map((it) => (it.id === dup.itemId ? { ...it, file: renamed } : it))
+          );
+        } else if (lastAction === "replace") {
+          setMediaItems((prev) =>
+            prev.map((it) => (it.id === dup.itemId ? { ...it, replaceTargetUrl: dup.matchedUrl } : it))
+          );
+        } else if (lastAction === "skip") {
+          handleRemoveItem(dup.itemId);
+        }
+      });
+      setDuplicateQueue([]);
+      return;
+    }
+
+    if (currentDupIdx + 1 < duplicateQueue.length) {
+      const nextIdx = currentDupIdx + 1;
+      setCurrentDupIdx(nextIdx);
+      setDupCustomName(duplicateQueue[nextIdx].suggestedName);
+    } else {
+      setDuplicateQueue([]);
+    }
+  };
+
+  // Manual Duplicate / Clone Action
+  const handleDuplicateItem = (item: MediaItem) => {
+    const base = item.file.name.replace(/\.[^/.]+$/, "");
+    const ext = item.file.name.includes(".") ? item.file.name.split(".").pop() : (item.type === "video" ? "mp4" : "jpg");
+    let copyNum = 1;
+    let newName = `${base} (Copy ${copyNum}).${ext}`;
+    while (mediaItems.some((it) => it.file.name.toLowerCase() === newName.toLowerCase())) {
+      copyNum++;
+      newName = `${base} (Copy ${copyNum}).${ext}`;
+    }
+
+    const clonedFile = new File([item.file], newName, {
+      type: item.file.type,
+      lastModified: Date.now(),
+    });
+
+    const previewUrl = URL.createObjectURL(clonedFile);
+    const newItem: MediaItem = {
+      id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      file: clonedFile,
+      type: item.type,
+      previewUrl,
+      sizeMB: item.sizeMB,
+      status: "ready",
+    };
+
+    setMediaItems((prev) => [...prev, newItem]);
+    notify(`📋 Duplicated "${newName}" (Ready to upload as additional copy)`, "success");
+  };
+
+  // Manual Rename Action
+  const handleSaveManualRename = () => {
+    if (!renameTargetItem || !manualNewName.trim()) return;
+    const cleanName = manualNewName.trim();
+    const renamed = new File([renameTargetItem.file], cleanName, {
+      type: renameTargetItem.file.type,
+      lastModified: Date.now(),
+    });
+
+    setMediaItems((prev) =>
+      prev.map((it) => (it.id === renameTargetItem.id ? { ...it, file: renamed } : it))
+    );
+    setRenameTargetItem(null);
+    setManualNewName("");
+    notify(`✏️ Renamed file to "${cleanName}"`, "info");
   };
 
   const handleRemoveItem = (id: string) => {
@@ -281,12 +536,12 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     const isAdmin = currentUser?.role === "admin";
 
     // ──────────────────────────────────────────────────────────────────
-    // FAULT-TOLERANT UPLOAD: Each file is independent — one failure
-    // does NOT kill the others. Results are tracked per-file.
+    // FAULT-TOLERANT CONCURRENT UPLOADS WITH REPLACEMENT CLEANUP
     // ──────────────────────────────────────────────────────────────────
     const photoFinalUrls: string[] = [];
     const videoFinalUrls: string[] = [];
     const failedFiles: Array<{ name: string; reason: string }> = [];
+    const replacementsToExecute: Array<{ replaceUrl: string; newUrl: string; type: "photo" | "video" }> = [];
 
     const fileProgresses = new Array(mediaItems.length).fill(0);
     const updateOverallProgress = () => {
@@ -295,7 +550,6 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       setUploadProgress(Math.min(90, Math.max(10, overall)));
     };
 
-    // Upload all files concurrently with per-file progress tracking
     const uploadPromises = mediaItems.map((item, i) => {
       const isVideo = item.type === "video";
       return (async () => {
@@ -306,13 +560,13 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           fileProgresses[i] = pct;
           updateOverallProgress();
         });
-        return { index: i, url: finalUrl, type: item.type, name: item.file.name };
+        return { index: i, url: finalUrl, type: item.type, name: item.file.name, replaceTargetUrl: item.replaceTargetUrl };
       })();
     });
 
     const results = await Promise.allSettled(uploadPromises);
 
-    // Process results — separate successes from failures
+    // Process results
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       const item = mediaItems[i];
@@ -323,6 +577,14 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           videoFinalUrls.push(finalUrl);
         } else {
           photoFinalUrls.push(finalUrl);
+        }
+
+        if (item.replaceTargetUrl) {
+          replacementsToExecute.push({
+            replaceUrl: item.replaceTargetUrl,
+            newUrl: finalUrl,
+            type: item.type,
+          });
         }
 
         // Save approval for non-admin members immediately
@@ -336,7 +598,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
               photoUrl: finalUrl,
               uploadedAt: new Date().toISOString(),
               status: "pending",
-              adminNotes: `${item.type === "video" ? "Video" : "Photo"} submission for folder: ${folderNameTitle}`,
+              adminNotes: `${item.type === "video" ? "Video" : "Photo"} submission for folder: ${folderNameTitle}${item.replaceTargetUrl ? " (Replaces existing asset)" : ""}`,
               type: item.type === "video" ? "video" : "photo",
               eventId,
               folderName: folderNameTitle,
@@ -359,9 +621,21 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // SAVE EVENT: Register all successful uploads to the event folder.
-    // Runs even if some files failed — successful files are still saved.
-    // Admin uploads are published directly (no approval queue).
+    // PERFORM CLOUD PURGE OF REPLACED ASSETS
+    // ──────────────────────────────────────────────────────────────────
+    for (const repl of replacementsToExecute) {
+      if (repl.type === "video" && repl.replaceUrl) {
+        deleteYouTubeVideo(repl.replaceUrl).catch(() => {});
+      } else if (repl.type === "photo" && repl.replaceUrl && repl.replaceUrl.includes("firebasestorage.googleapis.com")) {
+        try {
+          const fileRef = ref(storage, repl.replaceUrl);
+          deleteObject(fileRef).catch(() => {});
+        } catch (e) {}
+      }
+    }
+
+    // ──────────────────────────────────────────────────────────────────
+    // SAVE EVENT: Register all successful uploads in Event Gallery
     // ──────────────────────────────────────────────────────────────────
     const totalSucceeded = photoFinalUrls.length + videoFinalUrls.length;
 
@@ -375,21 +649,34 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           const existingEvent = events.find((e) => e.id === selectedFolderId);
           if (!existingEvent) throw new Error("Selected existing event folder not found.");
 
-          const existingYtList = ((existingEvent.youtubeVideoUrls || (existingEvent.youtubeVideoUrl ? [existingEvent.youtubeVideoUrl] : [])) as string[]).filter(Boolean);
+          let existingYtList = ((existingEvent.youtubeVideoUrls || (existingEvent.youtubeVideoUrl ? [existingEvent.youtubeVideoUrl] : [])) as string[]).filter(Boolean);
+          let existingPhotos = existingEvent.driveImageUrls || [];
+
+          // Apply in-place replacements
+          replacementsToExecute.forEach((repl) => {
+            if (repl.type === "video") {
+              existingYtList = existingYtList.filter((u) => u !== repl.replaceUrl);
+            } else {
+              existingPhotos = existingPhotos.filter((u) => u !== repl.replaceUrl);
+            }
+          });
+
           const updatedYtList = isAdmin
             ? Array.from(new Set([...existingYtList, ...videoFinalUrls]))
             : existingYtList;
 
+          const updatedPhotoList = isAdmin
+            ? Array.from(new Set([...existingPhotos, ...photoFinalUrls]))
+            : existingPhotos;
+
           targetEvent = {
             ...existingEvent,
-            driveImageUrls: isAdmin
-              ? Array.from(new Set([...(existingEvent.driveImageUrls || []), ...photoFinalUrls]))
-              : (existingEvent.driveImageUrls || []),
+            driveImageUrls: updatedPhotoList,
             driveFolderId: existingEvent.driveFolderId || `drive_folder_${Date.now()}`,
             youtubeVideoUrls: updatedYtList,
             youtubeVideoUrl: updatedYtList[0] || "",
           };
-          // Admin: directly publish to Event Gallery (no approval needed)
+
           if (isAdmin) {
             await FirebaseSyncManager.saveEvent(targetEvent);
             const currentEvents = AppStateManager.getEvents();
@@ -420,7 +707,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             maxCapacity: 100,
             createdAt: new Date().toISOString(),
           } as any;
-          // Admin: directly publish new Event folder (no approval needed)
+
           if (isAdmin) {
             await FirebaseSyncManager.saveEvent(targetEvent);
             const currentEvents = AppStateManager.getEvents();
@@ -432,11 +719,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         setUploadProgress(100);
         setIsUploading(false);
 
-        // ──────────────────────────────────────────────────────────────
-        // SMART NOTIFICATION: Shows exactly what succeeded and what failed
-        // ──────────────────────────────────────────────────────────────
         if (failedFiles.length === 0) {
-          // All files succeeded
           notify(
             isAdmin
               ? `✅ ${totalSucceeded} media item${totalSucceeded !== 1 ? "s" : ""} published to the Event Gallery.`
@@ -444,7 +727,6 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             "success"
           );
         } else {
-          // Partial success — some succeeded, some failed
           const failReasons = failedFiles.map((f) => `"${f.name}"`).join(", ");
           notify(
             `⚠️ ${totalSucceeded} of ${mediaItems.length} uploaded successfully. Failed: ${failReasons}. ${failedFiles[0].reason}`,
@@ -469,14 +751,13 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
         onSuccess(targetEvent);
       } catch (saveErr) {
-        logger.error("Event save error after successful uploads:", saveErr);
+        logger.error("Event save error after uploads:", saveErr);
         const msg = saveErr instanceof Error ? saveErr.message : "Failed to register media in event gallery.";
         setErrorMessage(`Uploads completed but event save failed: ${msg}`);
         setUploadProgress(0);
         setIsUploading(false);
       }
     } else {
-      // ALL files failed — show the error clearly
       const allReasons = failedFiles.map((f) => `"${f.name}": ${f.reason}`).join(" | ");
       setErrorMessage(`❌ All ${mediaItems.length} upload${mediaItems.length !== 1 ? "s" : ""} failed. ${allReasons}`);
       setUploadProgress(0);
@@ -484,18 +765,23 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     }
   };
 
+  const currentDup = duplicateQueue.length > 0 ? duplicateQueue[currentDupIdx] : null;
+
   return (
-    <div className="min-h-screen bg-white dark:bg-[#121212] text-slate-900 dark:text-slate-100 p-4 sm:p-6 lg:p-8 animate-fadeIn">
-      <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex flex-row items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-          <div>
-            <h1 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-              <Upload className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
-              <span>Upload Media</span>
-            </h1>
+    <div className="min-h-screen bg-slate-100 dark:bg-[#0c0c0c] text-slate-900 dark:text-slate-100 font-sans pb-16">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {/* Top Bar */}
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div className="flex items-center space-x-3">
+            <ReturnButton onClick={onReturn} label="Back to Gallery" />
           </div>
-          <div className="flex items-center space-x-3 shrink-0">
-            {onReturn && <ReturnButton onClick={onReturn} />}
+          <div className="text-right">
+            <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+              Media Hub Uploader
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              High-Speed Resumable Pipeline (Direct YouTube & Cloud CDN)
+            </p>
           </div>
         </div>
 
@@ -506,6 +792,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
               <p>{errorMessage}</p>
             </div>
           )}
+
           <div className="py-4 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
               <h2 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
@@ -661,7 +948,9 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                     {mediaItems.map((item) => (
                       <div
                         key={item.id}
-                        className="p-3 rounded-2xl border flex items-center space-x-3 bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 shadow-xs"
+                        className={`p-3 rounded-2xl border flex items-center space-x-3 bg-slate-50 dark:bg-slate-950 shadow-xs ${
+                          item.replaceTargetUrl ? "border-amber-400 dark:border-amber-600 bg-amber-50/30 dark:bg-amber-950/20" : "border-slate-200 dark:border-slate-800"
+                        }`}
                       >
                         <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-900 border border-slate-700/80 shrink-0 relative flex items-center justify-center">
                           {item.type === "video" ? (
@@ -675,10 +964,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                           )}
                         </div>
                         <div className="flex-1 min-w-0 text-xs">
-                          <p className="font-medium text-slate-900 dark:text-white truncate">
+                          <p className="font-medium text-slate-900 dark:text-white truncate" title={item.file.name}>
                             {item.file.name}
                           </p>
-                          <p className="text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5">
+                          <p className="text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
                             <span className={`px-1.5 py-0.2 rounded text-[10px] uppercase font-bold ${
                               item.type === "video" ? "bg-red-500/20 text-red-600 dark:text-red-400" : "bg-teal-500/20 text-teal-600 dark:text-teal-400"
                             }`}>
@@ -686,16 +975,45 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                             </span>
                             <span>•</span>
                             <span>{item.sizeMB} MB</span>
+                            {item.replaceTargetUrl && (
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-medium bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                                🔄 Replaces existing
+                              </span>
+                            )}
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveItem(item.id)}
-                          className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition cursor-pointer"
-                          title="Remove item"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center space-x-1 shrink-0">
+                          {/* Clone/Duplicate Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleDuplicateItem(item)}
+                            className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-cyan-500 transition cursor-pointer"
+                            title="Duplicate as new copy"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          {/* Rename Button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRenameTargetItem(item);
+                              setManualNewName(item.file.name);
+                            }}
+                            className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-teal-500 transition cursor-pointer"
+                            title="Rename file"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          {/* Remove Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveItem(item.id)}
+                            className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-red-500 transition cursor-pointer"
+                            title="Remove item"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -745,6 +1063,180 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             </button>
           </div>
         </form>
+
+        {/* ── DUPLICATE MEDIA RESOLUTION MODAL ── */}
+        {currentDup && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
+            <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 text-slate-900 dark:text-white">
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-500 flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-bold">Duplicate Media Detected</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Item {currentDupIdx + 1} of {duplicateQueue.length}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleResolveDuplicateSkip}
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Item Info Card */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center space-x-3">
+                <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-900 shrink-0 relative flex items-center justify-center">
+                  {currentDup.type === "video" ? (
+                    <div className="w-full h-full bg-slate-950 flex items-center justify-center">
+                      <Play className="w-5 h-5 text-red-500 fill-current" />
+                    </div>
+                  ) : (
+                    <img src={currentDup.previewUrl} alt="preview" className="w-full h-full object-cover" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0 text-xs">
+                  <p className="font-semibold text-slate-900 dark:text-white truncate">
+                    {currentDup.file.name}
+                  </p>
+                  <p className="text-slate-500 dark:text-slate-400 mt-0.5">
+                    {currentDup.type === "video" ? "Video" : "Photo"} • {currentDup.sizeMB} MB
+                  </p>
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                    Matches existing item: <span className="font-medium">"{currentDup.matchedName}"</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Choice 1: Save as New Copy (Rename) */}
+              <div className="p-4 rounded-2xl border border-teal-200 dark:border-teal-900 bg-teal-50/40 dark:bg-teal-950/20 space-y-2.5">
+                <div className="flex items-center space-x-2 text-teal-700 dark:text-teal-300 font-semibold text-xs">
+                  <Copy className="w-4 h-4" />
+                  <span>Option 1: Save as New Copy (Upload Additional Copy)</span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  Allows saving the exact same media file multiple times under a distinct name.
+                </p>
+                <div className="flex items-center space-x-2 pt-1">
+                  <input
+                    type="text"
+                    value={dupCustomName}
+                    onChange={(e) => setDupCustomName(e.target.value)}
+                    placeholder="New copy name"
+                    className="flex-1 px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleResolveDuplicateAsCopy()}
+                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer shadow-xs"
+                  >
+                    Save as Copy
+                  </button>
+                </div>
+              </div>
+
+              {/* Choice 2 & 3: Replace or Skip */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={handleResolveDuplicateReplace}
+                  className="p-3 rounded-2xl border border-amber-300 dark:border-amber-800/80 bg-amber-50/40 dark:bg-amber-950/20 hover:bg-amber-100/60 text-left transition cursor-pointer space-y-1"
+                >
+                  <div className="flex items-center space-x-1.5 text-amber-700 dark:text-amber-300 font-semibold text-xs">
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Option 2: Replace Existing</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Overwrites and cleans old cloud storage
+                  </p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleResolveDuplicateSkip}
+                  className="p-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/60 hover:bg-slate-100 text-left transition cursor-pointer space-y-1"
+                >
+                  <div className="flex items-center space-x-1.5 text-slate-700 dark:text-slate-300 font-semibold text-xs">
+                    <X className="w-3.5 h-3.5" />
+                    <span>Option 3: Skip File</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Do not upload this duplicate item
+                  </p>
+                </button>
+              </div>
+
+              {/* Apply to all toggle if multiple duplicates */}
+              {duplicateQueue.length > 1 && (
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                  <label className="flex items-center space-x-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={applyToAll}
+                      onChange={(e) => setApplyToAll(e.target.checked)}
+                      className="rounded text-teal-600 focus:ring-teal-500"
+                    />
+                    <span>Apply this action to all {duplicateQueue.length - currentDupIdx} remaining duplicates</span>
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── MANUAL RENAME MODAL ── */}
+        {renameTargetItem && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
+            <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4 text-slate-900 dark:text-white">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <h3 className="text-sm font-bold flex items-center gap-2">
+                  <Edit2 className="w-4 h-4 text-teal-500" />
+                  <span>Rename File</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setRenameTargetItem(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="space-y-2">
+                <label className="block text-xs uppercase font-medium text-slate-600 dark:text-slate-400">
+                  File Name
+                </label>
+                <input
+                  type="text"
+                  value={manualNewName}
+                  onChange={(e) => setManualNewName(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setRenameTargetItem(null)}
+                  className="px-4 py-2 rounded-xl text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveManualRename}
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-semibold transition"
+                >
+                  Save Name
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

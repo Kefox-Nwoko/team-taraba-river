@@ -828,15 +828,46 @@ function isRelevantToNigerianUnityColleges(title: string, snippet: string, sourc
   return false;
 }
 
+const USOSA_NEWS_CACHE_KEY = "taraba_usosa_news_cache_v2";
+const USOSA_NEWS_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+let inMemoryUsosaNews: UsosaNewsResponse | null = null;
+let inMemoryUsosaNewsTimestamp = 0;
+
 export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> {
-  // Step 1: Try backend endpoint first if available
+  // Step 0: Instant Cache Fast-Path (<5ms)
+  if (!force) {
+    if (inMemoryUsosaNews && Date.now() - inMemoryUsosaNewsTimestamp < USOSA_NEWS_CACHE_TTL_MS) {
+      return inMemoryUsosaNews;
+    }
+    try {
+      const cachedStr = localStorage.getItem(USOSA_NEWS_CACHE_KEY);
+      if (cachedStr) {
+        const cached = JSON.parse(cachedStr);
+        if (cached && cached.timestamp && Date.now() - cached.timestamp < USOSA_NEWS_CACHE_TTL_MS && cached.data) {
+          inMemoryUsosaNews = cached.data;
+          inMemoryUsosaNewsTimestamp = cached.timestamp;
+          return cached.data;
+        }
+      }
+    } catch {}
+  }
+
+  // Step 1: Try backend endpoint first if available with short 3s timeout
   try {
     const url = force ? apiUrl("/api/usosa-news?force=true") : apiUrl("/api/usosa-news");
-    const res = await fetch(url, { cache: "no-store" });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(url, { cache: "no-store", signal: controller.signal });
+    clearTimeout(timer);
     const contentType = res.headers.get("content-type") || "";
     if (res.ok && contentType.includes("application/json")) {
       const data = await res.json();
       if (data && Array.isArray(data.headlines) && data.headlines.length > 0) {
+        inMemoryUsosaNews = data;
+        inMemoryUsosaNewsTimestamp = Date.now();
+        try {
+          localStorage.setItem(USOSA_NEWS_CACHE_KEY, JSON.stringify({ data, timestamp: Date.now() }));
+        } catch {}
         return data;
       }
     }
@@ -861,7 +892,10 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
         const query = encodeURIComponent(queryStr);
         const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=en-NG&gl=NG&ceid=NG:en`;
         const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
-        const rssRes = await fetch(proxyUrl);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 3500);
+        const rssRes = await fetch(proxyUrl, { signal: controller.signal });
+        clearTimeout(timer);
         if (rssRes.ok) {
           const json = await rssRes.json();
           if (json && json.status === "ok" && Array.isArray(json.items)) {
@@ -1039,11 +1073,17 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
       });
 
       if (clusteredHeadlines.length > 0) {
-        return {
+        const responseData = {
           headlines: clusteredHeadlines,
           fetchedAt: new Date().toISOString(),
           fallback: false,
         };
+        inMemoryUsosaNews = responseData;
+        inMemoryUsosaNewsTimestamp = Date.now();
+        try {
+          localStorage.setItem(USOSA_NEWS_CACHE_KEY, JSON.stringify({ data: responseData, timestamp: Date.now() }));
+        } catch {}
+        return responseData;
       }
     }
   } catch {}
