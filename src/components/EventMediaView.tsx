@@ -1059,25 +1059,25 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               </div>
             )}
             {!isEditingFolderInfo && (
-              <div className="flex flex-row items-center gap-2.5 shrink-0 w-full sm:w-auto flex-wrap">
+              <div className="flex flex-row items-center gap-2 shrink-0 w-full sm:w-auto flex-wrap">
                 <button
                   onClick={() => {
                     setUploadFolderId(selectedFolder.id);
                     setIsFullPageUploadOpen(true);
                   }}
-                  className="flex-1 sm:flex-initial px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-xs font-medium rounded-xl transition flex items-center justify-center space-x-2 cursor-pointer shadow-xs whitespace-nowrap"
+                  className="flex-1 sm:flex-initial px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
                   title="Upload more photos or videos to this folder"
                 >
-                  <Upload className="w-4 h-4" />
+                  <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   <span>Update / Add Media</span>
                 </button>
                 {canEditOrDeleteFolder(selectedFolder) && (
                   <button
                     onClick={(e) => handleDeleteFolder(selectedFolder.id, e)}
-                    className="flex-1 sm:flex-initial px-3.5 py-2 bg-red-600/90 hover:bg-red-700 text-white text-xs font-normal rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
+                    className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-red-600/90 hover:bg-red-700 active:scale-95 text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
                     title="Delete entire media folder"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                     <span>Delete Folder</span>
                   </button>
                 )}
@@ -1143,12 +1143,12 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
             )}
           </div>
 
-          {/* Return Button Below the Last Card on the Left (50% Reduced Size, Non-bold) */}
+          {/* Return Button Below the Last Card on the Left */}
           <div className="pt-2 flex justify-start">
             <button onClick={() => setSelectedFolder(null)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 font-normal text-xs transition cursor-pointer shadow-xs"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 font-medium text-[11px] sm:text-xs transition cursor-pointer shadow-xs active:scale-95"
             >
-              <ChevronLeft className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+              <ChevronLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400" />
               <span>Back to Media Folders</span>
             </button>
           </div>
@@ -1163,59 +1163,60 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
           className="fixed inset-0 z-50 bg-black/95 backdrop-blur-xl flex flex-col justify-between p-3 sm:p-5 animate-fadeIn select-none"
         >
           {/* Top Bar with Mobile-Friendly Responsive Action Toolbar */}
-          <div className="relative z-30 flex flex-wrap items-center justify-between w-full max-w-5xl mx-auto py-2 px-3 sm:px-4 rounded-2xl bg-slate-900/90 border border-slate-800/80 backdrop-blur-md font-normal gap-2 shrink-0">
-            <div className="flex items-center space-x-2.5 min-w-0 flex-1">
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider bg-teal-500/20 text-teal-300 border border-teal-500/30 whitespace-nowrap">
-                {galleryItems[lightboxIndex].type === "video" ? "YOUTUBE VIDEO" : "PHOTO"} {lightboxIndex + 1} OF {galleryItems.length}
+          <div className="relative z-30 flex items-center justify-between w-full max-w-5xl mx-auto py-1.5 px-2 sm:px-3.5 rounded-xl sm:rounded-2xl bg-slate-900/90 border border-slate-800/80 backdrop-blur-md font-normal gap-1.5 sm:gap-2 shrink-0">
+            <div className="flex items-center space-x-1.5 sm:space-x-2.5 min-w-0 flex-1">
+              <span className="px-2 py-0.5 rounded-full text-[9px] sm:text-[11px] font-semibold uppercase tracking-wider bg-teal-500/20 text-teal-300 border border-teal-500/30 whitespace-nowrap">
+                {galleryItems[lightboxIndex].type === "video" ? "VIDEO" : "PHOTO"} {lightboxIndex + 1}/{galleryItems.length}
               </span>
-              <h3 className="text-xs sm:text-sm text-white font-medium truncate max-w-[140px] sm:max-w-[260px]">
+              <h3 className="text-xs sm:text-sm text-white font-medium truncate max-w-[90px] xs:max-w-[140px] sm:max-w-[260px]">
                 {galleryItems[lightboxIndex].title}
               </h3>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap shrink-0">
+            <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
               {galleryItems[lightboxIndex].type === "video" && galleryItems[lightboxIndex].videoUrl && (
                 <a
                   href={`https://www.youtube.com/watch?v=${extractYouTubeId(galleryItems[lightboxIndex].videoUrl)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-2.5 py-1.5 rounded-xl bg-red-600/80 hover:bg-red-600 text-white text-xs font-medium transition flex items-center space-x-1.5 shadow-xs"
+                  className="px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-red-600/85 hover:bg-red-600 text-white text-[10px] sm:text-xs font-medium transition flex items-center gap-1 shadow-xs active:scale-95"
                   title="Trace & open exact YouTube video URL"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Trace YouTube Link</span>
-                  <span className="sm:hidden">YouTube</span>
+                  <ExternalLink className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <span className="hidden md:inline">Trace Link</span>
                 </a>
               )}
 
-              {/* Transfer Video or Photo to Another Folder (Feature Parity for both types) */}
+              {/* Transfer Video or Photo to Another Folder */}
               <button
                 onClick={() => setIsMoveDropdownOpen(true)}
-                className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium transition flex items-center space-x-1.5 cursor-pointer border border-slate-700/60 shadow-xs"
+                className="px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-[10px] sm:text-xs font-medium transition flex items-center gap-1 cursor-pointer border border-slate-700/60 shadow-xs active:scale-95"
                 title={`Transfer ${galleryItems[lightboxIndex].type === "video" ? "video" : "image"} to another folder`}
               >
-                <Move className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Transfer {galleryItems[lightboxIndex].type === "video" ? "Video" : "Photo"}</span>
+                <Move className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-cyan-400" />
+                <span className="hidden sm:inline">Transfer</span>
+                <span className="sm:hidden">Move</span>
               </button>
 
-              {/* Delete Video or Photo Asset on Mobile & Desktop */}
+              {/* Delete Video or Photo Asset */}
               {canEditOrDeleteAsset(selectedFolder, galleryItems[lightboxIndex]) && (
                 <button
                   onClick={(e) => handleDeleteSingleAsset(galleryItems[lightboxIndex], e)}
-                  className="px-2.5 py-1.5 rounded-xl bg-red-600/90 hover:bg-red-600 active:scale-95 text-white text-xs font-medium transition flex items-center space-x-1.5 cursor-pointer shadow-xs"
+                  className="px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-red-600/90 hover:bg-red-600 active:scale-95 text-white text-[10px] sm:text-xs font-medium transition flex items-center gap-1 cursor-pointer shadow-xs"
                   title={`Permanently delete this ${galleryItems[lightboxIndex].type === "video" ? "video" : "photo"}`}
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete {galleryItems[lightboxIndex].type === "video" ? "Video" : "Asset"}</span>
+                  <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <span className="hidden sm:inline">Delete</span>
+                  <span className="sm:hidden">Del</span>
                 </button>
               )}
 
               <button
                 onClick={() => setLightboxIndex(null)}
-                className="w-8 h-8 rounded-full bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0 ml-0.5 active:scale-95"
                 title="Close viewer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             </div>
           </div>
