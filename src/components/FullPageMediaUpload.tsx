@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { DatePicker } from "./DatePicker";
 import { logger } from "../lib/logger";
-import { GroupEvent, Member } from "../types";
+import { GroupEvent, Member, PhotoApprovalRequest } from "../types";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import { storage } from "../lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
@@ -22,6 +22,8 @@ import {
   FileText,
   Edit2,
   RefreshCw,
+  Bot,
+  Sparkles,
 } from "lucide-react";
 import { uploadVideoDirectToYouTube, deleteYouTubeVideo } from "../services/youtubeDirectUpload";
 import { AppStateManager } from "../services/storage";
@@ -45,6 +47,13 @@ interface DuplicateCandidate {
   matchedName: string;
   matchedUrl?: string;
   suggestedName: string;
+  isPendingApproval?: boolean;
+  pendingRequestDetails?: {
+    memberName?: string;
+    uploadedAt?: string;
+    folderName?: string;
+    type?: string;
+  };
 }
 
 interface FullPageMediaUploadProps {
@@ -86,6 +95,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   const [currentDupIdx, setCurrentDupIdx] = useState(0);
   const [dupCustomName, setDupCustomName] = useState("");
   const [applyToAll, setApplyToAll] = useState(false);
+  const [pendingApprovalsQueue, setPendingApprovalsQueue] = useState<PhotoApprovalRequest[]>([]);
 
   // Manual Rename Modal State
   const [renameTargetItem, setRenameTargetItem] = useState<MediaItem | null>(null);
@@ -105,6 +115,16 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       return dateStr || "Select Date";
     }
   };
+
+  useEffect(() => {
+    // Real-time listener for in-flight pending moderation approvals
+    const unsubscribe = FirebaseSyncManager.subscribeApprovals((list) => {
+      setPendingApprovalsQueue(list.filter((r) => r.status === "pending"));
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     if (initialFolderId) {
@@ -232,9 +252,15 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     targetEvt?: GroupEvent
   ): DuplicateCandidate[] => {
     const duplicates: DuplicateCandidate[] = [];
-    const existingMedia: Array<{ name: string; url: string; type: "photo" | "video" }> = [];
+    const existingMedia: Array<{
+      name: string;
+      url: string;
+      type: "photo" | "video";
+      isPending?: boolean;
+      pendingDetails?: { memberName?: string; uploadedAt?: string; folderName?: string; type?: string };
+    }> = [];
 
-    // Extract names from target folder
+    // 1. Extract names from target folder (published assets)
     if (targetEvt) {
       (targetEvt.driveImageUrls || []).forEach((u) => {
         try {
@@ -257,7 +283,33 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       });
     }
 
-    // Add currentItems to existing list
+    // 2. AI In-Queue Detection: Extract items from pending moderation approvals queue
+    pendingApprovalsQueue.forEach((pa) => {
+      let paCleanName = (pa.folderName || pa.adminNotes || "pending media").toLowerCase();
+      if (pa.photoUrl) {
+        try {
+          const decoded = decodeURIComponent(pa.photoUrl);
+          const match = decoded.match(/([^\/?#]+)\.(webp|jpg|jpeg|png|mp4|mov|webm)/i);
+          if (match) {
+            paCleanName = match[1].replace(/^\d+_\d+_/, "").toLowerCase();
+          }
+        } catch {}
+      }
+      existingMedia.push({
+        name: paCleanName,
+        url: pa.photoUrl,
+        type: pa.type === "video" ? "video" : "photo",
+        isPending: true,
+        pendingDetails: {
+          memberName: pa.memberName,
+          uploadedAt: pa.uploadedAt,
+          folderName: pa.folderName,
+          type: pa.type,
+        },
+      });
+    });
+
+    // 3. Add current batch items to existing list
     currentItems.forEach((ci) => {
       existingMedia.push({
         name: ci.file.name.replace(/\.[^/.]+$/, "").toLowerCase(),
@@ -304,6 +356,8 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           matchedName: matchedEx ? matchedEx.name : originalFullName,
           matchedUrl: matchedEx ? matchedEx.url : undefined,
           suggestedName: candidateName,
+          isPendingApproval: matchedEx?.isPending || false,
+          pendingRequestDetails: matchedEx?.pendingDetails,
         });
       }
     });
@@ -1090,6 +1144,19 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                 </button>
               </div>
 
+              {/* AI Detection Notice if in queue */}
+              {currentDup.isPendingApproval && (
+                <div className="p-3 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-xs space-y-1 animate-fadeIn">
+                  <div className="flex items-center space-x-1.5 text-indigo-700 dark:text-indigo-300 font-semibold">
+                    <Sparkles className="w-4 h-4 text-amber-500 animate-spin" style={{ animationDuration: "3s" }} />
+                    <span>🤖 AI In-Queue Detection</span>
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                    A matching {currentDup.type} submission by <strong>{currentDup.pendingRequestDetails?.memberName || "a member"}</strong> is <strong>currently in the queue awaiting Admin Moderation approval</strong> for <em>"{currentDup.pendingRequestDetails?.folderName || "this event"}"</em>.
+                  </p>
+                </div>
+              )}
+
               {/* Item Info Card */}
               <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center space-x-3">
                 <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-900 shrink-0 relative flex items-center justify-center">
@@ -1109,7 +1176,8 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                     {currentDup.type === "video" ? "Video" : "Photo"} • {currentDup.sizeMB} MB
                   </p>
                   <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
-                    Matches existing item: <span className="font-medium">"{currentDup.matchedName}"</span>
+                    Matches: <span className="font-medium">"{currentDup.matchedName}"</span>
+                    {currentDup.isPendingApproval && " (Awaiting Admin Review)"}
                   </p>
                 </div>
               </div>

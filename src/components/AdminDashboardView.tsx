@@ -39,6 +39,8 @@ import {
   VolumeX,
   Eye,
   X,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 
 interface AdminDashboardViewProps {
@@ -150,9 +152,7 @@ const PendingMediaModerationCard: React.FC<PendingMediaModerationCardProps> = ({
     }
   };
 
-  const thumbnailUrl = isVideo
-    ? (youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : (req.previewDataUrl || req.photoUrl))
-    : (req.previewDataUrl || req.photoUrl);
+  const youtubeThumbnailUrl = youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : "";
 
   return (
     <div
@@ -213,7 +213,7 @@ const PendingMediaModerationCard: React.FC<PendingMediaModerationCardProps> = ({
         </button>
       </div>
 
-      {/* Media Player Stage / Viewport */}
+      {/* Media Player Stage / Live Frame Viewport */}
       <div className="w-full aspect-video rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-950 flex items-center justify-center relative shadow-inner">
         {isVideo ? (
           isPlaying ? (
@@ -239,12 +239,22 @@ const PendingMediaModerationCard: React.FC<PendingMediaModerationCardProps> = ({
             )
           ) : (
             <div className="w-full h-full relative flex items-center justify-center">
-              <img
-                src={thumbnailUrl}
-                alt={req.folderName || "Video Thumbnail"}
-                className="w-full h-full object-cover brightness-90 group-hover:scale-105 transition-transform duration-300"
-                onError={() => setImgError(true)}
-              />
+              {youtubeId ? (
+                <img
+                  src={youtubeThumbnailUrl}
+                  alt={req.folderName || "Video Thumbnail"}
+                  className="w-full h-full object-cover brightness-90 group-hover:scale-105 transition-transform duration-300"
+                  onError={() => setImgError(true)}
+                />
+              ) : (
+                <video
+                  src={req.photoUrl}
+                  preload="metadata"
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover brightness-90 group-hover:scale-105 transition-transform duration-300"
+                />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent flex flex-col items-center justify-center gap-2 p-3 text-center">
                 <div className="w-12 h-12 rounded-full bg-red-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                   <Play className="w-6 h-6 fill-current ml-0.5" />
@@ -283,8 +293,21 @@ const PendingMediaModerationCard: React.FC<PendingMediaModerationCardProps> = ({
         </p>
       </div>
 
-      {/* Action Buttons */}
+      {/* Action Buttons: Preview + Approve + Reject */}
       <div className="flex items-center space-x-2 pt-1">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenPreviewModal(req);
+          }}
+          className="px-3 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-1 cursor-pointer shadow-xs border border-slate-200 dark:border-slate-700"
+          title="Preview video with full audio and controls"
+        >
+          <Eye className="w-3.5 h-3.5 text-cyan-500" />
+          <span>Preview</span>
+        </button>
+
         <button
           type="button"
           onClick={(e) => {
@@ -294,15 +317,16 @@ const PendingMediaModerationCard: React.FC<PendingMediaModerationCardProps> = ({
           className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
         >
           <CheckCircle2 className="w-4 h-4" />
-          <span>Approve & Publish</span>
+          <span>Approve</span>
         </button>
+
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             onReject(req);
           }}
-          className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
+          className="px-3 py-2.5 bg-red-600/90 hover:bg-red-600 active:scale-95 text-white text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-1 cursor-pointer shadow-sm"
         >
           <XCircle className="w-4 h-4" />
           <span>Reject</span>
@@ -324,6 +348,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [activeTab, setActiveTab] = useState<"directory" | "rsvps" | "analytics" | "moderation" | "cloud_settings">("directory");
   const [pendingApprovals, setPendingApprovals] = useState<PhotoApprovalRequest[]>([]);
   const [previewModalReq, setPreviewModalReq] = useState<PhotoApprovalRequest | null>(null);
+  
+  // Rejection Confirmation State
+  const [rejectingTargetReq, setRejectingTargetReq] = useState<PhotoApprovalRequest | null>(null);
+  const [isBatchRejectModalOpen, setIsBatchRejectModalOpen] = useState(false);
+  const [rejectionNotesInput, setRejectionNotesInput] = useState("");
+  const [isProcessingReject, setIsProcessingReject] = useState(false);
+
   const [createEventModalOpen, setCreateEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<GroupEvent | null>(null);
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
@@ -620,16 +651,47 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     setIsBatchProcessing(false);
   };
 
-  const handleBatchReject = async () => {
+  const handleBatchReject = () => {
     const itemsToReject = pendingApprovals.filter((r) => selectedMediaIds.has(r.id));
     if (itemsToReject.length === 0) return;
-    if (!window.confirm(`Are you sure you want to reject ${itemsToReject.length} selected media submissions?`)) return;
-    setIsBatchProcessing(true);
-    for (const req of itemsToReject) {
-      await handleRejectPhoto(req);
+    setRejectionNotesInput("");
+    setIsBatchRejectModalOpen(true);
+  };
+
+  const handleConfirmSingleReject = async () => {
+    if (!rejectingTargetReq) return;
+    setIsProcessingReject(true);
+    try {
+      const updatedReq = {
+        ...rejectingTargetReq,
+        adminNotes: rejectionNotesInput.trim() || rejectingTargetReq.adminNotes,
+      };
+      await handleRejectPhoto(updatedReq);
+    } finally {
+      setIsProcessingReject(false);
+      setRejectingTargetReq(null);
+      setRejectionNotesInput("");
     }
-    setSelectedMediaIds(new Set());
-    setIsBatchProcessing(false);
+  };
+
+  const handleConfirmBatchReject = async () => {
+    const itemsToReject = pendingApprovals.filter((r) => selectedMediaIds.has(r.id));
+    if (itemsToReject.length === 0) return;
+    setIsProcessingReject(true);
+    try {
+      for (const req of itemsToReject) {
+        const updatedReq = {
+          ...req,
+          adminNotes: rejectionNotesInput.trim() || req.adminNotes,
+        };
+        await handleRejectPhoto(updatedReq);
+      }
+      setSelectedMediaIds(new Set());
+    } finally {
+      setIsProcessingReject(false);
+      setIsBatchRejectModalOpen(false);
+      setRejectionNotesInput("");
+    }
   };
 
   const getMemberName = (id: string) => {
@@ -1063,7 +1125,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   isSelected={selectedMediaIds.has(req.id)}
                   onToggleSelect={handleToggleSelectMedia}
                   onApprove={handleApprovePhoto}
-                  onReject={handleRejectPhoto}
+                  onReject={(r) => {
+                    setRejectionNotesInput("");
+                    setRejectingTargetReq(r);
+                  }}
                   onOpenPreviewModal={(r) => setPreviewModalReq(r)}
                 />
               ))}
@@ -1370,7 +1435,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   onClick={() => {
                     const reqToReject = previewModalReq;
                     setPreviewModalReq(null);
-                    handleRejectPhoto(reqToReject);
+                    setRejectionNotesInput("");
+                    setRejectingTargetReq(reqToReject);
                   }}
                   className="flex-1 sm:flex-none px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
                 >
@@ -1378,6 +1444,166 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <span>Reject Submission</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── REJECTION CONFIRMATION WARNING MODAL (Single Item) ── */}
+      {rejectingTargetReq && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-red-500/40 rounded-3xl p-6 shadow-2xl space-y-5 text-slate-900 dark:text-white">
+            <div className="flex items-start space-x-3.5 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="w-11 h-11 rounded-2xl bg-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Confirm Rejection & Cloud Purge
+                </h3>
+                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 font-medium">
+                  ⚠️ This submission will be permanently removed and deleted from cloud storage.
+                </p>
+              </div>
+            </div>
+
+            {/* Item Details Summary */}
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Submitted by:</span>
+                <span className="font-semibold text-slate-900 dark:text-white truncate max-w-[200px]">
+                  {rejectingTargetReq.memberName} ({rejectingTargetReq.memberEmail})
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Target Folder:</span>
+                <span className="font-semibold text-slate-900 dark:text-white truncate max-w-[200px]">
+                  {rejectingTargetReq.folderName || "Event Gallery"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 dark:text-slate-400">Media Type:</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                  rejectingTargetReq.type === "video" ? "bg-red-500/20 text-red-500" : "bg-teal-500/20 text-teal-500"
+                }`}>
+                  {rejectingTargetReq.type === "video" ? "YouTube / Video Clip" : "Photo Asset"}
+                </span>
+              </div>
+            </div>
+
+            {/* Optional Rejection Reason */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Reason for Rejection (Optional):
+              </label>
+              <textarea
+                value={rejectionNotesInput}
+                onChange={(e) => setRejectionNotesInput(e.target.value)}
+                placeholder="e.g. Blurry quality, Duplicate clip, Inappropriate or unrelated content..."
+                rows={2}
+                className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+              />
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                disabled={isProcessingReject}
+                onClick={() => {
+                  setRejectingTargetReq(null);
+                  setRejectionNotesInput("");
+                }}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingReject}
+                onClick={handleConfirmSingleReject}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold transition flex items-center space-x-2 shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {isProcessingReject ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span>Purging Asset...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Confirm & Reject Permanently</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── REJECTION CONFIRMATION WARNING MODAL (Batch Items) ── */}
+      {isBatchRejectModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-red-500/40 rounded-3xl p-6 shadow-2xl space-y-5 text-slate-900 dark:text-white">
+            <div className="flex items-start space-x-3.5 border-b border-slate-100 dark:border-slate-800 pb-4">
+              <div className="w-11 h-11 rounded-2xl bg-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Confirm Batch Rejection ({selectedMediaIds.size} Items)
+                </h3>
+                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 font-medium">
+                  ⚠️ Rejecting will permanently purge all {selectedMediaIds.size} selected submissions from YouTube and Cloud Storage.
+                </p>
+              </div>
+            </div>
+
+            {/* Optional Rejection Reason */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Batch Reason for Rejection (Optional):
+              </label>
+              <textarea
+                value={rejectionNotesInput}
+                onChange={(e) => setRejectionNotesInput(e.target.value)}
+                placeholder="e.g. Batch duplicate clean up, Unverified community media..."
+                rows={2}
+                className="w-full px-3.5 py-2.5 text-xs rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+              />
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end space-x-3 pt-2">
+              <button
+                type="button"
+                disabled={isProcessingReject}
+                onClick={() => {
+                  setIsBatchRejectModalOpen(false);
+                  setRejectionNotesInput("");
+                }}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isProcessingReject}
+                onClick={handleConfirmBatchReject}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold transition flex items-center space-x-2 shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {isProcessingReject ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span>Purging {selectedMediaIds.size} Assets...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Confirm & Reject {selectedMediaIds.size} Items</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
