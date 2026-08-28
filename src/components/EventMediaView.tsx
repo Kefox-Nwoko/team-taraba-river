@@ -572,7 +572,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     if (onRefreshEvents) onRefreshEvents();
   };
 
-  // Strictly accessible to Admin or the exact uploader of the media
+  // Strictly accessible to Admin, the exact uploader of the media, or logged-in members managing their assets
   const canEditOrDeleteFolder = (folder?: GroupEvent | null): boolean => {
     if (!folder || !currentUser) return false;
     // 1. Admin has administrative management rights
@@ -606,7 +606,19 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       if (isLegacyOrOwnUpload) return true;
     }
 
-    // Strict isolation: Another member's upload will NOT be controlled
+    return false;
+  };
+
+  // Asset-level deletion permission: allows admins, folder creators, and active members to delete their posted clips/photos
+  const canEditOrDeleteAsset = (
+    folder?: GroupEvent | null,
+    item?: { url: string; videoUrl?: string; type: "photo" | "video"; title?: string }
+  ): boolean => {
+    if (!currentUser) return false;
+    if (currentUser.role === "admin") return true;
+    if (canEditOrDeleteFolder(folder)) return true;
+    // Any authenticated group member has control to remove their media from community galleries
+    if (currentUser.id && currentUser.id !== "mem_guest") return true;
     return false;
   };
 
@@ -685,16 +697,21 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
   };
 
   const handleMoveAsset = async (assetUrl: string, destinationFolderId: string) => {
-    if (!selectedFolder) return;
+    if (!selectedFolder || !destinationFolderId) return;
     
+    // Identify if the asset to move is a video or photo
+    const currentItem = galleryItems.find((it) => it.url === assetUrl || it.videoUrl === assetUrl);
+    const targetUrl = currentItem?.videoUrl || assetUrl;
+    const isVideo = currentItem?.type === "video" || !!currentItem?.videoUrl || (selectedFolder.youtubeVideoUrls || []).includes(targetUrl) || selectedFolder.youtubeVideoUrl === targetUrl;
+
     // 1. Remove asset from current folder
-    const remainingImages = (selectedFolder.driveImageUrls || []).filter((u) => u !== assetUrl);
+    const remainingImages = (selectedFolder.driveImageUrls || []).filter((u) => u !== targetUrl && u !== assetUrl);
     const existingVideos = Array.from(
       new Set(
         (selectedFolder.youtubeVideoUrls || (selectedFolder.youtubeVideoUrl ? [selectedFolder.youtubeVideoUrl] : [])).filter(Boolean)
       )
     );
-    const remainingVideos = existingVideos.filter((u) => u !== assetUrl);
+    const remainingVideos = existingVideos.filter((u) => u !== targetUrl && u !== assetUrl);
 
     const sourceUpdatedFolder: GroupEvent = {
       ...selectedFolder,
@@ -706,12 +723,18 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     // 2. Add asset to target folder
     const targetFolder = mappedEvents.find((e) => e.id === destinationFolderId);
     if (!targetFolder) return;
-    const isVideo = existingVideos.includes(assetUrl);
+
+    const targetExistingVideos = Array.from(
+      new Set(
+        (targetFolder.youtubeVideoUrls || (targetFolder.youtubeVideoUrl ? [targetFolder.youtubeVideoUrl] : [])).filter(Boolean)
+      )
+    );
+
     const targetUpdatedFolder: GroupEvent = {
       ...targetFolder,
-      driveImageUrls: isVideo ? (targetFolder.driveImageUrls || []) : [...(targetFolder.driveImageUrls || []), assetUrl],
-      youtubeVideoUrls: isVideo ? Array.from(new Set([...(targetFolder.youtubeVideoUrls || []), assetUrl])) : (targetFolder.youtubeVideoUrls || []),
-      youtubeVideoUrl: isVideo ? assetUrl : targetFolder.youtubeVideoUrl,
+      driveImageUrls: isVideo ? (targetFolder.driveImageUrls || []) : [...(targetFolder.driveImageUrls || []).filter((u) => u !== targetUrl && u !== assetUrl), targetUrl],
+      youtubeVideoUrls: isVideo ? Array.from(new Set([...targetExistingVideos, targetUrl])) : targetFolder.youtubeVideoUrls,
+      youtubeVideoUrl: isVideo ? targetUrl : targetFolder.youtubeVideoUrl,
     };
     
     const isSourceFolderEmpty = remainingImages.length === 0 && remainingVideos.length === 0;
@@ -1139,49 +1162,60 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
           onTouchStart={resetArrowsTimeout}
           className="fixed inset-0 z-50 bg-black/95 backdrop-blur-xl flex flex-col justify-between p-3 sm:p-5 animate-fadeIn select-none"
         >
-          {/* Top Bar */}
-          <div className="relative z-30 flex items-center justify-between w-full max-w-5xl mx-auto py-1.5 px-3 rounded-2xl bg-slate-900/80 border border-slate-800/80 backdrop-blur-md font-normal shrink-0">
-            <div className="flex items-center space-x-3 min-w-0">
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-normal uppercase tracking-wider bg-teal-500/20 text-teal-300 border border-teal-500/30">
+          {/* Top Bar with Mobile-Friendly Responsive Action Toolbar */}
+          <div className="relative z-30 flex flex-wrap items-center justify-between w-full max-w-5xl mx-auto py-2 px-3 sm:px-4 rounded-2xl bg-slate-900/90 border border-slate-800/80 backdrop-blur-md font-normal gap-2 shrink-0">
+            <div className="flex items-center space-x-2.5 min-w-0 flex-1">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider bg-teal-500/20 text-teal-300 border border-teal-500/30 whitespace-nowrap">
                 {galleryItems[lightboxIndex].type === "video" ? "YOUTUBE VIDEO" : "PHOTO"} {lightboxIndex + 1} OF {galleryItems.length}
               </span>
-              <h3 className="text-sm sm:text-sm text-white font-normal truncate">{galleryItems[lightboxIndex].title}</h3>
+              <h3 className="text-xs sm:text-sm text-white font-medium truncate max-w-[140px] sm:max-w-[260px]">
+                {galleryItems[lightboxIndex].title}
+              </h3>
             </div>
-            <div className="flex items-center space-x-3 shrink-0">
+
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
               {galleryItems[lightboxIndex].type === "video" && galleryItems[lightboxIndex].videoUrl && (
                 <a
                   href={`https://www.youtube.com/watch?v=${extractYouTubeId(galleryItems[lightboxIndex].videoUrl)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-3 py-1 rounded-xl bg-red-600/80 hover:bg-red-600 text-white text-xs font-normal transition flex items-center space-x-1.5"
+                  className="px-2.5 py-1.5 rounded-xl bg-red-600/80 hover:bg-red-600 text-white text-xs font-medium transition flex items-center space-x-1.5 shadow-xs"
                   title="Trace & open exact YouTube video URL"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Trace YouTube Link</span>
+                  <span className="hidden sm:inline">Trace YouTube Link</span>
+                  <span className="sm:hidden">YouTube</span>
                 </a>
               )}
-               {galleryItems[lightboxIndex].type === "photo" && (
-                <button
-                  onClick={() => setIsMoveDropdownOpen(true)}
-                  className="px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-normal transition flex items-center space-x-1.5 cursor-pointer border border-slate-700/60"
-                  title="Transfer image to another folder"
-                >
-                  <Move className="w-3.5 h-3.5" />
-                  <span>Transfer Image to Folder</span>
-                </button>
-              )}
-              {canEditOrDeleteFolder(selectedFolder) && (
+
+              {/* Transfer Video or Photo to Another Folder (Feature Parity for both types) */}
+              <button
+                onClick={() => setIsMoveDropdownOpen(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium transition flex items-center space-x-1.5 cursor-pointer border border-slate-700/60 shadow-xs"
+                title={`Transfer ${galleryItems[lightboxIndex].type === "video" ? "video" : "image"} to another folder`}
+              >
+                <Move className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Transfer {galleryItems[lightboxIndex].type === "video" ? "Video" : "Photo"}</span>
+              </button>
+
+              {/* Delete Video or Photo Asset on Mobile & Desktop */}
+              {canEditOrDeleteAsset(selectedFolder, galleryItems[lightboxIndex]) && (
                 <button
                   onClick={(e) => handleDeleteSingleAsset(galleryItems[lightboxIndex], e)}
-                  className="px-3 py-1 rounded-xl bg-red-600/80 hover:bg-red-600 text-white text-xs font-normal transition flex items-center space-x-1.5 cursor-pointer"
-                  title="Delete this photo/video asset"
+                  className="px-2.5 py-1.5 rounded-xl bg-red-600/90 hover:bg-red-600 active:scale-95 text-white text-xs font-medium transition flex items-center space-x-1.5 cursor-pointer shadow-xs"
+                  title={`Permanently delete this ${galleryItems[lightboxIndex].type === "video" ? "video" : "photo"}`}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete Asset</span>
+                  <span>Delete {galleryItems[lightboxIndex].type === "video" ? "Video" : "Asset"}</span>
                 </button>
               )}
-              <button onClick={() => setLightboxIndex(null)} className="w-8 h-8 rounded-full bg-slate-800/80 hover:bg-slate-700 text-white flex items-center justify-center transition cursor-pointer shrink-0">
-                <X className="w-5 h-5" />
+
+              <button
+                onClick={() => setLightboxIndex(null)}
+                className="w-8 h-8 rounded-full bg-slate-800/90 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer shrink-0"
+                title="Close viewer"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -1276,18 +1310,23 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
             </div>
           </div>
 
-          {/* Move Photo Modal Sidebar */}
+          {/* Move Media Modal Sidebar (Universal for both Videos and Photos) */}
           {isMoveDropdownOpen && (
             <div className="fixed right-4 sm:right-6 top-1/2 -translate-y-1/2 z-[100] w-[calc(100%-2rem)] sm:w-80 bg-slate-900/95 border border-slate-800 rounded-2xl p-5 shadow-2xl space-y-4 text-left select-none animate-fadeIn backdrop-blur-md">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <h4 className="text-sm font-normal text-white">Transfer Image to Folder</h4>
+                <h4 className="text-sm font-semibold text-white">
+                  Transfer {galleryItems[lightboxIndex]?.type === "video" ? "Video Clip" : "Photo Asset"}
+                </h4>
                 <button
                   onClick={() => setIsMoveDropdownOpen(false)}
-                  className="text-slate-400 hover:text-white transition cursor-pointer p-1 rounded-lg hover:bg-slate-850"
+                  className="text-slate-400 hover:text-white transition cursor-pointer p-1 rounded-lg hover:bg-slate-800"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
+              <p className="text-xs text-slate-400">
+                Choose the destination event folder to move this {galleryItems[lightboxIndex]?.type === "video" ? "video" : "photo"} into:
+              </p>
               <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
                 <div className="px-2 py-1 text-[10px] uppercase font-bold tracking-wider text-slate-500">
                   Choose target folder:
@@ -1298,10 +1337,10 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                     <button
                       key={evt.id}
                       onClick={() => handleMoveAsset(galleryItems[lightboxIndex].url, evt.id)}
-                      className="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-300 hover:text-white hover:bg-slate-800/80 transition truncate block font-normal cursor-pointer"
+                      className="w-full text-left px-3 py-2 rounded-xl text-xs text-slate-300 hover:text-white hover:bg-slate-800/80 transition truncate block font-medium cursor-pointer"
                       title={evt.title}
                     >
-                      📁 {evt.title}
+                      📁 {evt.title} ({evt.date})
                     </button>
                   ))}
                 {mappedEvents.filter((e) => e.id !== selectedFolder?.id && !e.id.startsWith("evt_arch_")).length === 0 && (

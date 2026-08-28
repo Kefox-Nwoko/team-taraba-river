@@ -24,6 +24,7 @@ import {
   RefreshCw,
   Bot,
   Sparkles,
+  Clock,
 } from "lucide-react";
 import { uploadVideoDirectToYouTube, deleteYouTubeVideo } from "../services/youtubeDirectUpload";
 import { AppStateManager } from "../services/storage";
@@ -96,6 +97,19 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   const [dupCustomName, setDupCustomName] = useState("");
   const [applyToAll, setApplyToAll] = useState(false);
   const [pendingApprovalsQueue, setPendingApprovalsQueue] = useState<PhotoApprovalRequest[]>([]);
+
+  // Real-Time Dual-Tier Upload Progress State
+  const [activeFileIndex, setActiveFileIndex] = useState<number>(0);
+  const [activeFileName, setActiveFileName] = useState<string>("");
+  const [activeFileType, setActiveFileType] = useState<"photo" | "video">("photo");
+  const [activeFileProgress, setActiveFileProgress] = useState<number>(0);
+  const [activeFileMBTransferred, setActiveFileMBTransferred] = useState<number>(0);
+  const [activeFileTotalMB, setActiveFileTotalMB] = useState<number>(0);
+
+  const [completedUploadsCount, setCompletedUploadsCount] = useState<number>(0);
+  const [completedUploadsList, setCompletedUploadsList] = useState<
+    Array<{ name: string; type: "photo" | "video"; status: "success" | "failed"; reason?: string }>
+  >([]);
 
   // Manual Rename Modal State
   const [renameTargetItem, setRenameTargetItem] = useState<MediaItem | null>(null);
@@ -576,6 +590,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
     setIsUploading(true);
     setUploadProgress(5);
+    setActiveFileProgress(0);
+    setActiveFileMBTransferred(0);
+    setCompletedUploadsCount(0);
+    setCompletedUploadsList([]);
     setUploadProgressText("Initializing media upload...");
     setErrorMessage(null);
 
@@ -590,87 +608,97 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     const isAdmin = currentUser?.role === "admin";
 
     // ──────────────────────────────────────────────────────────────────
-    // FAULT-TOLERANT CONCURRENT UPLOADS WITH REPLACEMENT CLEANUP
+    // FAULT-TOLERANT SEQUENTIAL UPLOADS WITH REAL-TIME MILESTONE TRACKING
     // ──────────────────────────────────────────────────────────────────
     const photoFinalUrls: string[] = [];
     const videoFinalUrls: string[] = [];
     const failedFiles: Array<{ name: string; reason: string }> = [];
     const replacementsToExecute: Array<{ replaceUrl: string; newUrl: string; type: "photo" | "video" }> = [];
+    const totalFiles = mediaItems.length;
 
-    const fileProgresses = new Array(mediaItems.length).fill(0);
-    const updateOverallProgress = () => {
-      const totalPct = fileProgresses.reduce((a, b) => a + b, 0) / (mediaItems.length || 1);
-      const overall = Math.round(10 + totalPct * 0.8);
-      setUploadProgress(Math.min(90, Math.max(10, overall)));
-    };
-
-    const uploadPromises = mediaItems.map((item, i) => {
-      const isVideo = item.type === "video";
-      return (async () => {
-        setUploadProgressText(
-          `Uploading ${isVideo ? "video" : "photo"} ${i + 1} of ${mediaItems.length} (${item.file.name || "asset"})...`
-        );
-        const finalUrl = await uploadMediaFileWithProgress(item, eventId, folderNameTitle, i, (pct) => {
-          fileProgresses[i] = pct;
-          updateOverallProgress();
-        });
-        return { index: i, url: finalUrl, type: item.type, name: item.file.name, replaceTargetUrl: item.replaceTargetUrl };
-      })();
-    });
-
-    const results = await Promise.allSettled(uploadPromises);
-
-    // Process results
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
+    for (let i = 0; i < totalFiles; i++) {
       const item = mediaItems[i];
+      const isVideo = item.type === "video";
+      setActiveFileIndex(i);
+      setActiveFileName(item.file.name);
+      setActiveFileType(item.type);
+      setActiveFileProgress(0);
+      setActiveFileMBTransferred(0);
+      setActiveFileTotalMB(item.sizeMB);
 
-      if (result.status === "fulfilled" && result.value.url) {
-        const finalUrl = result.value.url;
-        if (item.type === "video") {
-          videoFinalUrls.push(finalUrl);
-        } else {
-          photoFinalUrls.push(finalUrl);
-        }
+      setUploadProgressText(
+        `Uploading ${isVideo ? "video" : "photo"} (${i + 1} of ${totalFiles}): "${item.file.name}"`
+      );
 
-        if (item.replaceTargetUrl) {
-          replacementsToExecute.push({
-            replaceUrl: item.replaceTargetUrl,
-            newUrl: finalUrl,
-            type: item.type,
-          });
-        }
-
-        // Save approval for non-admin members immediately
-        if (!isAdmin) {
-          try {
-            await FirebaseSyncManager.saveApproval({
-              id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-              memberId: currentUser?.id || "mem_guest",
-              memberName: currentUser?.fullName || "Community Member",
-              memberEmail: currentUser?.email || "member@tarabateam.org",
-              photoUrl: finalUrl,
-              uploadedAt: new Date().toISOString(),
-              status: "pending",
-              adminNotes: `${item.type === "video" ? "Video" : "Photo"} submission for folder: ${folderNameTitle}${item.replaceTargetUrl ? " (Replaces existing asset)" : ""}`,
-              type: item.type === "video" ? "video" : "photo",
-              eventId,
-              folderName: folderNameTitle,
-              date: folderEventDate,
-              location: folderLocation,
-              category: folderCategory,
-              description: folderDescription,
-            });
-          } catch (syncErr) {
-            logger.warn("Per-item approval save notice:", syncErr);
+      try {
+        const finalUrl = await uploadMediaFileWithProgress(
+          item,
+          eventId,
+          folderNameTitle,
+          i,
+          (pct) => {
+            setActiveFileProgress(pct);
+            const mbDone = parseFloat(((pct / 100) * item.sizeMB).toFixed(1));
+            setActiveFileMBTransferred(mbDone);
+            const overallPct = Math.round(((i + pct / 100) / totalFiles) * 85);
+            setUploadProgress(Math.max(5, overallPct));
           }
+        );
+
+        if (finalUrl) {
+          if (isVideo) {
+            videoFinalUrls.push(finalUrl);
+          } else {
+            photoFinalUrls.push(finalUrl);
+          }
+
+          if (item.replaceTargetUrl) {
+            replacementsToExecute.push({
+              replaceUrl: item.replaceTargetUrl,
+              newUrl: finalUrl,
+              type: item.type,
+            });
+          }
+
+          // Save approval for non-admin members immediately so each file is safeguarded
+          if (!isAdmin) {
+            try {
+              await FirebaseSyncManager.saveApproval({
+                id: `req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                memberId: currentUser?.id || "mem_guest",
+                memberName: currentUser?.fullName || "Community Member",
+                memberEmail: currentUser?.email || "member@tarabateam.org",
+                photoUrl: finalUrl,
+                uploadedAt: new Date().toISOString(),
+                status: "pending",
+                adminNotes: `${isVideo ? "Video" : "Photo"} submission for folder: ${folderNameTitle}${item.replaceTargetUrl ? " (Replaces existing asset)" : ""}`,
+                type: isVideo ? "video" : "photo",
+                eventId,
+                folderName: folderNameTitle,
+                date: folderEventDate,
+                location: folderLocation,
+                category: folderCategory,
+                description: folderDescription,
+              });
+            } catch (syncErr) {
+              logger.warn("Per-item approval save notice:", syncErr);
+            }
+          }
+
+          setCompletedUploadsCount((prev) => prev + 1);
+          setCompletedUploadsList((prev) => [
+            ...prev,
+            { name: item.file.name, type: item.type, status: "success" },
+          ]);
         }
-      } else {
-        const reason = result.status === "rejected"
-          ? (result.reason?.message || result.reason || "Unknown error")
-          : "No URL returned";
-        failedFiles.push({ name: item.file.name || `File ${i + 1}`, reason: String(reason) });
-        logger.error(`Upload failed for item ${i + 1} (${item.file.name}):`, reason);
+      } catch (err: any) {
+        const errorReason = err?.message || "Upload encountered an issue";
+        failedFiles.push({ name: item.file.name, reason: errorReason });
+        setCompletedUploadsList((prev) => [
+          ...prev,
+          { name: item.file.name, type: item.type, status: "failed", reason: errorReason },
+        ]);
+        logger.error(`Upload failed for item ${i + 1} (${item.file.name}):`, err);
       }
     }
 
@@ -1077,9 +1105,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           </div>
 
           {isUploading && (
-            <div className="space-y-2.5 p-4 rounded-2xl bg-cyan-50/50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800/80 animate-fadeIn">
-              <div className="flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
-                <span className="flex items-center gap-2 font-medium">
+            <div className="space-y-4 p-5 rounded-3xl bg-cyan-50/60 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800/80 shadow-md animate-fadeIn">
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-xs font-semibold text-slate-800 dark:text-slate-200">
                   <Loader2 className="w-4 h-4 animate-spin text-cyan-600 dark:text-cyan-400 shrink-0" />
                   <span>{uploadProgressText}</span>
                 </span>
@@ -1087,11 +1116,78 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                   {uploadProgress}%
                 </span>
               </div>
-              <div className="w-full h-3 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-300 dark:border-slate-700">
-                <div
-                  className="h-full bg-gradient-to-r from-cyan-500 to-teal-500 rounded-full transition-all duration-300 ease-out"
-                  style={{ width: `${uploadProgress}%` }}
-                />
+
+              {/* Tier 1: Current File Progress Bar */}
+              <div className="space-y-1.5 p-3 rounded-2xl bg-white/80 dark:bg-slate-900/60 border border-cyan-100 dark:border-cyan-900/40">
+                <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-400">
+                  <span className="font-medium truncate max-w-[220px]">
+                    Current {activeFileType === "video" ? "Video" : "Photo"}: <strong>{activeFileName || "Processing..."}</strong>
+                  </span>
+                  <span className="font-mono text-cyan-600 dark:text-cyan-400 font-semibold">
+                    {activeFileProgress}% ({activeFileMBTransferred} MB / {activeFileTotalMB} MB)
+                  </span>
+                </div>
+                <div className="w-full h-2.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-cyan-500 rounded-full transition-all duration-200 ease-out"
+                    style={{ width: `${activeFileProgress}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Tier 2: Overall Batch Progress Bar */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-slate-700 dark:text-slate-300">
+                  <span className="font-medium">
+                    Total Batch Progress: File {activeFileIndex + 1} of {mediaItems.length}
+                  </span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">
+                    {uploadProgress}%
+                  </span>
+                </div>
+                <div className="w-full h-3 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden border border-slate-300 dark:border-slate-700">
+                  <div
+                    className="h-full bg-gradient-to-r from-teal-500 via-cyan-500 to-emerald-500 rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Live Milestone Status Notice Under Progress Bar */}
+              <div className="pt-2 border-t border-cyan-200/60 dark:border-cyan-800/60 flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 text-xs font-semibold">
+                  {completedUploadsCount > 0 ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                      <span>
+                        {completedUploadsCount} of {mediaItems.length} completed successfully
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      <Clock className="w-4 h-4" />
+                      <span>Processing file 1 of {mediaItems.length}...</span>
+                    </span>
+                  )}
+                </div>
+
+                {/* Granular per-file status badges */}
+                {completedUploadsList.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                    {completedUploadsList.map((st, idx) => (
+                      <span
+                        key={idx}
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1 ${
+                          st.status === "success"
+                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
+                            : "bg-red-500/15 text-red-700 dark:text-red-300 border border-red-500/20"
+                        }`}
+                      >
+                        {st.status === "success" ? "✓" : "✗"} {st.name} ({st.type})
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
