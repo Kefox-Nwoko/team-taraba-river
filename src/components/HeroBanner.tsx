@@ -236,9 +236,11 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
                 </div>
               </div>
 
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 pt-1 leading-relaxed">
-                ⭐ <strong>Community Recognition:</strong> Standing tiers (Active Member 🌱, Bronze 🥉, Silver 🥈, Gold 🥇, Diamond Pillar 💎) qualify members for awards &amp; honors at gatherings.
-              </p>
+              <div className="pt-2 border-t border-slate-200 dark:border-slate-800">
+                <p className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 font-normal leading-relaxed">
+                  ⭐ <strong className="text-amber-700 dark:text-amber-400 font-bold">Community Recognition:</strong> Standing tiers (<span className="text-teal-800 dark:text-teal-300 font-semibold">Active Member 🌱</span>, <span className="text-amber-900 dark:text-amber-400 font-semibold">Bronze 🥉</span>, <span className="text-slate-700 dark:text-slate-300 font-semibold">Silver 🥈</span>, <span className="text-amber-700 dark:text-amber-400 font-semibold">Gold 🥇</span>, <span className="text-cyan-800 dark:text-cyan-300 font-semibold">Diamond Pillar 💎</span>) qualify members for awards &amp; honors at gatherings.
+                </p>
+              </div>
             </div>
           </div>
         </div>
