@@ -38,6 +38,7 @@ import {
   MemberSearchResult,
   NewsHeadline,
 } from "../services/apiClient";
+import { formatMemberDisplayName } from "../utils/nameUtils";
 import { Member } from "../types";
 
 interface UsosaNewsCardProps {
@@ -358,7 +359,8 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
   }
 
   const handleCopyContact = (m: MemberSearchResult) => {
-    const text = `${m.title ? `${m.title} ` : ""}${m.fullName}\nOccupation: ${m.occupation}\nPhone: ${m.phoneNumber}\nEmail: ${m.email}`;
+    const displayName = formatMemberDisplayName(m.title, m.fullName);
+    const text = `${displayName}\nOccupation: ${m.occupation}\nPhone: ${m.phoneNumber}\nEmail: ${m.email}`;
     navigator.clipboard.writeText(text);
     setCopiedId(m.id);
     setTimeout(() => setCopiedId(null), 2000);
@@ -849,7 +851,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                       <div className="min-w-0 flex-1 space-y-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <h4 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-tight">
-                            {m.title ? `${m.title} ` : ""}{m.fullName}
+                            {formatMemberDisplayName(m.title, m.fullName)}
                           </h4>
                           {m.schoolName && (
                             <span className="px-1.5 py-0.2 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 truncate max-w-[160px]">

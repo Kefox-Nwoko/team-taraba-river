@@ -26,6 +26,11 @@ import {
 } from "lucide-react";
 import { MemberAvatar, getMemberInitials } from "./MemberAvatar";
 import { TShirtSizeGuideModal } from "./TShirtSizeGuideModal";
+import {
+  extractAndCleanMemberNames,
+  stripTitlePrefixes,
+  normalizeTitle,
+} from "../utils/nameUtils";
 
 interface MemberRegistrationModalProps {
   isOpen: boolean;
@@ -68,11 +73,12 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
 
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     if (memberToEdit) {
+      const cleaned = extractAndCleanMemberNames(memberToEdit);
       return {
-        title: memberToEdit.title || "",
-        firstName: memberToEdit.firstName || memberToEdit.fullName.split(" ")[0] || "",
-        surname: memberToEdit.surname || memberToEdit.fullName.split(" ").slice(1).join(" ") || "",
-        fullName: memberToEdit.fullName || "",
+        title: cleaned.title,
+        firstName: cleaned.firstName,
+        surname: cleaned.surname,
+        fullName: cleaned.fullName,
         email: memberToEdit.email || "",
         phoneNumber: memberToEdit.phoneNumber || "",
         whatsappNumber: memberToEdit.whatsappNumber || "",
@@ -115,9 +121,17 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
   const handleFieldChange = (key: string, value: any) => {
     setFormData((prev) => {
       const updated = { ...prev, [key]: value };
+      if (key === "title") {
+        updated.title = normalizeTitle(value);
+      }
+      if (key === "firstName") {
+        updated.firstName = stripTitlePrefixes(value);
+      }
+      if (key === "surname") {
+        updated.surname = stripTitlePrefixes(value);
+      }
       if (key === "firstName" || key === "surname" || key === "title") {
-        const parts = [updated.title, updated.firstName, updated.surname].filter(Boolean);
-        updated.fullName = parts.join(" ");
+        updated.fullName = [updated.firstName, updated.surname].filter(Boolean).join(" ");
       }
       return updated;
     });
@@ -157,9 +171,12 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
       return;
     }
 
-    const fName = formData.firstName?.trim() || "";
-    const sName = formData.surname?.trim() || "";
-    const computedFullName = `${fName} ${sName}`.trim();
+    const cleanedNames = extractAndCleanMemberNames({
+      title: formData.title,
+      firstName: formData.firstName,
+      surname: formData.surname,
+      fullName: formData.fullName,
+    });
 
     setIsSubmitting(true);
 
@@ -169,10 +186,10 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
         : formData.skills || [];
 
       const payload: Partial<Member> = {
-        title: formData.title || "",
-        firstName: fName,
-        surname: sName,
-        fullName: computedFullName,
+        title: cleanedNames.title,
+        firstName: cleanedNames.firstName,
+        surname: cleanedNames.surname,
+        fullName: cleanedNames.fullName,
         email: formData.email.trim(),
         phoneNumber: formData.phoneNumber.trim(),
         whatsappNumber: formData.whatsappNumber?.trim() || formData.phoneNumber.trim(),

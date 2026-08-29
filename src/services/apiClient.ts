@@ -9,6 +9,7 @@ import { logger } from "../lib/logger";
 import { FirebaseSyncManager } from "./firebaseService";
 import { AppStateManager } from "./storage";
 import { isMemberCredentialMatch } from "../lib/authMatching";
+import { sanitizeMemberRecord } from "../utils/nameUtils";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
@@ -105,21 +106,22 @@ export async function loginGoogleAdmin(
   throw new Error("Direct admin login is no longer supported. Use Google OAuth sign-in.");
 }
 export async function registerMember(memberData: Partial<Member>): Promise<Member> {
+  const sanitizedInput = sanitizeMemberRecord(memberData);
   const newMember: Member = {
-    id: memberData.id || `mem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-    fullName: memberData.fullName || "Community Member",
-    email: memberData.email || "",
-    phoneNumber: memberData.phoneNumber || "",
-    dateOfBirth: memberData.dateOfBirth || "",
-    occupation: memberData.occupation || "",
-    skills: memberData.skills || [],
-    photoUrl: memberData.photoUrl || "",
-    photoStatus: memberData.photoStatus || "approved",
-    role: memberData.role || "member",
-    activityPoints: memberData.activityPoints || 0,
-    joinedAt: memberData.joinedAt || new Date().toISOString(),
-    lastActive: memberData.lastActive || new Date().toISOString(),
-    ...memberData,
+    id: sanitizedInput.id || `mem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    fullName: sanitizedInput.fullName || "Community Member",
+    email: sanitizedInput.email || "",
+    phoneNumber: sanitizedInput.phoneNumber || "",
+    dateOfBirth: sanitizedInput.dateOfBirth || "",
+    occupation: sanitizedInput.occupation || "",
+    skills: sanitizedInput.skills || [],
+    photoUrl: sanitizedInput.photoUrl || "",
+    photoStatus: sanitizedInput.photoStatus || "approved",
+    role: sanitizedInput.role || "member",
+    activityPoints: sanitizedInput.activityPoints || 0,
+    joinedAt: sanitizedInput.joinedAt || new Date().toISOString(),
+    lastActive: sanitizedInput.lastActive || new Date().toISOString(),
+    ...sanitizedInput,
   };
 
   try {
@@ -127,12 +129,12 @@ export async function registerMember(memberData: Partial<Member>): Promise<Membe
     const res = await fetch(apiUrl("/api/members"), {
       method: "POST",
       headers,
-      body: JSON.stringify(memberData),
+      body: JSON.stringify(newMember),
     });
     const contentType = res.headers.get("content-type") || "";
     if (res.ok && contentType.includes("application/json")) {
       const data = await res.json();
-      if (data && data.member) return data.member;
+      if (data && data.member) return sanitizeMemberRecord(data.member);
     }
   } catch {}
 
@@ -144,24 +146,25 @@ export async function updateMemberProfile(
   id: string,
   memberData: Partial<Member>
 ): Promise<Member> {
+  const sanitizedInput = sanitizeMemberRecord(memberData);
   let updatedMember: Member | null = null;
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(apiUrl(`/api/members/${id}`), {
       method: "PUT",
       headers,
-      body: JSON.stringify(memberData),
+      body: JSON.stringify(sanitizedInput),
     });
     const contentType = res.headers.get("content-type") || "";
     if (res.ok && contentType.includes("application/json")) {
       const data = await res.json();
-      if (data && data.member) updatedMember = data.member;
+      if (data && data.member) updatedMember = sanitizeMemberRecord(data.member);
     }
   } catch {}
 
   if (!updatedMember) {
     const existing = AppStateManager.getMembers().find((m) => m.id === id);
-    updatedMember = {
+    updatedMember = sanitizeMemberRecord({
       ...(existing || {
         id,
         fullName: "Member",
@@ -177,8 +180,8 @@ export async function updateMemberProfile(
         joinedAt: new Date().toISOString(),
         lastActive: new Date().toISOString(),
       }),
-      ...memberData,
-    };
+      ...sanitizedInput,
+    });
     await FirebaseSyncManager.saveMember(updatedMember);
   }
 

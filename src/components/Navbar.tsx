@@ -3,6 +3,7 @@ import { Member } from "../types";
 import { useTheme } from "../context/ThemeContext";
 import { MemberAvatar } from "./MemberAvatar";
 import { BRAND_LOGO } from "../constants/assets";
+import { stripTitlePrefixes } from "../utils/nameUtils";
 import {
   Sun,
   Moon,
@@ -65,12 +66,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const getFirstName = (user?: Member | null): string => {
     if (!user) return "Member";
-    let cleanName = user.fullName ? user.fullName.trim() : "";
-    cleanName = cleanName.replace(
-      /^(Dr\.|Mr\.|Mrs\.|Ms\.|Engr\.|Chief|Prof\.|Dr|Mr|Mrs|Ms|Engr|Prof)\s+/i,
-      ""
-    );
-    const parts = cleanName.split(/\s+/);
+    const cleanName = stripTitlePrefixes(user.firstName || user.fullName || "");
+    const parts = cleanName.split(/\s+/).filter(Boolean);
     const first = parts[0] || "Member";
     if (first.toLowerCase() === "local") return "Admin";
     return first;

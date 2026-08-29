@@ -3,6 +3,7 @@ import { Member } from "../types";
 import { adminAISearch } from "../services/apiClient";
 import { logger } from "../lib/logger";
 import { MemberAvatar } from "./MemberAvatar";
+import { formatMemberDirectoryName } from "../utils/nameUtils";
 import {
   Search,
   Lock,
@@ -38,20 +39,8 @@ function formatWhatsappUrl(num: string): string {
   return `https://wa.me/${clean}`;
 }
 
-function formatMemberName(_title?: string, fullName?: string): string {
-  if (!fullName) return "";
-  let cleanName = fullName.trim();
-  cleanName = cleanName.replace(
-    /^(Dr\.|Mr\.|Mrs\.|Ms\.|Engr\.|Chief|Prof\.|Dr|Mr|Mrs|Ms|Engr|Prof)\s+/i,
-    ""
-  );
-  const parts = cleanName.split(/\s+/);
-  if (parts.length > 1) {
-    const surname = parts.pop() || "";
-    parts.push(surname.toUpperCase());
-    return parts.join(" ");
-  }
-  return cleanName.toUpperCase();
+function formatMemberName(title?: string, fullName?: string): string {
+  return formatMemberDirectoryName(title, fullName);
 }
 
 const MONTH_NAMES = [

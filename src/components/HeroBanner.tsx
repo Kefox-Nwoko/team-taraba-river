@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 
 import { AppStateManager } from "../services/storage";
+import { stripTitlePrefixes } from "../utils/nameUtils";
 
 interface HeroBannerProps {
   currentUser: Member | null;
@@ -27,7 +28,10 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   members,
   events,
   totalVisits = 0,
-   onOpenRegister,
+  lastVisitTimestamp,
+  sessionCount = 0,
+  latestUniqueUser,
+  onOpenRegister,
 }) => {
   const memberCount = members.length;
   const currentDateStr = new Date().toISOString().split("T")[0];
@@ -38,12 +42,8 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
 
   const getUserDisplayName = (user?: Member | null): string => {
     if (!user) return "Guest";
-    let cleanName = user.firstName || (user.fullName ? user.fullName.trim() : "");
-    cleanName = cleanName.replace(
-      /^(Dr\.|Mr\.|Mrs\.|Ms\.|Engr\.|Chief|Prof\.|Dr|Mr|Mrs|Ms|Engr|Prof)\s+/i,
-      ""
-    );
-    const parts = cleanName.split(/\s+/);
+    const cleanName = stripTitlePrefixes(user.firstName || user.fullName || "");
+    const parts = cleanName.split(/\s+/).filter(Boolean);
     const first = parts[0] || "Guest";
     if (first.toLowerCase() === "local") return "Admin";
     return first;

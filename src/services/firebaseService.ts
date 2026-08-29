@@ -25,7 +25,8 @@ import {
   GroupEvent,
   PhotoApprovalRequest,
   ActivityLog,
-} from "../types"; /** * Google Admin Sign-In via OAuth popup. * * SECURITY: If the Google popup fails, we throw an error instead of * falling back to a hardcoded admin session. The backend determines * the actual role via Firebase Custom Claims. */
+} from "../types";
+import { sanitizeMemberRecord } from "../utils/nameUtils"; /** * Google Admin Sign-In via OAuth popup. * * SECURITY: If the Google popup fails, we throw an error instead of * falling back to a hardcoded admin session. The backend determines * the actual role via Firebase Custom Claims. */
 export async function triggerGoogleAdminSignIn(): Promise<Member> {
   try {
     const result = await signInWithPopup(auth, googleProvider);
@@ -132,7 +133,19 @@ export class FirebaseSyncManager {
       const snapshot = await getDocs(colRef);
       const firestoreMembers: Member[] = [];
       snapshot.forEach((d) => {
-        firestoreMembers.push(d.data() as Member);
+        const raw = d.data() as Member;
+        const clean = sanitizeMemberRecord(raw);
+        firestoreMembers.push(clean);
+
+        // Self-heal records in Firestore if there were repeated title prefixes
+        if (
+          raw.fullName !== clean.fullName ||
+          raw.firstName !== clean.firstName ||
+          raw.surname !== clean.surname ||
+          raw.title !== clean.title
+        ) {
+          setDoc(doc(db, "members", clean.id), clean, { merge: true }).catch(() => {});
+        }
       });
       return firestoreMembers;
     } catch (err) {
@@ -146,7 +159,8 @@ export class FirebaseSyncManager {
       return onSnapshot(colRef, (snapshot) => {
         const list: Member[] = [];
         snapshot.forEach((docSnap) => {
-          list.push(docSnap.data() as Member);
+          const raw = docSnap.data() as Member;
+          list.push(sanitizeMemberRecord(raw));
         });
         if (list.length > 0) {
           onUpdate(list);
@@ -192,7 +206,8 @@ export class FirebaseSyncManager {
 
   public static async saveMember(member: Member): Promise<void> {
     try {
-      await setDoc(doc(db, "members", member.id), member);
+      const clean = sanitizeMemberRecord(member);
+      await setDoc(doc(db, "members", clean.id), clean);
     } catch (err) {
       logger.error("Failed to save member to Firestore", err);
     }

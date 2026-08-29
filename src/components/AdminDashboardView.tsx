@@ -9,6 +9,7 @@ import { triggerCloudSyncAll, triggerYouTubeBackSync, resetSystemData, deleteEve
 import { deleteYouTubeVideo, extractYouTubeId, getYouTubeThumbnail } from "../services/youtubeDirectUpload";
 import { CreateEventModal } from "./CreateEventModal";
 import { ReturnButton } from "./ReturnButton";
+import { formatMemberDisplayName } from "../utils/nameUtils";
 import {
   Users,
   ShieldCheck,
@@ -713,7 +714,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   const getMemberName = (id: string) => {
     const member = members.find((m) => m.id === id);
-    return member ? member.fullName : "Member";
+    return member ? formatMemberDisplayName(member.title, member.fullName) : "Member";
   };
 
   const handleResetSystemData = async () => {
@@ -1037,7 +1038,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                         <span className="w-8 h-8 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center text-sm font-normal">
                           #{idx + 1}
                         </span>
-                        <span className="text-sm text-slate-900 dark:text-white font-normal">{m.fullName}</span>
+                        <span className="text-sm text-slate-900 dark:text-white font-normal">{formatMemberDisplayName(m.title, m.fullName)}</span>
                       </div>
                       <span className="text-sm text-amber-600 dark:text-amber-400 font-normal">
                         {m.activityPoints || 0} Points

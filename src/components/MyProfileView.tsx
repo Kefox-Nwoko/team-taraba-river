@@ -4,6 +4,7 @@ import { MEMBER_DATABASE_SCHEMA } from "../constants/memberSchema";
 import { MemberAvatar } from "./MemberAvatar";
 import { MemberRegistrationModal } from "./MemberRegistrationModal";
 import { UserCheck, Mail, Phone, MessageSquare } from "lucide-react";
+import { formatMemberDirectoryName } from "../utils/nameUtils";
 
 function formatWhatsappUrl(phone?: string): string {
   if (!phone) return "#";
@@ -11,20 +12,8 @@ function formatWhatsappUrl(phone?: string): string {
   return `https://wa.me/${clean}`;
 }
 
-function formatMemberName(_title?: string, fullName?: string): string {
-  if (!fullName) return "";
-  let cleanName = fullName.trim();
-  cleanName = cleanName.replace(
-    /^(Dr\.|Mr\.|Mrs\.|Ms\.|Engr\.|Chief|Prof\.|Dr|Mr|Mrs|Ms|Engr|Prof)\s+/i,
-    ""
-  );
-  const parts = cleanName.split(/\s+/);
-  if (parts.length > 1) {
-    const surname = parts.pop() || "";
-    parts.push(surname.toUpperCase());
-    return parts.join(" ");
-  }
-  return cleanName.toUpperCase();
+function formatMemberName(title?: string, fullName?: string): string {
+  return formatMemberDirectoryName(title, fullName);
 }
 
 interface MyProfileViewProps {

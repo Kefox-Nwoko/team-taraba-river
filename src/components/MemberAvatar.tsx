@@ -2,21 +2,17 @@ import React from "react";
 import { Member } from "../types";
 import { AppStateManager } from "../services/storage";
 import { LazyImage } from "./ui/LazyImage";
+import { stripTitlePrefixes } from "../utils/nameUtils";
 
 export function getMemberInitials(
   member?: { firstName?: string; surname?: string; fullName?: string } | null,
 ): string {
   if (!member) return "TR";
-  let f = member.firstName?.trim();
-  let s = member.surname?.trim();
+  let f = stripTitlePrefixes(member.firstName);
+  let s = stripTitlePrefixes(member.surname);
   if (!f || !s) {
     if (member.fullName) {
-      const cleanName = member.fullName
-        .replace(
-          /^(Mr\.|Mrs\.|Ms\.|Dr\.|Engr\.|Prof\.|Chief|Admin|Dr|Mr|Mrs|Ms|Engr|Prof)\s+/i,
-          "",
-        )
-        .trim();
+      const cleanName = stripTitlePrefixes(member.fullName);
       const parts = cleanName.split(/\s+/).filter(Boolean);
       if (parts.length >= 2) {
         f = parts[0];

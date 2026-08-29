@@ -1,4 +1,6 @@
-export const CSV_SEED_MEMBERS: any[] = [
+import { sanitizeMemberRecord } from "../utils/nameUtils";
+
+const RAW_CSV_SEED_MEMBERS: any[] = [
   {
     "id": "mem_csv_1",
     "whatsappNumber": "07032911647",
@@ -808,3 +810,5 @@ export const CSV_SEED_MEMBERS: any[] = [
     "occupation": ""
   }
 ];
+
+export const CSV_SEED_MEMBERS = RAW_CSV_SEED_MEMBERS.map(sanitizeMemberRecord);
