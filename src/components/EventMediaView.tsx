@@ -37,6 +37,9 @@ import {
   ChevronDown,
   AlertTriangle,
   Loader2,
+  CheckSquare,
+  Square,
+  Check,
 } from "lucide-react";
 
 interface EventMediaViewProps {
@@ -368,6 +371,11 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     count: number;
   } | null>(null);
   const [isDeletingProcessing, setIsDeletingProcessing] = useState(false);
+
+  // Multi-Media Batch Selection & Deletion State
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedItemKeys, setSelectedItemKeys] = useState<Set<string>>(new Set());
+  const [isBatchDeletingModalOpen, setIsBatchDeletingModalOpen] = useState(false);
 
   // Lightbox arrows fade-out timeout & slideshow autoplay
   const [showArrows, setShowArrows] = useState(true);
@@ -759,6 +767,118 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     }
   };
 
+  // ── MULTI-MEDIA BATCH SELECTION & DELETION HANDLERS ──
+  const handleToggleSelectAsset = (itemKey: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedItemKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemKey)) {
+        next.delete(itemKey);
+      } else {
+        next.add(itemKey);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllAssets = () => {
+    if (selectedItemKeys.size === galleryItems.length) {
+      setSelectedItemKeys(new Set());
+    } else {
+      const allKeys = new Set(galleryItems.map((it) => it.videoUrl || it.url));
+      setSelectedItemKeys(allKeys);
+    }
+  };
+
+  const handleCancelSelection = () => {
+    setIsSelectionMode(false);
+    setSelectedItemKeys(new Set());
+  };
+
+  const handleExecuteBatchDelete = async () => {
+    if (selectedItemKeys.size === 0) return;
+    setIsDeletingProcessing(true);
+
+    try {
+      const currentActiveFolder = mappedEvents.find((e) => e.id === selectedFolder?.id) || selectedFolder;
+      if (!currentActiveFolder) return;
+
+      const itemsToDelete = galleryItems.filter((it) => selectedItemKeys.has(it.videoUrl || it.url));
+
+      // 1. Get current video and image arrays
+      let existingVideos = [...(currentActiveFolder.youtubeVideoUrls || (currentActiveFolder.youtubeVideoUrl ? [currentActiveFolder.youtubeVideoUrl] : []))].filter(Boolean);
+      let existingImages = [...(currentActiveFolder.driveImageUrls || [])].filter(Boolean);
+
+      // 2. Filter out selected items from arrays
+      existingVideos = existingVideos.filter((vUrl) => !selectedItemKeys.has(vUrl));
+      existingImages = existingImages.filter((imgUrl) => !selectedItemKeys.has(imgUrl));
+
+      // 3. Purge from cloud storage / YouTube
+      for (const it of itemsToDelete) {
+        const targetUrl = it.videoUrl || it.url;
+        const isVideo = it.type === "video" || !!it.videoUrl;
+
+        // Check if URL is still referenced elsewhere in the folder
+        const isStillInVideos = existingVideos.includes(targetUrl);
+        const isStillInImages = existingImages.includes(targetUrl);
+
+        if (!isStillInVideos && !isStillInImages) {
+          if (isVideo && it.videoUrl && (it.videoUrl.includes("youtube.com") || it.videoUrl.includes("youtu.be"))) {
+            deleteYouTubeVideo(it.videoUrl).catch((err) => {
+              logger.warn("YouTube video batch delete notice:", err);
+            });
+          }
+          if (targetUrl && targetUrl.includes("firebasestorage.googleapis.com")) {
+            try {
+              const fileRef = ref(storage, targetUrl);
+              deleteObject(fileRef).catch((err) => {
+                logger.warn("Firebase storage batch delete notice:", err);
+              });
+            } catch (e) {}
+          }
+        }
+      }
+
+      const isFolderEmpty = existingImages.length === 0 && existingVideos.length === 0;
+
+      if (isFolderEmpty) {
+        await performDeleteFolder(currentActiveFolder.id);
+        notify("🗑️ All media was deleted. Empty folder removed.", "info");
+      } else {
+        const updatedFolder: GroupEvent = {
+          ...currentActiveFolder,
+          driveImageUrls: existingImages,
+          youtubeVideoUrls: existingVideos,
+          youtubeVideoUrl: existingVideos[0] || "",
+        };
+
+        await FirebaseSyncManager.saveEvent(updatedFolder);
+        await updateEvent(currentActiveFolder.id, {
+          driveImageUrls: existingImages,
+          youtubeVideoUrls: existingVideos,
+          youtubeVideoUrl: existingVideos[0] || "",
+        });
+
+        const currentEvents = AppStateManager.getEvents();
+        const idx = currentEvents.findIndex((evt) => evt.id === currentActiveFolder.id);
+        if (idx !== -1) currentEvents[idx] = updatedFolder;
+        AppStateManager.saveEvents(currentEvents);
+        setSelectedFolder(updatedFolder);
+        if (onRefreshEvents) onRefreshEvents();
+        notify(`🗑️ Successfully deleted ${itemsToDelete.length} selected media item(s).`, "success");
+      }
+
+      setIsSelectionMode(false);
+      setSelectedItemKeys(new Set());
+      setIsBatchDeletingModalOpen(false);
+    } catch (err) {
+      logger.error("Failed to batch delete media:", err);
+      notify("Failed to delete selected media. Please try again.", "error");
+    } finally {
+      setIsDeletingProcessing(false);
+    }
+  };
+
   const handleMoveAsset = async (assetUrl: string, destinationFolderId: string) => {
     if (!selectedFolder || !destinationFolderId) return;
     
@@ -1143,33 +1263,94 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
             )}
             {!isEditingFolderInfo && (
               <div className="flex flex-row items-center gap-2 shrink-0 w-full sm:w-auto flex-wrap">
-                <button
-                  onClick={() => {
-                    setUploadFolderId(selectedFolder.id);
-                    setIsFullPageUploadOpen(true);
-                  }}
-                  className="flex-1 sm:flex-initial px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
-                  title="Upload more photos or videos to this folder"
-                >
-                  <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                  <span>Update / Add Media</span>
-                </button>
-                {canEditOrDeleteFolder(selectedFolder) && (
-                  <button
-                    onClick={(e) => handlePromptDeleteFolder(selectedFolder.id, selectedFolder.title, galleryItems.length, e)}
-                    className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-red-600/90 hover:bg-red-700 active:scale-95 text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
-                    title="Delete entire media folder"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span>Delete Folder</span>
-                  </button>
+                {isSelectionMode ? (
+                  <>
+                    <div className="text-[11px] sm:text-xs font-semibold text-teal-700 dark:text-teal-300 px-3 py-1.5 bg-teal-50 dark:bg-teal-950/60 rounded-xl border border-teal-200 dark:border-teal-800">
+                      {selectedItemKeys.size} of {galleryItems.length} selected
+                    </div>
+                    <button
+                      onClick={handleSelectAllAssets}
+                      className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
+                      title={selectedItemKeys.size === galleryItems.length ? "Deselect all items" : "Select all items"}
+                    >
+                      {selectedItemKeys.size === galleryItems.length ? (
+                        <>
+                          <Square className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400" />
+                          <span>Deselect All</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400" />
+                          <span>Select All</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      disabled={selectedItemKeys.size === 0}
+                      onClick={() => setIsBatchDeletingModalOpen(true)}
+                      className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
+                      title="Delete all selected media items"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span>Delete Selected ({selectedItemKeys.size})</span>
+                    </button>
+                    <button
+                      onClick={handleCancelSelection}
+                      className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
+                      title="Cancel selection mode"
+                    >
+                      <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span>Cancel</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {galleryItems.length > 0 && canEditOrDeleteFolder(selectedFolder) && (
+                      <button
+                        onClick={() => setIsSelectionMode(true)}
+                        className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
+                        title="Select multiple photos or videos to delete"
+                      >
+                        <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400" />
+                        <span>Select Multiple</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setUploadFolderId(selectedFolder.id);
+                        setIsFullPageUploadOpen(true);
+                      }}
+                      className="flex-1 sm:flex-initial px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
+                      title="Upload more photos or videos to this folder"
+                    >
+                      <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span>Update / Add Media</span>
+                    </button>
+                    {canEditOrDeleteFolder(selectedFolder) && (
+                      <button
+                        onClick={(e) => handlePromptDeleteFolder(selectedFolder.id, selectedFolder.title, galleryItems.length, e)}
+                        className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-red-600/90 hover:bg-red-700 active:scale-95 text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
+                        title="Delete entire media folder"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        <span>Delete Folder</span>
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             )}
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
-            <h2 className="text-sm sm:text-sm font-normal text-slate-900 dark:text-white">Event Media Gallery ({galleryItems.length} Media Assets)</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm sm:text-sm font-normal text-slate-900 dark:text-white">Event Media Gallery ({galleryItems.length} Media Assets)</h2>
+              {isSelectionMode && (
+                <span className="text-xs text-teal-600 dark:text-teal-400 font-medium">
+                  Tap cards to toggle selection
+                </span>
+              )}
+            </div>
             {galleryItems.length === 0 ? (
               <div className="py-12 text-center space-y-4">
                 <p className="text-slate-500 dark:text-slate-400 text-sm font-normal">No photos or videos uploaded for this event folder yet.</p>
@@ -1197,23 +1378,59 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
-                {galleryItems.map((item, i) => (
-                  <div key={i} onClick={() => openLightbox(i)} className="group relative bg-slate-900 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-sm cursor-pointer aspect-square">
-                    <img
-                      src={item.url}
-                      alt={item.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      onError={handleGoogleDriveImageError}
-                    />
-                    {item.type === "video" && (
-                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md group-hover:opacity-75 group-hover:scale-105 transition-all">
-                          <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current ml-0.5" />
+                {galleryItems.map((item, i) => {
+                  const itemKey = item.videoUrl || item.url;
+                  const isSelected = selectedItemKeys.has(itemKey);
+
+                  return (
+                    <div
+                      key={i}
+                      onClick={(e) => {
+                        if (isSelectionMode) {
+                          handleToggleSelectAsset(itemKey, e);
+                        } else {
+                          openLightbox(i);
+                        }
+                      }}
+                      className={`group relative bg-slate-900 rounded-2xl overflow-hidden border shadow-sm cursor-pointer aspect-square transition-all duration-200 ${
+                        isSelectionMode && isSelected
+                          ? "border-teal-500 ring-4 ring-teal-500/40 scale-[0.98]"
+                          : isSelectionMode
+                          ? "border-slate-300 dark:border-slate-700 hover:border-teal-400"
+                          : "border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600"
+                      }`}
+                    >
+                      <img
+                        src={item.url}
+                        alt={item.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        onError={handleGoogleDriveImageError}
+                      />
+                      {item.type === "video" && (
+                        <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors flex items-center justify-center pointer-events-none">
+                          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md group-hover:opacity-75 group-hover:scale-105 transition-all">
+                            <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current ml-0.5" />
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                      )}
+
+                      {/* Selection Checkbox Badge */}
+                      {isSelectionMode && (
+                        <div className="absolute top-2.5 right-2.5 z-10 pointer-events-none">
+                          <div
+                            className={`w-6 h-6 rounded-full flex items-center justify-center shadow-lg transition-all ${
+                              isSelected
+                                ? "bg-teal-500 text-white scale-110 ring-2 ring-white"
+                                : "bg-black/60 border-2 border-white/90 text-transparent"
+                            }`}
+                          >
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1560,6 +1777,69 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                   <>
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Confirm & Delete Folder</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── IN-APP BATCH MEDIA DELETE CONFIRMATION MODAL ── */}
+      {isBatchDeletingModalOpen && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-red-500/40 rounded-3xl p-6 shadow-2xl space-y-4 text-slate-900 dark:text-white">
+            <div className="flex items-start space-x-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Confirm Batch Deletion
+                </h3>
+                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 font-medium">
+                  ⚠️ This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1 text-xs">
+              <p className="font-semibold text-slate-900 dark:text-white truncate">
+                Folder: <span className="text-teal-600 dark:text-teal-400 font-medium">{selectedFolder?.title}</span>
+              </p>
+              <p className="text-slate-600 dark:text-slate-400">
+                Selected for deletion: <strong className="text-red-600 dark:text-red-400">{selectedItemKeys.size}</strong> media item(s)
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Are you sure you want to permanently delete these <strong>{selectedItemKeys.size}</strong> selected photo(s) and video clip(s) from this event gallery and cloud storage?
+            </p>
+
+            <div className="flex items-center justify-end space-x-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeletingProcessing}
+                onClick={() => setIsBatchDeletingModalOpen(false)}
+                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingProcessing}
+                onClick={handleExecuteBatchDelete}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white rounded-xl text-xs font-semibold transition flex items-center space-x-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingProcessing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                    <span>Deleting {selectedItemKeys.size} item(s)...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete {selectedItemKeys.size} Item(s)</span>
                   </>
                 )}
               </button>
