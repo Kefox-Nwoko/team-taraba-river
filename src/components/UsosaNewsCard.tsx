@@ -13,6 +13,8 @@ import {
   Bot,
   User,
   Trash2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   fetchUsosaNews,
@@ -38,6 +40,7 @@ type Tab = (typeof TABS)[number];
 
 export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => {
   const [activeTab, setActiveTab] = useState<Tab>("Headlines");
+  const [isCollapsedOnMobile, setIsCollapsedOnMobile] = useState(false);
 
   // ---------- Headlines state ----------
   const [headlines, setHeadlines] = useState<NewsHeadline[]>([]);
@@ -152,8 +155,8 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
   useEffect(() => {
     if (activeTab === "AI Xplora" && messages.length === 0) {
       const greeting = firstName
-        ? `Hi ${firstName}! 👋 I'm Gemini AI Xplora — your open AI assistant connected live to the web. Ask me anything in the world — science, current affairs, tech, coding, sports, recommendations, or general knowledge!`
-        : `Hi there! 👋 I'm Gemini AI Xplora — connected live to the web. Ask me anything on any topic in the world!`;
+        ? `Hi ${firstName}! 👋 I'm AI Xplora — your open AI assistant connected live to the web. Ask me anything in the world — science, current affairs, tech, coding, sports, recommendations, or general knowledge!`
+        : `Hi there! 👋 I'm AI Xplora — connected live to the web. Ask me anything on any topic in the world!`;
       setMessages([
         {
           id: "welcome",
@@ -172,8 +175,8 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
         localStorage.setItem(userChatLastUsedKey, Date.now().toString());
       } catch {}
       const greeting = firstName
-        ? `Hi ${firstName}! 👋 I'm Gemini AI Xplora — your open AI assistant connected live to the web. Ask me anything in the world — science, current affairs, tech, coding, sports, recommendations, or general knowledge!`
-        : `Hi there! 👋 I'm Gemini AI Xplora — connected live to the web. Ask me anything on any topic in the world!`;
+        ? `Hi ${firstName}! 👋 I'm AI Xplora — your open AI assistant connected live to the web. Ask me anything in the world — science, current affairs, tech, coding, sports, recommendations, or general knowledge!`
+        : `Hi there! 👋 I'm AI Xplora — connected live to the web. Ask me anything on any topic in the world!`;
       setMessages([
         {
           id: `welcome_${Date.now()}`,
@@ -272,45 +275,69 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
   return (
     <>
       <div className="bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden font-normal">
-        {/* Card Header */}
-        <div className="flex items-center justify-between px-5 pt-3.5 pb-0">
-          <div className="flex items-center space-x-2.5">
+        {/* Card Header & Mobile Collapse Toggle */}
+        <div className="flex items-center justify-between px-4 sm:px-5 pt-3.5 pb-0">
+          <div className="flex items-center space-x-2.5 min-w-0 flex-1">
             <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 flex items-center justify-center shrink-0">
               <Newspaper className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="text-sm sm:text-base font-medium text-slate-900 dark:text-white tracking-tight">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm sm:text-base font-medium text-slate-900 dark:text-white tracking-tight truncate">
                 USOSA & Unity Colleges News
               </h3>
               {fetchedAt && activeTab === "Headlines" && (
-                <p className="text-xs sm:text-sm font-normal text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-xs sm:text-sm font-normal text-slate-500 dark:text-slate-400 mt-0.5 truncate">
                   Latest 15 Stories · Updated {formatFetchedAt(fetchedAt)}
                 </p>
               )}
             </div>
           </div>
 
-          {/* Refresh button (Headlines tab only) */}
-          {activeTab === "Headlines" && (
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Refresh button (Headlines tab only) */}
+            {activeTab === "Headlines" && (
+              <button
+                onClick={() => loadNews(true)}
+                disabled={newsLoading}
+                title="Refresh news"
+                className="p-1.5 rounded-full text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${newsLoading ? "animate-spin" : ""}`} />
+              </button>
+            )}
+
+            {/* Mobile Collapse/Expand Toggle */}
             <button
-              onClick={() => loadNews(true)}
-              disabled={newsLoading}
-              title="Refresh news"
-              className="p-1.5 rounded-full text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer disabled:opacity-50"
+              onClick={() => setIsCollapsedOnMobile((prev) => !prev)}
+              className="sm:hidden p-1.5 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition flex items-center gap-1 text-xs cursor-pointer active:scale-95"
+              title={isCollapsedOnMobile ? "Expand content" : "Collapse content"}
             >
-              <RefreshCw className={`w-4 h-4 ${newsLoading ? "animate-spin" : ""}`} />
+              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                {isCollapsedOnMobile ? "Expand" : "Collapse"}
+              </span>
+              {isCollapsedOnMobile ? (
+                <ChevronDown className="w-4 h-4 text-amber-500" />
+              ) : (
+                <ChevronUp className="w-4 h-4 text-slate-400" />
+              )}
             </button>
-          )}
+          </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 mx-6 mt-3">
+        {/* Tabs — Always exposed & visible on both mobile and desktop */}
+        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 mx-4 sm:mx-6 mt-3">
           <div className="flex space-x-2">
             {TABS.map((tab) => (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`flex items-center gap-2 pb-2.5 px-3 text-sm sm:text-base font-normal border-b-2 transition-colors cursor-pointer ${
+                onClick={() => {
+                  setActiveTab(tab);
+                  // Automatically expand card when user switches tabs on mobile
+                  if (isCollapsedOnMobile) {
+                    setIsCollapsedOnMobile(false);
+                  }
+                }}
+                className={`flex items-center gap-2 pb-2.5 px-3 text-sm sm:text-base font-medium border-b-2 transition-colors cursor-pointer ${
                   activeTab === tab
                     ? "border-amber-500 text-amber-600 dark:text-amber-400"
                     : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
@@ -323,8 +350,10 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
           </div>
         </div>
 
-        {/* ── Tab: Headlines ── */}
-        {activeTab === "Headlines" && (
+        {/* Collapsible Content Area on Mobile */}
+        <div className={`${isCollapsedOnMobile ? "hidden sm:block" : "block"} transition-all duration-300`}>
+          {/* ── Tab: Headlines ── */}
+          {activeTab === "Headlines" && (
           <div className="p-4 sm:p-5 space-y-2 h-[440px] sm:h-[480px] overflow-y-auto">
             {newsLoading && (
               <div className="flex flex-col items-center justify-center py-12 space-y-3 text-slate-400">
@@ -403,7 +432,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
             <div className="flex items-center justify-between px-4 py-2 bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800 text-xs shrink-0">
               <span className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-300">
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                <span>Gemini Web AI (3-Month Session History)</span>
+                <span>AI Xplora Live Web (3-Month Session History)</span>
               </span>
               <button
                 onClick={handleClearChatLogs}
@@ -488,7 +517,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                 type="text"
                 value={inputQuery}
                 onChange={(e) => setInputQuery(e.target.value)}
-                placeholder={firstName ? `Ask Gemini anything, ${firstName}…` : "Ask Gemini anything on any topic…"}
+                placeholder={firstName ? `Ask AI Xplora anything, ${firstName}…` : "Ask AI Xplora anything on any topic…"}
                 className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400 transition"
                 disabled={isAiLoading}
               />
@@ -502,6 +531,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
             </form>
           </div>
         )}
+        </div>
       </div>
 
       {/* Headline Detail Drawer (slide-up overlay) */}
