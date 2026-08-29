@@ -1,4 +1,5 @@
 import { Member, GroupEvent, PhotoApprovalRequest, ActivityLog } from "../types";
+import { logger } from "../lib/logger";
 import { clientConfig } from "../lib/config";
 import { isMemberCredentialMatch } from "../lib/authMatching";
 import { INITIAL_MEMBERS } from "../data/seedData";

@@ -282,7 +282,7 @@ export function getYouTubeThumbnail(url?: string): string | null {
 export async function deleteYouTubeVideo(videoUrlOrId: string): Promise<boolean> {
   const videoId = extractYouTubeId(videoUrlOrId) || (videoUrlOrId.length === 11 ? videoUrlOrId : null);
   if (!videoId) {
-    logger.warn("[YT] Could not extract YouTube video ID for deletion:", videoUrlOrId);
+    logger.warn("[YT] Could not extract YouTube video ID for deletion", { videoUrlOrId });
     return false;
   }
 
@@ -301,7 +301,7 @@ export async function deleteYouTubeVideo(videoUrlOrId: string): Promise<boolean>
     }
 
     const errText = await res.text();
-    logger.warn(`[YT] Failed to delete video ${videoId} (status ${res.status}):`, errText);
+    logger.warn(`[YT] Failed to delete video ${videoId} (status ${res.status})`, { error: errText });
     return false;
   } catch (err) {
     logger.error("[YT] Error deleting YouTube video:", err);

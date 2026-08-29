@@ -148,12 +148,12 @@ const FolderCollagePreview: React.FC<{
   eventTitle,
   heightClass = "h-full w-full aspect-square",
 }) => {
-  const allYtUrls = Array.from(
+  const allYtUrls = Array.from<string>(
     new Set(
       (youtubeVideoUrls && youtubeVideoUrls.length > 0
         ? youtubeVideoUrls
         : (youtubeVideoUrl ? [youtubeVideoUrl] : [])
-      ).filter(Boolean)
+      ).filter((u): u is string => Boolean(u))
     )
   );
 
@@ -437,8 +437,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
         if (sortBy === "oldest") return (a.date || "").localeCompare(b.date || "");
         if (sortBy === "name") return (a.title || "").localeCompare(b.title || "");
         if (sortBy === "mediaCount") {
-          const vidsA = folder.youtubeVideoUrls?.length || (a.youtubeVideoUrl ? 1 : 0);
-          const vidsB = folder.youtubeVideoUrls?.length || (b.youtubeVideoUrl ? 1 : 0);
+          const vidsA = a.youtubeVideoUrls?.length || (a.youtubeVideoUrl ? 1 : 0);
+          const vidsB = b.youtubeVideoUrls?.length || (b.youtubeVideoUrl ? 1 : 0);
           const countA = (a.driveImageUrls?.length || 0) + vidsA;
           const countB = (b.driveImageUrls?.length || 0) + vidsB;
           return countB - countA;
@@ -462,12 +462,12 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       title: string;
     }> = [];
 
-    const allVideoUrls = Array.from(
+    const allVideoUrls = Array.from<string>(
       new Set(
         (activeFolder.youtubeVideoUrls && activeFolder.youtubeVideoUrls.length > 0
           ? activeFolder.youtubeVideoUrls
           : (activeFolder.youtubeVideoUrl ? [activeFolder.youtubeVideoUrl] : [])
-        ).filter(Boolean)
+        ).filter((u): u is string => Boolean(u))
       )
     );
 
@@ -566,9 +566,9 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
 
     // 2. Permanently delete all cloud storage files and YouTube videos
     if (folderToDelete) {
-      const allVideos = Array.from(
+      const allVideos = Array.from<string>(
         new Set(
-          (folderToDelete.youtubeVideoUrls || (folderToDelete.youtubeVideoUrl ? [folderToDelete.youtubeVideoUrl] : [])).filter(Boolean)
+          (folderToDelete.youtubeVideoUrls || (folderToDelete.youtubeVideoUrl ? [folderToDelete.youtubeVideoUrl] : [])).filter((u): u is string => Boolean(u))
         )
       );
 
