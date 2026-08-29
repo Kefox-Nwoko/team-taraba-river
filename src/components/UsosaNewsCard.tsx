@@ -209,26 +209,12 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
     }
   }, [activeTab, userChatLastUsedKey]);
 
-  // Set comprehensive introductory overview when AI Xplora tab opens for first time
+  // Set concise welcome message when AI Xplora tab opens for first time
   useEffect(() => {
     if (activeTab === "AI Xplora" && messages.length === 0) {
       const greeting = firstName
-        ? `Hi ${firstName}! 👋 Welcome to AI Xplora — your open intelligence engine connected live to the web.
-
-🌟 Special AI Capabilities:
-1. 🌐 Live Web Intelligence: Ask me anything on science, technology, world affairs, research, and general knowledge.
-2. 👥 Contact Search (Dedicated AI Search Tab): Scoped exclusively to querying the full registered member database for occupations, professional skills, registered phone numbers, and email addresses — perfect for business networking and urgent health emergency coordination (e.g. searching "medical doctor", "health management", or "clinical management").
-3. 📰 News Synthesis: Comprehensive summaries and alumni updates across all 115 Federal Unity Schools.
-
-What would you like to explore or find today?`
-        : `Hi there! 👋 Welcome to AI Xplora — connected live to the web.
-
-🌟 Special AI Capabilities:
-1. 🌐 Live Web Intelligence: Ask anything on science, tech, current affairs, or global topics.
-2. 👥 Contact Search (Dedicated AI Search Tab): Search our full registered member database by occupation, skills, phone number, and email for business networking and urgent health emergency coordination (e.g. "medical doctor", "health management", or "clinical management").
-3. 📰 News Synthesis: Comprehensive summaries across Federal Unity Schools.
-
-What would you like to explore or find today?`;
+        ? `Hi ${firstName}! 👋 How can I help you today?`
+        : `Hi there! 👋 How can I help you today?`;
 
       setMessages([
         {
@@ -248,22 +234,8 @@ What would you like to explore or find today?`;
         localStorage.setItem(userChatLastUsedKey, Date.now().toString());
       } catch {}
       const greeting = firstName
-        ? `Hi ${firstName}! 👋 Welcome to AI Xplora — your open intelligence engine connected live to the web.
-
-🌟 Special AI Capabilities:
-1. 🌐 Live Web Intelligence: Ask me anything on science, technology, world affairs, research, and general knowledge.
-2. 👥 Contact Search (Dedicated AI Search Tab): Scoped exclusively to querying the full registered member database for occupations, professional skills, registered phone numbers, and email addresses — perfect for business networking and urgent health emergency coordination (e.g. searching "medical doctor", "health management", or "clinical management").
-3. 📰 News Synthesis: Comprehensive summaries and alumni updates across all 115 Federal Unity Schools.
-
-What would you like to explore or find today?`
-        : `Hi there! 👋 Welcome to AI Xplora — connected live to the web.
-
-🌟 Special AI Capabilities:
-1. 🌐 Live Web Intelligence: Ask anything on science, tech, current affairs, or global topics.
-2. 👥 Contact Search (Dedicated AI Search Tab): Search our full registered member database by occupation, skills, phone number, and email for business networking and urgent health emergency coordination (e.g. "medical doctor", "health management", or "clinical management").
-3. 📰 News Synthesis: Comprehensive summaries across Federal Unity Schools.
-
-What would you like to explore or find today?`;
+        ? `Hi ${firstName}! 👋 How can I help you today?`
+        : `Hi there! 👋 How can I help you today?`;
 
       setMessages([
         {
@@ -307,6 +279,7 @@ What would you like to explore or find today?`;
     const query = inputQuery.trim();
     if (!query || isAiLoading) return;
     setInputQuery("");
+    setIsAiLoading(true);
 
     const userMsg: ChatMessage = {
       id: `usr_${Date.now()}`,
@@ -314,7 +287,11 @@ What would you like to explore or find today?`;
       text: query,
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     };
-    const historyPayload = messages
+
+    // Immediately display user's question in the chat
+    setMessages((prev) => [...prev, userMsg]);
+
+    const historyPayload = [...messages, userMsg]
       .filter((m) => m.id !== "welcome" && !m.id.startsWith("welcome_") && !m.id.startsWith("err_") && m.text)
       .slice(-8)
       .map((m) => ({
@@ -619,9 +596,9 @@ What would you like to explore or find today?`;
             <div className="flex flex-col h-[420px] sm:h-[460px]">
               {/* Top Toolbar / Action Bar */}
               <div className="flex items-center justify-between px-4 py-2 bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800 text-xs shrink-0">
-                <span className="flex items-center gap-1.5 font-medium text-slate-600 dark:text-slate-300">
+                <span className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-300">
                   <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  <span>AI Xplora Live Web (3-Month Session History)</span>
+                  <span>AI Xplora</span>
                 </span>
                 <button
                   onClick={handleClearChatLogs}
@@ -635,52 +612,62 @@ What would you like to explore or find today?`;
 
               {/* Messages */}
               <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
-                {messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex items-start gap-3 ${msg.sender === "user" ? "flex-row-reverse" : ""}`}
-                  >
+                {messages.map((msg) => {
+                  const isUser = msg.sender === "user";
+                  return (
                     <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                        msg.sender === "ai"
-                          ? "bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400"
-                          : "bg-teal-100 dark:bg-teal-900 text-teal-600 dark:text-teal-400"
-                      }`}
+                      key={msg.id}
+                      className={`flex items-start gap-2.5 sm:gap-3 ${isUser ? "flex-row-reverse" : ""}`}
                     >
-                      {msg.sender === "ai" ? <Bot className="w-4 h-4" /> : <User className="w-4 h-4" />}
-                    </div>
-                    <div className={`max-w-[85%] space-y-1.5 ${msg.sender === "user" ? "items-end flex flex-col" : ""}`}>
                       <div
-                        className={`px-4.5 py-3.5 rounded-2xl text-sm sm:text-base leading-relaxed whitespace-pre-wrap ${
-                          msg.sender === "ai"
-                            ? "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-tl-sm shadow-xs"
-                            : "bg-teal-600 text-white rounded-tr-sm shadow-xs"
+                        className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow-xs ${
+                          isUser
+                            ? "bg-teal-700 text-white"
+                            : "bg-amber-100 dark:bg-amber-950 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-800"
                         }`}
                       >
-                        {msg.text}
+                        {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                       </div>
-                      {msg.sources && msg.sources.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {msg.sources.slice(0, 4).map((src, i) => (
-                            <a
-                              key={i}
-                              href={src.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900 hover:bg-amber-100 transition-colors truncate max-w-[180px]"
-                            >
-                              <ExternalLink className="w-3 h-3 shrink-0" />
-                              <span className="truncate">{src.title}</span>
-                            </a>
-                          ))}
+                      <div className={`max-w-[85%] sm:max-w-[78%] space-y-1 ${isUser ? "items-end flex flex-col" : ""}`}>
+                        <span
+                          className={`text-[11px] font-bold uppercase tracking-wider block px-1 ${
+                            isUser ? "text-teal-700 dark:text-teal-400" : "text-amber-600 dark:text-amber-400"
+                          }`}
+                        >
+                          {isUser ? "You" : "AI Xplora"}
+                        </span>
+                        <div
+                          className={`px-4 py-3 rounded-2xl text-xs sm:text-sm leading-relaxed whitespace-pre-wrap ${
+                            isUser
+                              ? "bg-teal-700 text-white rounded-tr-xs shadow-sm font-normal"
+                              : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200/90 dark:border-slate-700/80 rounded-tl-xs shadow-xs font-normal"
+                          }`}
+                        >
+                          {msg.text}
                         </div>
-                      )}
-                      <span className="text-xs sm:text-sm font-normal text-slate-400 dark:text-slate-500 px-1 mt-1 block">
-                        {msg.timestamp}
-                      </span>
+                        {msg.sources && msg.sources.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {msg.sources.slice(0, 4).map((src, i) => (
+                              <a
+                                key={i}
+                                href={src.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-900 hover:bg-amber-100 transition-colors truncate max-w-[180px]"
+                              >
+                                <ExternalLink className="w-3 h-3 shrink-0" />
+                                <span className="truncate">{src.title}</span>
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                        <span className="text-[11px] font-normal text-slate-400 dark:text-slate-500 px-1 block">
+                          {msg.timestamp}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {isAiLoading && (
                   <div className="flex items-start gap-3">
