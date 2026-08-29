@@ -175,31 +175,31 @@ const CHAPTERS: Chapter[] = [
   {
     id: "mem-news",
     section: "member",
-    title: "3. Reading USOSA News & Listening to Audio",
-    subtitle: "Stay informed with national unity school news and voice-assisted article playback",
+    title: "3. Reading USOSA News Updates",
+    subtitle: "Stay informed with the latest 15 national unity school stories and alumni headlines",
     icon: Newspaper,
     badgeText: "Member Guide",
     badgeColor: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 border-teal-300 dark:border-teal-800",
     screenshotSrc: imgNewsReader,
     screenshotAlt: "Mobile USOSA News Update Screen",
     content: {
-      purpose: "Read national alumni news updates and listen to automated voice playback while on the road.",
-      screenTitle: "USOSA News & Audio Reader",
+      purpose: "Read curated national alumni news stories, national secretariat updates, and official communiques directly in the portal.",
+      screenTitle: "USOSA News Updates",
       uiCallouts: [
         {
           number: 1,
-          title: "USOSA News Card",
-          description: "Shows the latest headlines from Federal Unity Schools across Nigeria.",
+          title: "USOSA News Update Card",
+          description: "Shows the latest 15 headlines and stories from Federal Unity Schools across Nigeria.",
         },
         {
           number: 2,
           title: "'Expand' Button",
-          description: "Tap here to open up the full list of news articles and read the complete stories.",
+          description: "Tap here to open up the full list of news articles with story summaries and photos.",
         },
         {
           number: 3,
-          title: "Headlines / AI Assistant Tab",
-          description: "Switch between reading recent news and asking AI questions about the articles.",
+          title: "Headlines & AI Xplora Switcher",
+          description: "Switch between browsing latest articles and asking the AI questions about unity schools.",
         },
         {
           number: 4,
@@ -209,17 +209,16 @@ const CHAPTERS: Chapter[] = [
       ],
       steps: [
         "On the Home page, scroll down until you see the yellow 'USOSA News Update' card.",
-        "Tap the 'Expand' button on the right side of the card.",
-        "Tap any news headline that interests you to open the full article.",
-        "Don't want to read? Tap the 'Listen / Play' audio button to have the app read the news aloud to you.",
-        "Tap the 'X' button when you are done reading to close the article."
+        "Tap the 'Expand' button on the right side of the card to see all news articles.",
+        "Scroll through the headlines and tap on any story to read the full summary or original source article.",
+        "Tap the refresh icon on the card anytime to check for new stories."
       ],
       proTips: [
-        "The voice audio player is great for listening to community news while driving or multitasking.",
-        "Tap the small refresh circle icon to pull down the newest headlines."
+        "Tap the refresh circle icon at any time to pull in breaking news and latest stories.",
+        "You can tap the 'AI Xplora' tab to ask questions about the news stories or federal unity school history."
       ],
       importantNotes: [
-        "Make sure your phone's volume is turned on if you want to use the audio reader feature."
+        "USOSA news feeds update automatically from verified national alumni sources."
       ]
     }
   },
@@ -499,48 +498,61 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
 
   return (
     <div className="w-full max-w-4xl mx-auto px-3.5 sm:px-6 lg:px-8 py-4 sm:py-6 font-sans pb-28 md:pb-12 text-slate-900 dark:text-slate-100 animate-fadeIn">
-      {/* ── TOP HEADER / BREADCRUMB ── */}
-      <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800 rounded-3xl p-3.5 sm:p-5 shadow-sm mb-4 sm:mb-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0 flex-1">
+      {/* ── INDEPENDENT HERO HEADER ── */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-teal-900 via-slate-900 to-slate-950 text-white p-4 sm:p-6 md:p-7 shadow-xl border border-teal-500/30 mb-5">
+        {/* Ambient background glow */}
+        <div className="absolute -top-16 -right-16 w-56 h-56 bg-teal-500/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Top bar: Back button + Badges + Actions */}
+        <div className="flex items-center justify-between gap-2.5 relative z-10 mb-4 pb-3 border-b border-white/10 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={onBack}
-              className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 hover:text-teal-700 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-sm active:scale-95"
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer backdrop-blur-md border border-white/15"
               title="Return to previous view"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-4 h-4" />
+              <span>Back</span>
             </button>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 border border-teal-300 dark:border-teal-800">
-                  Official Guide
-                </span>
-                <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
-                  • Mobile Edition
-                </span>
-              </div>
-              <h1 className="text-base sm:text-xl md:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-0.5 truncate">
-                User Manual & Help Center
-              </h1>
-            </div>
+            <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-teal-400/20 text-teal-300 border border-teal-400/30 backdrop-blur-md">
+              📖 Official Help Center
+            </span>
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-medium text-slate-300 bg-white/5 border border-white/10">
+              v2.4 Mobile Edition
+            </span>
           </div>
 
-          {/* Top Actions */}
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={handlePrint}
-              className="p-2 sm:px-3 sm:py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-slate-200 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer backdrop-blur-md border border-white/15 shadow-sm"
               title="Print or Save as PDF"
             >
-              <Printer className="w-4 h-4" />
+              <Printer className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Print / PDF</span>
             </button>
             <button
               onClick={onBack}
-              className="px-3.5 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold transition-all shadow-md shadow-teal-700/20 cursor-pointer whitespace-nowrap"
+              className="px-3.5 py-1.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-black transition-all shadow-md shadow-teal-500/30 cursor-pointer active:scale-95 whitespace-nowrap"
             >
               Return to App
             </button>
+          </div>
+        </div>
+
+        {/* Main Title & Subtitle */}
+        <div className="relative z-10 flex items-start gap-3.5 sm:gap-4">
+          <div className="w-11 h-11 sm:w-13 sm:h-13 rounded-2xl bg-gradient-to-tr from-teal-500 to-emerald-400 text-slate-950 flex items-center justify-center shrink-0 shadow-lg shadow-teal-500/25 mt-0.5">
+            <BookOpen className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.2]" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg sm:text-2xl md:text-3xl font-black text-white tracking-tight leading-tight">
+              User Manual & Operations Guide
+            </h1>
+            <p className="text-xs sm:text-sm text-teal-100/85 mt-1 leading-relaxed max-w-2xl font-normal">
+              Official step-by-step visual handbook and operating manual for Team Taraba River members and chapter executives.
+            </p>
           </div>
         </div>
       </div>
