@@ -22,6 +22,7 @@ import {
   X,
   Star,
   ShieldCheck,
+  Search,
 } from "lucide-react";
 import { formatMemberDirectoryName } from "../utils/nameUtils";
 
@@ -91,39 +92,52 @@ function getPointsTier(points: number): PointsTier {
 
 const POINT_EARNING_RULES = [
   {
-    icon: ImageIcon,
-    title: "Media Uploads (Approved)",
+    icon: Zap,
+    title: "Visiting the App & Exploring",
     points: "+30 pts",
-    desc: "Earned for each chapter event photo or video submitted and approved by portal administrators.",
+    badge: "Core Recognition",
+    desc: "Earned for regular portal visits, exploring photo galleries, event archives, and chapter updates.",
+    color: "text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800",
+  },
+  {
+    icon: Sparkles,
+    title: "Using AI Xplora Research",
+    points: "+25 pts",
+    badge: "Core Recognition",
+    desc: "Earned for querying AI Xplora, exploring USOSA knowledge, unity schools history, and live information.",
     color: "text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950/60 border-purple-200 dark:border-purple-800",
   },
   {
-    icon: Calendar,
-    title: "Event RSVPs & Attendance",
-    points: "+20 pts",
-    desc: "Earned when you commit to upcoming gatherings, meetings, and activities.",
+    icon: Search,
+    title: "Searching Member Skills & Professions",
+    points: "+25 pts",
+    badge: "Core Recognition",
+    desc: "Earned for looking up fellow members' occupational affiliations, skills, and emergency/business contacts.",
+    color: "text-teal-600 dark:text-teal-400 bg-teal-100 dark:bg-teal-950/60 border-teal-200 dark:border-teal-800",
+  },
+  {
+    icon: Newspaper,
+    title: "Reading USOSA News Headlines",
+    points: "+10 pts",
+    badge: "Engagement",
+    desc: "Earned each time you open and read official USOSA news updates and chapter announcements.",
     color: "text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-950/60 border-blue-200 dark:border-blue-800",
   },
   {
     icon: UserCheck,
-    title: "Profile Completion & Updates",
+    title: "Profile Completeness & Verification",
     points: "+15 pts",
-    desc: "Earned by keeping your profile 100% complete with verified contact info, school, and sizes.",
+    badge: "Profile",
+    desc: "Earned by maintaining 100% complete registration data with verified contact info, skills, and occupation.",
     color: "text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800",
   },
   {
-    icon: Zap,
-    title: "Daily Portal Engagement",
-    points: "+10 pts",
-    desc: "Earned for active visits, AI searches, and staying engaged with community updates.",
-    color: "text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800",
-  },
-  {
-    icon: Newspaper,
-    title: "USOSA News & Updates Read",
-    points: "+5 pts",
-    desc: "Earned each time you read and stay informed on official chapter and national updates.",
-    color: "text-teal-600 dark:text-teal-400 bg-teal-100 dark:bg-teal-950/60 border-teal-200 dark:border-teal-800",
+    icon: ImageIcon,
+    title: "Media Uploads & Event RSVPs",
+    points: "+20 pts",
+    badge: "Community",
+    desc: "Earned for uploading approved gathering photos/videos and confirming event attendance.",
+    color: "text-rose-600 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800",
   },
 ];
 
@@ -347,9 +361,20 @@ export const MyProfileView: React.FC<MyProfileViewProps> = ({
                         <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
                           {rule.title}
                         </h4>
-                        <span className="px-1.5 py-0.5 rounded-md text-[11px] font-black bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 shrink-0">
-                          {rule.points}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {rule.badge && (
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              rule.badge === "Core Recognition"
+                                ? "bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-400/40"
+                                : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                            }`}>
+                              {rule.badge}
+                            </span>
+                          )}
+                          <span className="px-1.5 py-0.5 rounded-md text-[11px] font-black bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300">
+                            {rule.points}
+                          </span>
+                        </div>
                       </div>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
                         {rule.desc}
@@ -360,21 +385,24 @@ export const MyProfileView: React.FC<MyProfileViewProps> = ({
               })}
 
               {/* Special Recognition Policy */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-br from-teal-500/10 to-emerald-500/10 dark:from-teal-950/40 dark:to-emerald-950/40 border border-teal-200 dark:border-teal-800 shadow-xs flex items-start gap-3">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border text-teal-700 dark:text-teal-300 bg-teal-100 dark:bg-teal-950 border-teal-300 dark:border-teal-700">
-                  <ShieldCheck className="w-4 h-4" />
+              <div className="p-3.5 rounded-2xl bg-gradient-to-br from-amber-500/15 via-teal-500/10 to-emerald-500/10 dark:from-amber-950/40 dark:via-teal-950/40 dark:to-emerald-950/40 border-2 border-amber-400/50 dark:border-amber-500/40 shadow-xs flex items-start gap-3 col-span-1 sm:col-span-2 lg:col-span-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-950 border-amber-300 dark:border-amber-700 shadow-xs mt-0.5">
+                  <Award className="w-5 h-5" />
                 </div>
-                <div className="space-y-0.5 flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-1">
-                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
-                      Community Recognition
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <h4 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>⭐ Core Community Recognition Policy</span>
                     </h4>
-                    <span className="px-1.5 py-0.5 rounded-md text-[11px] font-bold bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 shrink-0">
-                      Honors
+                    <span className="px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-amber-500/20 text-amber-900 dark:text-amber-300 border border-amber-400/40">
+                      Primary Recognition Drivers
                     </span>
                   </div>
+                  <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-medium">
+                    Community recognition and standing tiers are <strong>principally awarded for visiting the portal, exploring the app, querying AI Xplora, and actively searching for fellow members' occupational affiliations, skills, and emergency/business contacts</strong> to foster chapter bonding and mutual support.
+                  </p>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                    Points celebrate active participation and may qualify members for recognition, gifts, or awards at gatherings. Points have no monetary cash value.
+                    Points celebrate proactive exploration and qualify members for special recognition, gifts, or honors during Team Taraba River gatherings (non-monetary incentive).
                   </p>
                 </div>
               </div>

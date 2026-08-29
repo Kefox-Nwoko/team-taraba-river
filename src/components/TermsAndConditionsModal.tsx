@@ -262,11 +262,11 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
             <section className="space-y-3">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <Heart className="w-4 h-4 text-teal-600 shrink-0" />
-                7. Activity Points &amp; Community Incentives
+                7. Activity Points &amp; Community Recognition
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                <li>The portal operates an Activity Points system designed to celebrate active participation. Points are earned for: Event RSVPs (+20 pts), Media Uploads (+30 pts), Profile Completion &amp; Updates (+15 pts), and Portal Visits (+10 pts).</li>
-                <li>Points serve as <strong className="text-slate-700 dark:text-slate-200">non-monetary incentives only</strong>, and may occasionally qualify members for recognition, free gifts, or celebration during Team Taraba River gatherings.</li>
+                <li>The portal operates an Activity Points and Community Recognition system designed to celebrate active engagement and mutual connection. Points and contributor standing are principally earned for: <strong>Visiting the Portal &amp; App Exploration (+30 pts)</strong>, <strong>Using AI Xplora Research (+25 pts)</strong>, <strong>Searching Member Occupational Affiliations &amp; Skills (+25 pts)</strong>, Media Uploads &amp; Event RSVPs (+20 pts), Profile Completeness &amp; Verification (+15 pts), and Reading USOSA News Headlines (+10 pts).</li>
+                <li>Points serve as <strong className="text-slate-700 dark:text-slate-200">non-monetary community incentives</strong>, and qualify members for official recognition, chapter awards, or celebration gifts during Team Taraba River gatherings.</li>
                 <li>Points cannot be exchanged for cash, transferred between members, or fraudulently inflated. Any attempt to manipulate the points system will result in account review by Team Taraba River administrators.</li>
                 {/* [NEW] Points revocation */}
                 <li>Points have <strong>no monetary value</strong> and do not constitute property. Team Taraba River reserves the right to revoke points obtained through fraudulent means, system errors, or violations of these Terms, without liability.</li>
