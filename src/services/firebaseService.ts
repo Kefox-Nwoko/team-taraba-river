@@ -262,7 +262,11 @@ export class FirebaseSyncManager {
 
   public static async saveApproval(approval: PhotoApprovalRequest): Promise<void> {
     try {
-      // Lightweight clean copy: Ensure no base64 dataUrl is sent into Firestore
+      AppStateManager.addApproval(approval);
+    } catch (localErr) {
+      logger.warn("LocalStorage save approval notice", localErr);
+    }
+    try {
       const cleanApproval: PhotoApprovalRequest = { ...approval };
       delete cleanApproval.previewDataUrl;
       await setDoc(doc(db, "photoRequests", approval.id), cleanApproval);
@@ -272,6 +276,9 @@ export class FirebaseSyncManager {
   }
 
   public static async deleteApproval(id: string): Promise<void> {
+    try {
+      AppStateManager.removeApproval(id);
+    } catch {}
     try {
       await deleteDoc(doc(db, "photoRequests", id));
     } catch (err) {

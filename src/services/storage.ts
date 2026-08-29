@@ -139,19 +139,42 @@ export class AppStateManager {
     this.notify();
   }
   public static getApprovals(): PhotoApprovalRequest[] {
-    // Purge any legacy base64-laden approvals from localStorage to keep storage clean
     try {
-      localStorage.removeItem(LOCAL_STORAGE_KEY_APPROVALS);
-    } catch {}
-    return [];
+      const raw = localStorage.getItem(LOCAL_STORAGE_KEY_APPROVALS);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
   }
-  public static saveApprovals(_approvals: PhotoApprovalRequest[]) {
-    // Zero-residue policy: We intentionally do NOT persist approvals in localStorage.
-    // Live approvals exist strictly in Firestore and are streamed via real-time listeners.
+  public static saveApprovals(approvals: PhotoApprovalRequest[]) {
     try {
-      localStorage.removeItem(LOCAL_STORAGE_KEY_APPROVALS);
-    } catch {}
+      localStorage.setItem(LOCAL_STORAGE_KEY_APPROVALS, JSON.stringify(approvals));
+    } catch (e) {
+      logger.warn("LocalStorage saveApprovals error", e);
+    }
     this.notify();
+  }
+  public static addApproval(approval: PhotoApprovalRequest) {
+    try {
+      const list = this.getApprovals();
+      const existingIdx = list.findIndex((a) => a.id === approval.id);
+      if (existingIdx !== -1) {
+        list[existingIdx] = approval;
+      } else {
+        list.unshift(approval);
+      }
+      this.saveApprovals(list);
+    } catch (e) {
+      logger.warn("LocalStorage addApproval error", e);
+    }
+  }
+  public static removeApproval(id: string) {
+    try {
+      const list = this.getApprovals().filter((a) => a.id !== id);
+      this.saveApprovals(list);
+    } catch (e) {
+      logger.warn("LocalStorage removeApproval error", e);
+    }
   }
   public static getActivityLogs(): ActivityLog[] {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY_LOGS);

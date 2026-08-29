@@ -404,9 +404,25 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   };
 
   React.useEffect(() => {
-    // Real-time live stream for media moderation approvals
+    // 1. Instant load from local storage cache
+    const initialLocal = AppStateManager.getApprovals().filter((r) => r.status === "pending");
+    if (initialLocal.length > 0) {
+      setPendingApprovals(initialLocal);
+    }
+
+    // 2. Real-time live stream for media moderation approvals merged seamlessly
     const unsubscribe = FirebaseSyncManager.subscribeApprovals((list) => {
-      setPendingApprovals(list.filter((r) => r.status === "pending"));
+      const pendingFirestore = list.filter((r) => r.status === "pending");
+      const local = AppStateManager.getApprovals().filter((r) => r.status === "pending");
+
+      const map = new Map<string, PhotoApprovalRequest>();
+      local.forEach((req) => map.set(req.id, req));
+      pendingFirestore.forEach((req) => map.set(req.id, req));
+
+      const merged = Array.from(map.values()).sort(
+        (a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime()
+      );
+      setPendingApprovals(merged);
     });
     return () => {
       unsubscribe();
