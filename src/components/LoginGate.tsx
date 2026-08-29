@@ -5,7 +5,7 @@ import { signInWithCustomToken, triggerGoogleAdminSignIn, FirebaseSyncManager } 
 import { AppStateManager } from "../services/storage";
 import { isMemberCredentialMatch } from "../lib/authMatching";
 import { INITIAL_MEMBERS } from "../data/seedData";
-import { LogIn, UserPlus, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck } from "lucide-react";
+import { LogIn, UserPlus, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck, BookOpen } from "lucide-react";
 import { BRAND_LOGO, LOGIN_WALL_BG } from "../constants/assets";
 import { clientConfig } from "../lib/config";
 interface LoginGateProps {
@@ -13,12 +13,14 @@ interface LoginGateProps {
   onOpenRegister: () => void;
   availableMembers: Member[];
   onExploreGuest?: () => void;
+  onOpenManual?: () => void;
 }
 export const LoginGate: React.FC<LoginGateProps> = ({
   onLoginSuccess,
   onOpenRegister,
   availableMembers,
   onExploreGuest,
+  onOpenManual,
 }) => {
   const [credential, setCredential] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -222,11 +224,21 @@ export const LoginGate: React.FC<LoginGateProps> = ({
         <div className="pt-4 border-t border-slate-800 flex flex-col items-center gap-3">
           {" "}
           <div className="text-slate-400 text-sm"> Not registered yet? </div>{" "}
-          <button onClick={onOpenRegister} className="w-full sm:w-auto py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition flex items-center justify-center space-x-2" >
+          <button onClick={onOpenRegister} className="w-full sm:w-auto py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition flex items-center justify-center space-x-2 cursor-pointer" >
             {" "}
             <UserPlus className="w-4 h-4 text-cyan-400" />{" "}
             <span>Register your profile</span>{" "}
           </button>{" "}
+          {onOpenManual && (
+            <button
+              type="button"
+              onClick={onOpenManual}
+              className="mt-1 text-xs text-teal-400 hover:text-teal-300 transition flex items-center space-x-1.5 cursor-pointer underline underline-offset-4 py-1"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>📖 Open User Guide & Documentation</span>
+            </button>
+          )}
         </div>{" "}
       </div>{" "}
     </div>

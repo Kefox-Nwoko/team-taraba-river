@@ -46,6 +46,9 @@ const FullPageMediaUpload = lazy(() =>
 const MyProfileView = lazy(() =>
   import("./components/MyProfileView").then((m) => ({ default: m.MyProfileView }))
 );
+const UserManualView = lazy(() =>
+  import("./components/UserManualView").then((m) => ({ default: m.UserManualView }))
+);
 
 const ModalFallback = () => (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-md animate-fadeIn">
@@ -77,10 +80,14 @@ export default function App() {
   const { notify } = useToast();
   const [currentUser, setCurrentUser] = useState<Member | null>(AppStateManager.getCurrentUser());
   const [activeTab, setActiveTab] = useState<
-    "media" | "events" | "admin" | "architecture" | "upload" | "profile"
+    "media" | "events" | "admin" | "architecture" | "upload" | "profile" | "manual"
   >("events");
 
   const handleSetActiveTab = (tab: any) => {
+    if (tab === "manual") {
+      setActiveTab("manual");
+      return;
+    }
     if (currentUser && !isProfileComplete(currentUser)) {
       notify("Action Required: Please complete all required profile fields before accessing other features.", "info");
       setActiveTab("profile");
@@ -386,6 +393,18 @@ export default function App() {
 
   // Login Gate
   if (!currentUser) {
+    if (activeTab === "manual") {
+      return (
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans">
+          <Suspense fallback={<ModalFallback />}>
+            <UserManualView onBack={() => setActiveTab("events")} isAdmin={false} />
+          </Suspense>
+          <NetworkStatusBanner />
+          {renderScrollToTopButton()}
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen bg-white dark:bg-[#121212] font-sans">
         <LoginGate
@@ -401,6 +420,7 @@ export default function App() {
             setRegisterModalOpen(true);
           }}
           availableMembers={members}
+          onOpenManual={() => setActiveTab("manual")}
         />
         {registerModalOpen && (
           <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-16 overflow-y-auto flex items-start justify-center animate-fadeIn">
@@ -653,6 +673,15 @@ export default function App() {
                     AppStateManager.setCurrentUser(updatedUser);
                     handleRefreshAll();
                   }}
+                />
+              </Suspense>
+            )}
+
+            {activeTab === "manual" && (
+              <Suspense fallback={<ViewSkeleton label="User Manual" />}>
+                <UserManualView
+                  onBack={() => setActiveTab("events")}
+                  isAdmin={currentUser?.role === "admin"}
                 />
               </Suspense>
             )}

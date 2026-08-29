@@ -13,12 +13,13 @@ import {
   Home,
   UserCheck,
   Upload,
+  BookOpen,
 } from "lucide-react";
 
 interface NavbarProps {
   currentUser: Member | null;
-  activeTab: "media" | "events" | "admin" | "upload" | "profile";
-  setActiveTab: (tab: "media" | "events" | "admin" | "upload" | "profile") => void;
+  activeTab: "media" | "events" | "admin" | "upload" | "profile" | "manual";
+  setActiveTab: (tab: "media" | "events" | "admin" | "upload" | "profile" | "manual") => void;
   onOpenSignIn: () => void;
   onOpenRegister: () => void;
   onSignOut: () => void;
@@ -196,6 +197,16 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                       <button onClick={() => {
                           setIsMobileUserMenuOpen(false);
+                          setActiveTab("manual");
+                        }}
+                        className="w-full text-left px-3 py-1.5 rounded-xl text-xs font-normal text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center space-x-2.5 cursor-pointer"
+                      >
+                        <BookOpen className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                        <span>User Guide / Manual</span>
+                      </button>
+
+                      <button onClick={() => {
+                          setIsMobileUserMenuOpen(false);
                           onSignOut();
                         }}
                         className="w-full text-left px-3 py-1.5 rounded-xl text-xs font-normal text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition flex items-center space-x-2.5 cursor-pointer"
@@ -261,6 +272,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <span>My Profile</span>
                       </button>
                     )}
+
+                    <button onClick={() => {
+                        setActiveTab("manual");
+                        setIsDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-1.5 rounded-2xl text-xs font-normal text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center space-x-3 cursor-pointer"
+                    >
+                      <BookOpen className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                      <span>User Guide / Manual</span>
+                    </button>
 
                     <button onClick={() => {
                         onSignOut();
