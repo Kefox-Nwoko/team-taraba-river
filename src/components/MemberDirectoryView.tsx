@@ -317,9 +317,15 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
                 <span className="text-sm uppercase text-slate-500 dark:text-slate-400 block font-normal">Date of Birth</span>
                 <span className="text-slate-900 dark:text-white text-sm font-normal">{myProfile.dateOfBirth || "—"}</span>
               </div>
-              <div className="p-4 space-y-2">
-                <span className="text-sm uppercase text-slate-500 dark:text-slate-400 block font-normal">Activity Points</span>
-                <span className="text-amber-600 dark:text-amber-400 text-sm font-normal">{myProfile.activityPoints || 0} pts</span>
+              <div className="bg-amber-500/10 dark:bg-amber-950/40 p-6 rounded-2xl border border-amber-300 dark:border-amber-700/60 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase text-amber-800 dark:text-amber-400 font-extrabold block">Activity Points</span>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200">Official</span>
+                </div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-2xl font-black text-slate-900 dark:text-white">{myProfile.activityPoints || 0}</span>
+                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400">Points</span>
+                </div>
               </div>
             </div>
 
