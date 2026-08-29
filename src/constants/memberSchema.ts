@@ -1,4 +1,5 @@
 import { Member } from "../types";
+import { UNITY_SCHOOLS_OPTIONS } from "./unitySchools";
 export interface SchemaFieldDefinition {
   key: keyof Member;
   label: string;
@@ -67,7 +68,17 @@ export const MEMBER_DATABASE_SCHEMA: SchemaFieldDefinition[] = [
   { key: 'whatsappNumber', label: 'WhatsApp Phone Number', type: 'tel', category: 'contact', categoryLabel: '2. Contact & Communications', placeholder: '0803 123 4567', required: true },
   
   // Section 3: Education & Unity School Background
-  { key: 'schoolName', label: 'Unity School / High School Name', type: 'text', category: 'education', categoryLabel: '3. Unity School Alumni Background', placeholder: 'e.g. FGC Port Harcourt, FGGC Abuloma, FGC Wukari', required: true },
+  {
+    key: 'schoolName',
+    label: 'Unity School / Alma Mater (115 Federal Unity Colleges)',
+    type: 'select',
+    options: UNITY_SCHOOLS_OPTIONS,
+    category: 'education',
+    categoryLabel: '3. Unity School Alumni Background',
+    placeholder: 'Select from 115 Federal Unity Colleges',
+    description: 'Complete list of 115 Federal Unity Colleges across Nigeria as of 2026',
+    required: true
+  },
   { key: 'gradYear', label: 'Graduation / Set Year', type: 'text', category: 'education', categoryLabel: '3. Unity School Alumni Background', placeholder: 'e.g. 1998', required: true },
   { key: 'occupation', label: 'Occupation / Profession', type: 'text', category: 'education', categoryLabel: '3. Unity School Alumni Background', placeholder: 'e.g. Environmental Engineer, Medical Doctor, Teacher', required: true },
   { key: 'skills', label: 'Skills & Expertise (Comma-separated)', type: 'text', category: 'education', categoryLabel: '3. Unity School Alumni Background', placeholder: 'e.g. Healthcare, Engineering, Community Support, First Aid', required: false },

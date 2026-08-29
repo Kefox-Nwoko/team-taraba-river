@@ -5,6 +5,7 @@ import { registerMember, updateMemberProfile } from "../services/apiClient";
 import { AppStateManager } from "../services/storage";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import { MEMBER_DATABASE_SCHEMA } from "../constants/memberSchema";
+import { ALL_115_UNITY_SCHOOLS } from "../constants/unitySchools";
 import {
   X,
   User,
@@ -308,7 +309,70 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                             className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm font-normal"
                           >
                             <option value="">-- {field.placeholder || "Select option"} --</option>
-                            {field.key === "jerseySize" ? (
+                            {field.key === "schoolName" ? (
+                              <>
+                                {value && !ALL_115_UNITY_SCHOOLS.some((s) => s.shortName === value) && value !== "Other / External High School" && (
+                                  <option value={value}>📌 {value} (Current / Custom)</option>
+                                )}
+                                <optgroup label="── 📍 SOUTH-SOUTH (18 Unity Colleges) ──">
+                                  {ALL_115_UNITY_SCHOOLS.filter((s) => s.zone === "South-South")
+                                    .sort((a, b) => a.shortName.localeCompare(b.shortName))
+                                    .map((s) => (
+                                      <option key={s.id} value={s.shortName}>
+                                        {s.shortName} ({s.state} State)
+                                      </option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="── 📍 SOUTH-EAST (15 Unity Colleges) ──">
+                                  {ALL_115_UNITY_SCHOOLS.filter((s) => s.zone === "South-East")
+                                    .sort((a, b) => a.shortName.localeCompare(b.shortName))
+                                    .map((s) => (
+                                      <option key={s.id} value={s.shortName}>
+                                        {s.shortName} ({s.state} State)
+                                      </option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="── 📍 SOUTH-WEST (19 Unity Colleges) ──">
+                                  {ALL_115_UNITY_SCHOOLS.filter((s) => s.zone === "South-West")
+                                    .sort((a, b) => a.shortName.localeCompare(b.shortName))
+                                    .map((s) => (
+                                      <option key={s.id} value={s.shortName}>
+                                        {s.shortName} ({s.state} State)
+                                      </option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="── 📍 NORTH-CENTRAL (24 Unity Colleges) ──">
+                                  {ALL_115_UNITY_SCHOOLS.filter((s) => s.zone === "North-Central")
+                                    .sort((a, b) => a.shortName.localeCompare(b.shortName))
+                                    .map((s) => (
+                                      <option key={s.id} value={s.shortName}>
+                                        {s.shortName} ({s.state} State)
+                                      </option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="── 📍 NORTH-EAST (18 Unity Colleges) ──">
+                                  {ALL_115_UNITY_SCHOOLS.filter((s) => s.zone === "North-East")
+                                    .sort((a, b) => a.shortName.localeCompare(b.shortName))
+                                    .map((s) => (
+                                      <option key={s.id} value={s.shortName}>
+                                        {s.shortName} ({s.state} State)
+                                      </option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="── 📍 NORTH-WEST (21 Unity Colleges) ──">
+                                  {ALL_115_UNITY_SCHOOLS.filter((s) => s.zone === "North-West")
+                                    .sort((a, b) => a.shortName.localeCompare(b.shortName))
+                                    .map((s) => (
+                                      <option key={s.id} value={s.shortName}>
+                                        {s.shortName} ({s.state} State)
+                                      </option>
+                                    ))}
+                                </optgroup>
+                                <optgroup label="── 🌍 OTHER / EXTERNAL ──">
+                                  <option value="Other / External High School">Other / External High School</option>
+                                </optgroup>
+                              </>
+                            ) : field.key === "jerseySize" ? (
                               <>
                                 <optgroup label="── 🇳🇬 ASIAN SIZING (Nigerian Local Markets) ──">
                                   {field.options

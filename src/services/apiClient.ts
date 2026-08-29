@@ -691,7 +691,7 @@ function buildComprehensiveSummary(title: string, rawSnippet: string, sources: N
 const DEFAULT_USOSA_HEADLINES: NewsHeadline[] = [
   {
     title: "FG Approves Absorption of 3,252 PTA Teachers into Federal Unity Colleges",
-    summary: `The Federal Government has formally approved the recruitment and conversion of 3,252 Parent-Teacher Association (PTA) employed teachers into the permanent federal civil service structure across Nigeria's 104 Federal Unity Colleges. This decisive policy directive addresses a critical manpower gap that has persisted for years across Federal Government Colleges (FGC), Federal Government Girls' Colleges (FGGC), and Federal Science and Technical Colleges (FSTC).
+    summary: `The Federal Government has formally approved the recruitment and conversion of 3,252 Parent-Teacher Association (PTA) employed teachers into the permanent federal civil service structure across Nigeria's 115 Federal Unity Colleges. This decisive policy directive addresses a critical manpower gap that has persisted for years across Federal Government Colleges (FGC), Federal Government Girls' Colleges (FGGC), and Federal Science and Technical Colleges (FSTC).
 
 Under the new framework, educators who have served for extended periods on ad-hoc PTA contracts will now enjoy full civil service tenure, standardized remuneration, pensions, and career progression opportunities. The Minister of Education highlighted that absorbing these qualified educators will directly stabilize classroom instruction, restore institutional morale, and enhance academic consistency for hundreds of thousands of secondary school students nationwide.
 
@@ -711,7 +711,7 @@ The National Executive Council of USOSA, alongside regional PTA leadership and a
 
 Built through strategic alumni endowments and partnerships with leading technology firms, the innovation hub provides students with hands-on exposure to software engineering, robotics, data science, and sustainable energy projects. School leadership and collegiate prefects commended the alumni body for consistently reinvesting in collegiate infrastructure and modernizing the learning environment in line with 21st-century global educational benchmarks.
 
-The initiative also incorporates ongoing mentorship tracks, where seasoned alumni in Silicon Valley, Nigeria's fintech sector, and academic institutions will provide continuous coaching and project guidance to budding student inventors. KCOBA emphasized that this project serves as a collaborative model that can be replicated across all 104 Federal Unity Colleges nationwide under the URIP revitalization agenda.`,
+The initiative also incorporates ongoing mentorship tracks, where seasoned alumni in Silicon Valley, Nigeria's fintech sector, and academic institutions will provide continuous coaching and project guidance to budding student inventors. KCOBA emphasized that this project serves as a collaborative model that can be replicated across all 115 Federal Unity Colleges nationwide under the URIP revitalization agenda.`,
     source: "King's College Old Boys Association",
     url: "https://kingscollegelagos.com",
     publishedAt: "Recent",
@@ -722,7 +722,7 @@ The initiative also incorporates ongoing mentorship tracks, where seasoned alumn
   },
   {
     title: "USOSA Calls for Infrastructure Upgrades Across Federal Unity Colleges",
-    summary: `The Unity Schools Old Students Association (USOSA) has renewed its national advocacy campaign urging accelerated investments in physical, digital, and security infrastructure across all 104 Federal Unity Colleges in Nigeria. Speaking at a recent national stakeholders forum, USOSA leadership stressed that urgent revitalization is needed to upgrade aging boarding facilities, science laboratories, digital libraries, and solar power installations across collegiate campuses.
+    summary: `The Unity Schools Old Students Association (USOSA) has renewed its national advocacy campaign urging accelerated investments in physical, digital, and security infrastructure across all 115 Federal Unity Colleges in Nigeria. Speaking at a recent national stakeholders forum, USOSA leadership stressed that urgent revitalization is needed to upgrade aging boarding facilities, science laboratories, digital libraries, and solar power installations across collegiate campuses.
 
 The apex alumni body noted that while individual alumni chapters have continuously executed commendable intervention projects, a coordinated public-private framework is essential to preserve the legacy and operational capacity of Unity Schools. The proposed revitalization roadmap emphasizes modernized STEM learning environments, enhanced perimeter security architectures, and improved living conditions for boarding students nationwide.
 
@@ -1112,10 +1112,10 @@ const DEFAULT_GEMINI_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
 export const USOSA_KNOWLEDGE_SYSTEM_INSTRUCTION = `You are Gemini AI Xplora — an intelligent, highly knowledgeable, and conversational AI assistant for USOSA and URIP (Unity Schools Revitalisation Initiative / Regional Integration Programs).
 
 CORE KNOWLEDGE BASE & SYSTEMIC GROUNDING:
-1. USOSA (Unity Schools Old Students Association): The apex umbrella association uniting alumni across all 104 Federal Unity Colleges in Nigeria. Motto: "Pro Unitate" (For Unity).
+1. USOSA (Unity Schools Old Students Association): The apex umbrella association uniting alumni across all 115 Federal Unity Colleges in Nigeria. Motto: "Pro Unitate" (For Unity).
 2. URIP: The USOSA Unity Schools Revitalisation Initiative / Regional Integration Programs.
 3. Team Taraba River: The specific official name of this URIP team within the USOSA / URIP structure. It is a designated URIP team.
-4. The 104 Federal Unity Colleges:
+4. The 115 Federal Unity Colleges:
    - Federal Government Colleges (FGC) across all 36 states and FCT.
    - Federal Government Girls' Colleges (FGGC).
    - Federal Science and Technical Colleges (FSTC).
