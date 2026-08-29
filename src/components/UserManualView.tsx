@@ -19,8 +19,7 @@ import {
   Sparkles,
   Layers,
   HelpCircle,
-  Lightbulb,
-  AlertTriangle
+  Lightbulb
 } from "lucide-react";
 
 import imgLoginGate from "../assets/manual/01_login_gate.png";
@@ -499,112 +498,110 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto px-3.5 sm:px-6 lg:px-8 py-5 sm:py-8 font-sans animate-fadeIn">
+    <div className="w-full max-w-4xl mx-auto px-3.5 sm:px-6 lg:px-8 py-4 sm:py-6 font-sans pb-28 md:pb-12 text-slate-900 dark:text-slate-100 animate-fadeIn">
       {/* ── TOP HEADER / BREADCRUMB ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 sm:pb-6 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-start sm:items-center space-x-3">
-          <button
-            onClick={onBack}
-            className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all shadow-sm flex items-center justify-center cursor-pointer shrink-0 group mt-0.5 sm:mt-0"
-            title="Return to previous view"
-          >
-            <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
-          </button>
-          <div className="min-w-0">
-            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider bg-teal-100 dark:bg-teal-950/80 text-teal-800 dark:text-teal-300 border border-teal-300 dark:border-teal-800/60">
-                Official Help Center
-              </span>
-              <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium">
-                • Step-by-Step Mobile Guide
-              </span>
+      <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/80 dark:border-slate-800 rounded-3xl p-3.5 sm:p-5 shadow-sm mb-4 sm:mb-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <button
+              onClick={onBack}
+              className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 hover:text-teal-700 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all flex items-center justify-center shrink-0 cursor-pointer shadow-sm active:scale-95"
+              title="Return to previous view"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 border border-teal-300 dark:border-teal-800">
+                  Official Guide
+                </span>
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
+                  • Mobile Edition
+                </span>
+              </div>
+              <h1 className="text-base sm:text-xl md:text-2xl font-black text-slate-900 dark:text-white tracking-tight mt-0.5 truncate">
+                User Manual & Help Center
+              </h1>
             </div>
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-1 flex items-center gap-2">
-              <BookOpen className="w-6 h-6 sm:w-7 sm:h-7 text-teal-700 dark:text-teal-400 shrink-0" />
-              <span>User Manual & Operations Guide</span>
-            </h1>
           </div>
-        </div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center space-x-2 w-full sm:w-auto">
-          <button
-            onClick={handlePrint}
-            className="flex-1 sm:flex-none inline-flex items-center justify-center space-x-1.5 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-bold shadow-sm transition-all cursor-pointer"
-            title="Print or Save as PDF"
-          >
-            <Printer className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-            <span>Print / PDF</span>
-          </button>
-          <button
-            onClick={onBack}
-            className="flex-1 sm:flex-none inline-flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold shadow-md shadow-teal-700/20 transition-all cursor-pointer"
-          >
-            <span>Return to App</span>
-          </button>
+          {/* Top Actions */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handlePrint}
+              className="p-2 sm:px-3 sm:py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Print or Save as PDF"
+            >
+              <Printer className="w-4 h-4" />
+              <span className="hidden sm:inline">Print / PDF</span>
+            </button>
+            <button
+              onClick={onBack}
+              className="px-3.5 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold transition-all shadow-md shadow-teal-700/20 cursor-pointer whitespace-nowrap"
+            >
+              Return to App
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* ── SECTION SELECTOR TABS & SEARCH BAR ── */}
-      <div className="mt-5 sm:mt-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Responsive Two-Part Grid Switcher */}
-        <div className="w-full md:w-auto grid grid-cols-1 sm:grid-cols-2 gap-2 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-inner">
-          <button
-            onClick={() => setActiveSection("member")}
-            className={`w-full flex items-center justify-center sm:justify-start space-x-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-              activeSection === "member"
-                ? "bg-white dark:bg-slate-800 text-teal-800 dark:text-teal-300 shadow-md border border-slate-200/80 dark:border-slate-700"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-            }`}
-          >
-            <User className="w-4 h-4 shrink-0" />
-            <span>Part 1: Member Guide</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 shrink-0">
-              7 Chapters
-            </span>
-          </button>
+      {/* ── RESPONSIVE TWO-PART SEGMENTED SWITCHER ── */}
+      <div className="grid grid-cols-2 gap-1.5 sm:gap-2 bg-slate-200/80 dark:bg-slate-900/90 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 mb-4 shadow-inner">
+        <button
+          onClick={() => setActiveSection("member")}
+          className={`flex items-center justify-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
+            activeSection === "member"
+              ? "bg-white dark:bg-slate-800 text-teal-800 dark:text-teal-300 shadow-sm border border-slate-200 dark:border-slate-700"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <User className="w-4 h-4 shrink-0" />
+          <span className="truncate">Part 1: Members</span>
+          <span className="inline-flex px-1.5 py-0.2 rounded-full text-[9px] sm:text-[10px] font-extrabold bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 shrink-0">
+            7
+          </span>
+        </button>
 
-          <button
-            onClick={() => setActiveSection("admin")}
-            className={`w-full flex items-center justify-center sm:justify-start space-x-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
-              activeSection === "admin"
-                ? "bg-white dark:bg-slate-800 text-amber-800 dark:text-amber-300 shadow-md border border-slate-200/80 dark:border-slate-700"
-                : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4 shrink-0" />
-            <span>Part 2: Admin Portal</span>
-            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
-              Executive
-            </span>
-          </button>
-        </div>
+        <button
+          onClick={() => setActiveSection("admin")}
+          className={`flex items-center justify-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
+            activeSection === "admin"
+              ? "bg-white dark:bg-slate-800 text-amber-800 dark:text-amber-300 shadow-sm border border-slate-200 dark:border-slate-700"
+              : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4 shrink-0" />
+          <span className="truncate">Part 2: Admins</span>
+          <span className="inline-flex px-1.5 py-0.2 rounded-full text-[9px] sm:text-[10px] font-extrabold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 shrink-0">
+            Admin
+          </span>
+        </button>
+      </div>
 
-        {/* Search Bar */}
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search topics (e.g. Login, Photos, News)..."
-            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-700 dark:focus:ring-teal-400 transition-all shadow-sm"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-            >
-              CLEAR
-            </button>
-          )}
-        </div>
+      {/* ── SEARCH BAR ── */}
+      <div className="relative w-full mb-5">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search topics (e.g. Login, Photos, News)..."
+          className="w-full pl-11 pr-10 py-3 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs sm:text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-600 dark:focus:ring-teal-400 shadow-sm transition-all"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery("")}
+            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* ── CHAPTERS LIST (ACCORDION) ── */}
-      <div className="mt-6 sm:mt-8 space-y-4 sm:space-y-6">
+      <div className="space-y-4">
         {filteredChapters.length === 0 ? (
-          <div className="p-8 sm:p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
+          <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
             <HelpCircle className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
             <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">No matching topics found</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
@@ -620,7 +617,7 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
               <div
                 key={ch.id}
                 id={ch.id}
-                className={`rounded-2xl sm:rounded-3xl border transition-all duration-300 overflow-hidden ${
+                className={`rounded-3xl border transition-all duration-300 overflow-hidden ${
                   isExpanded
                     ? "bg-white dark:bg-slate-900 border-teal-500/50 dark:border-teal-500/40 shadow-xl ring-1 ring-teal-500/20"
                     : "bg-white dark:bg-slate-900/70 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-sm"
@@ -629,67 +626,62 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
                 {/* Chapter Banner Button */}
                 <button
                   onClick={() => setExpandedChapterId(isExpanded ? "" : ch.id)}
-                  className="w-full px-4 py-4 sm:px-6 sm:py-5 flex items-center justify-between text-left cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40 gap-3"
+                  className="w-full p-4 sm:p-5 flex items-center justify-between text-left cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40 gap-3"
                 >
-                  <div className="flex items-start sm:items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
+                  <div className="flex items-center gap-3.5 min-w-0 flex-1">
                     <div
-                      className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl shrink-0 mt-0.5 sm:mt-0 ${
+                      className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${
                         ch.section === "admin"
-                          ? "bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800/60"
-                          : "bg-teal-100 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-800/60"
+                          ? "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                          : "bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800"
                       }`}
                     >
-                      <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
+                      <Icon className="w-5 h-5" />
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center space-x-2 flex-wrap gap-y-0.5">
+                      <div className="flex items-center gap-2 mb-0.5">
                         <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wide border ${ch.badgeColor}`}
+                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider border ${ch.badgeColor}`}
                         >
                           {ch.badgeText}
                         </span>
-                        <h2 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 dark:text-white leading-snug">
-                          {ch.title}
-                        </h2>
                       </div>
-                      <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                      <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-snug">
+                        {ch.title}
+                      </h2>
+                      <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-normal">
                         {ch.subtitle}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-2 shrink-0">
-                    <span className="hidden md:inline-block text-xs font-semibold text-teal-700 dark:text-teal-400">
-                      {isExpanded ? "Close Guide" : "Open Guide"}
-                    </span>
-                    <div
-                      className={`p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 transition-transform duration-300 ${
-                        isExpanded ? "rotate-180" : ""
-                      }`}
-                    >
-                      <ChevronDown className="w-4 h-4" />
-                    </div>
+                  <div
+                    className={`w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0 transition-transform duration-300 ${
+                      isExpanded ? "rotate-180 bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300" : ""
+                    }`}
+                  >
+                    <ChevronDown className="w-4 h-4" />
                   </div>
                 </button>
 
                 {/* Chapter Expanded Body */}
                 {isExpanded && (
                   <div className="px-4 pb-6 pt-2 sm:px-6 sm:pb-8 border-t border-slate-100 dark:border-slate-800 animate-fadeIn">
-                    {/* Plain English Objective */}
-                    <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-900/50 text-xs sm:text-sm text-teal-950 dark:text-teal-200 mb-6 flex items-start space-x-3">
+                    {/* Plain English Objective Banner */}
+                    <div className="p-3.5 sm:p-4 rounded-2xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-900/50 text-xs sm:text-sm text-teal-950 dark:text-teal-200 mb-6 flex items-start gap-2.5">
                       <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-teal-700 dark:text-teal-400 shrink-0 mt-0.5" />
-                      <div>
+                      <p className="leading-relaxed">
                         <span className="font-bold">What this is for: </span>
                         <span>{ch.content.purpose}</span>
-                      </div>
+                      </p>
                     </div>
 
                     {/* Responsive Grid: Smartphone Canvas + Callouts / Steps */}
                     <div className="flex flex-col lg:flex-row gap-6 sm:gap-8 items-start">
                       {/* Left: Responsive Real Mobile Phone Mockup */}
-                      <div className="w-full lg:w-[340px] shrink-0 flex flex-col items-center">
-                        <div className="w-full max-w-[280px] sm:max-w-[320px] bg-slate-950 p-2.5 sm:p-3 rounded-[36px] sm:rounded-[44px] shadow-2xl border-4 border-slate-800 ring-1 ring-slate-700/60 relative">
+                      <div className="w-full lg:w-[320px] shrink-0 flex flex-col items-center">
+                        <div className="w-full max-w-[270px] sm:max-w-[300px] bg-slate-950 p-2.5 sm:p-3 rounded-[38px] sm:rounded-[44px] shadow-2xl border-4 border-slate-800 ring-1 ring-slate-700/60 relative">
                           {/* Top Speaker / Dynamic Island */}
                           <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-20 sm:w-24 h-4 sm:h-4.5 bg-slate-900 rounded-full z-20 flex items-center justify-center gap-1.5 shadow-inner">
                             <div className="w-2.5 h-2.5 rounded-full bg-slate-800" />
@@ -705,7 +697,7 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
                               loading="lazy"
                             />
                             {/* Glass screen label */}
-                            <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 bg-slate-950/85 backdrop-blur-md px-3 py-1 rounded-full border border-teal-500/40 text-[9px] sm:text-[10px] text-teal-300 font-bold tracking-wider whitespace-nowrap shadow-lg">
+                            <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 bg-slate-950/90 backdrop-blur-md px-3 py-1 rounded-full border border-teal-500/40 text-[9px] sm:text-[10px] text-teal-300 font-bold tracking-wider whitespace-nowrap shadow-lg">
                               📱 {ch.content.screenTitle}
                             </div>
                           </div>
@@ -714,25 +706,25 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
                           <div className="w-20 sm:w-24 h-1 bg-slate-700 rounded-full mx-auto mt-2" />
                         </div>
                         <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-2 text-center font-medium">
-                          Real mobile phone view
+                          Actual Phone Screen
                         </p>
                       </div>
 
                       {/* Right: Callouts Breakdown, Simple Steps, Pro Tips */}
-                      <div className="w-full flex-1 space-y-5 sm:space-y-6">
+                      <div className="w-full flex-1 space-y-6">
                         {/* 1. Key Interface Elements */}
                         <div>
-                          <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-1.5">
+                          <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-1.5">
                             <Layers className="w-4 h-4 text-teal-600 dark:text-teal-400" />
                             <span>What You See on Your Screen</span>
                           </h3>
-                          <div className="space-y-2.5 sm:space-y-3">
+                          <div className="space-y-2.5">
                             {ch.content.uiCallouts.map((callout) => (
                               <div
                                 key={callout.number}
-                                className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex items-start gap-3 hover:border-teal-500/40 transition-colors"
+                                className="p-3 sm:p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex items-start gap-3 hover:border-teal-500/40 transition-colors"
                               >
-                                <span className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-teal-700 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                                <span className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-teal-700 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-sm mt-0.5">
                                   {callout.number}
                                 </span>
                                 <div className="min-w-0 flex-1">
@@ -750,7 +742,7 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
 
                         {/* 2. Step-by-Step Instructions */}
                         <div>
-                          <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-1.5">
+                          <h3 className="text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-1.5">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                             <span>Simple Step-by-Step Actions</span>
                           </h3>
@@ -758,9 +750,9 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
                             {ch.content.steps.map((step, idx) => (
                               <div
                                 key={idx}
-                                className="flex items-start gap-3 p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60"
+                                className="flex items-start gap-3 p-3 rounded-xl bg-white dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60"
                               >
-                                <span className="w-5 h-5 rounded-md bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">
+                                <span className="w-5 h-5 rounded-md bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 font-black text-[11px] flex items-center justify-center shrink-0 mt-0.5">
                                   {idx + 1}
                                 </span>
                                 <span className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
@@ -772,9 +764,9 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
                         </div>
 
                         {/* 3. Pro Tips & Important Notes */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4 pt-1">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
                           {ch.content.proTips.length > 0 && (
-                            <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40">
+                            <div className="p-3.5 sm:p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40">
                               <h4 className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5 mb-2">
                                 <Lightbulb className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                                 <span>Helpful Tip</span>
@@ -791,7 +783,7 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
                           )}
 
                           {ch.content.importantNotes.length > 0 && (
-                            <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40">
+                            <div className="p-3.5 sm:p-4 rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40">
                               <h4 className="text-xs font-bold text-blue-900 dark:text-blue-300 flex items-center gap-1.5 mb-2">
                                 <Info className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                                 <span>Please Remember</span>
@@ -818,7 +810,7 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
       </div>
 
       {/* ── FOOTER ACTIONS ── */}
-      <div className="mt-8 sm:mt-12 p-6 sm:p-8 rounded-2xl sm:rounded-3xl bg-slate-900 text-white flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6 shadow-xl">
+      <div className="mt-8 p-6 rounded-3xl bg-slate-900 text-white flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
         <div className="space-y-1 text-center sm:text-left">
           <h3 className="text-base sm:text-lg font-bold">Still need help or have a question?</h3>
           <p className="text-xs text-slate-400">
