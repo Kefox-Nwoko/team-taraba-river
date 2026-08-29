@@ -7,7 +7,7 @@
  *  - Static assets (js/css/img/font/svg/woff) -> stale-while-revalidate
  *  - API requests (/api/*) -> always network (never cache auth/tokens)
  */
-const CACHE_VERSION = "taraba-river-v1";
+const CACHE_VERSION = "taraba-river-v3";
 const APP_SHELL = ["/", "/index.html", "/manifest.webmanifest"];
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
