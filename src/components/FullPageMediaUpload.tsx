@@ -1198,14 +1198,13 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
               </div>
 
               {/* Tier 1: Current File Progress Bar */}
-              <div className="space-y-1.5 p-3 rounded-2xl bg-white/80 dark:bg-slate-900/60 border border-cyan-100 dark:border-cyan-900/40">
-                <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-400">
-                  <span className="font-medium truncate max-w-[220px]">
-                    Current {activeFileType === "video" ? "Video" : "Photo"}: <strong>{activeFileName || "Processing..."}</strong>
-                  </span>
-                  <span className="font-mono text-cyan-600 dark:text-cyan-400 font-semibold">
-                    {activeFileMBTransferred} MB / {activeFileTotalMB} MB
-                  </span>
+              <div className="space-y-2 p-3 rounded-2xl bg-white/80 dark:bg-slate-900/60 border border-cyan-100 dark:border-cyan-900/40">
+                <div className="text-xs text-slate-700 dark:text-slate-300 truncate">
+                  Current {activeFileType === "video" ? "Video" : "Photo"}:{" "}
+                  <strong className="text-slate-900 dark:text-white font-semibold">{activeFileName || "Processing..."}</strong>
+                </div>
+                <div className="text-[11px] font-mono text-cyan-600 dark:text-cyan-400 font-semibold">
+                  {activeFileMBTransferred} MB / {activeFileTotalMB} MB
                 </div>
                 <div className="w-full h-2.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
                   <div
