@@ -34,6 +34,8 @@ import {
   Move,
   Edit3,
   ChevronDown,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 
 interface EventMediaViewProps {
@@ -350,6 +352,21 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
   const [isMoveDropdownOpen, setIsMoveDropdownOpen] = useState(false);
 
+  // In-App Deletion Confirmation Modal State
+  const [deletingAssetItem, setDeletingAssetItem] = useState<{
+    url: string;
+    videoUrl?: string;
+    type: "photo" | "video";
+    title?: string;
+    index?: number;
+  } | null>(null);
+  const [deletingFolderTarget, setDeletingFolderTarget] = useState<{
+    id: string;
+    title: string;
+    count: number;
+  } | null>(null);
+  const [isDeletingProcessing, setIsDeletingProcessing] = useState(false);
+
   // Lightbox arrows fade-out timeout & slideshow autoplay
   const [showArrows, setShowArrows] = useState(true);
   const arrowsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -622,78 +639,122 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     return false;
   };
 
-  const handleDeleteFolder = async (folderId: string, e?: React.MouseEvent) => {
+  const handlePromptDeleteFolder = (folderId: string, folderTitle: string, count: number, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (!window.confirm("Are you sure you want to permanently delete this media folder and all attached content?")) return;
-    await performDeleteFolder(folderId);
+    setDeletingFolderTarget({
+      id: folderId,
+      title: folderTitle,
+      count,
+    });
   };
 
-  const handleDeleteSingleAsset = async (
+  const handleExecuteFolderDelete = async () => {
+    if (!deletingFolderTarget) return;
+    setIsDeletingProcessing(true);
+    try {
+      await performDeleteFolder(deletingFolderTarget.id);
+    } catch (err) {
+      logger.error("Failed to delete folder:", err);
+    } finally {
+      setIsDeletingProcessing(false);
+      setDeletingFolderTarget(null);
+    }
+  };
+
+  const handlePromptDeleteSingleAsset = (
     item: { url: string; videoUrl?: string; type: "photo" | "video"; title?: string },
     e?: React.MouseEvent
   ) => {
     if (e) e.stopPropagation();
-    if (!selectedFolder) return;
-    if (!window.confirm("Are you sure you want to permanently delete this photo/video asset? It will be removed immediately from the gallery and cloud storage.")) return;
+    setDeletingAssetItem({
+      ...item,
+      index: lightboxIndex !== null ? lightboxIndex : undefined,
+    });
+  };
 
-    // 1. Immediately close the lightbox viewer
-    setLightboxIndex(null);
-
-    const targetUrl = item.videoUrl || item.url;
-    const isVideo = item.type === "video" || !!item.videoUrl;
-
-    // 2. Delete from YouTube if it's a YouTube video
-    if (isVideo && item.videoUrl) {
-      deleteYouTubeVideo(item.videoUrl).catch((err) => {
-        logger.warn("YouTube video delete notice:", err);
-      });
-    }
-
-    // 3. Delete from Firebase Storage if it's a Storage file
-    if (targetUrl && targetUrl.includes("firebasestorage.googleapis.com")) {
-      try {
-        const fileRef = ref(storage, targetUrl);
-        deleteObject(fileRef).catch((err) => {
-          logger.warn("Firebase storage delete notice:", err);
-        });
-      } catch (e) {}
-    }
-
-    // 4. Filter remaining images and videos cleanly
-    const remainingImages = (selectedFolder.driveImageUrls || []).filter((u) => u !== item.url && u !== item.videoUrl);
-    const existingVideos = Array.from(
-      new Set(
-        (selectedFolder.youtubeVideoUrls || (selectedFolder.youtubeVideoUrl ? [selectedFolder.youtubeVideoUrl] : [])).filter(Boolean)
-      )
-    );
-    const remainingVideos = existingVideos.filter((u) => u !== item.url && u !== item.videoUrl);
-
-    const updatedFolder: GroupEvent = {
-      ...selectedFolder,
-      driveImageUrls: remainingImages,
-      youtubeVideoUrls: remainingVideos,
-      youtubeVideoUrl: remainingVideos[0] || "",
-    };
-
-    const isFolderEmpty = remainingImages.length === 0 && remainingVideos.length === 0;
-
-    if (isFolderEmpty) {
-      await performDeleteFolder(selectedFolder.id);
-      return;
-    }
+  const handleExecuteSingleAssetDelete = async () => {
+    if (!deletingAssetItem) return;
+    setIsDeletingProcessing(true);
 
     try {
-      await FirebaseSyncManager.saveEvent(updatedFolder);
-    } catch (err) {
-      logger.warn("Update folder error", { error: err });
-    }
+      const currentActiveFolder = mappedEvents.find((e) => e.id === selectedFolder?.id) || selectedFolder;
+      if (!currentActiveFolder) return;
 
-    const current = AppStateManager.getEvents();
-    const idx = current.findIndex((evt) => evt.id === selectedFolder.id);
-    if (idx !== -1) current[idx] = updatedFolder;
-    AppStateManager.saveEvents(current);
-    setSelectedFolder(updatedFolder);
-    if (onRefreshEvents) onRefreshEvents();
+      const item = deletingAssetItem;
+      const targetUrl = item.videoUrl || item.url;
+      const isVideo = item.type === "video" || !!item.videoUrl;
+
+      // 1. Get raw arrays from active folder
+      let existingVideos = [...(currentActiveFolder.youtubeVideoUrls || (currentActiveFolder.youtubeVideoUrl ? [currentActiveFolder.youtubeVideoUrl] : []))].filter(Boolean);
+      let existingImages = [...(currentActiveFolder.driveImageUrls || [])].filter(Boolean);
+
+      // 2. Remove ONLY the specific single instance
+      if (isVideo) {
+        let vIdx = existingVideos.findIndex((u) => u === item.videoUrl || u === targetUrl || u === item.url);
+        if (vIdx !== -1) {
+          existingVideos.splice(vIdx, 1);
+        } else {
+          let imgVIdx = existingImages.findIndex((u) => u === item.videoUrl || u === targetUrl || u === item.url);
+          if (imgVIdx !== -1) {
+            existingImages.splice(imgVIdx, 1);
+          }
+        }
+      } else {
+        let pIdx = existingImages.findIndex((u) => u === targetUrl || u === item.url);
+        if (pIdx !== -1) {
+          existingImages.splice(pIdx, 1);
+        }
+      }
+
+      // 3. Purge from cloud storage ONLY if no other item in the folder references the same URL
+      const isUrlStillReferenced = existingVideos.some((u) => u === targetUrl) || existingImages.some((u) => u === targetUrl);
+
+      if (!isUrlStillReferenced) {
+        if (isVideo && item.videoUrl && (item.videoUrl.includes("youtube.com") || item.videoUrl.includes("youtu.be"))) {
+          deleteYouTubeVideo(item.videoUrl).catch((err) => {
+            logger.warn("YouTube video delete notice:", err);
+          });
+        }
+        if (targetUrl && targetUrl.includes("firebasestorage.googleapis.com")) {
+          try {
+            const fileRef = ref(storage, targetUrl);
+            deleteObject(fileRef).catch((err) => {
+              logger.warn("Firebase storage delete notice:", err);
+            });
+          } catch (e) {}
+        }
+      }
+
+      const isFolderEmpty = existingImages.length === 0 && existingVideos.length === 0;
+
+      if (isFolderEmpty) {
+        await performDeleteFolder(currentActiveFolder.id);
+      } else {
+        const updatedFolder: GroupEvent = {
+          ...currentActiveFolder,
+          driveImageUrls: existingImages,
+          youtubeVideoUrls: existingVideos,
+          youtubeVideoUrl: existingVideos[0] || "",
+        };
+
+        await FirebaseSyncManager.saveEvent(updatedFolder);
+
+        const currentEvents = AppStateManager.getEvents();
+        const idx = currentEvents.findIndex((evt) => evt.id === currentActiveFolder.id);
+        if (idx !== -1) currentEvents[idx] = updatedFolder;
+        AppStateManager.saveEvents(currentEvents);
+        setSelectedFolder(updatedFolder);
+        if (onRefreshEvents) onRefreshEvents();
+      }
+
+      // Close lightbox
+      setLightboxIndex(null);
+    } catch (err) {
+      logger.error("Failed to delete asset:", err);
+    } finally {
+      setIsDeletingProcessing(false);
+      setDeletingAssetItem(null);
+    }
   };
 
   const handleMoveAsset = async (assetUrl: string, destinationFolderId: string) => {
@@ -1073,7 +1134,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                 </button>
                 {canEditOrDeleteFolder(selectedFolder) && (
                   <button
-                    onClick={(e) => handleDeleteFolder(selectedFolder.id, e)}
+                    onClick={(e) => handlePromptDeleteFolder(selectedFolder.id, selectedFolder.title, galleryItems.length, e)}
                     className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-red-600/90 hover:bg-red-700 active:scale-95 text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
                     title="Delete entire media folder"
                   >
@@ -1103,7 +1164,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                   </button>
                   {canEditOrDeleteFolder(selectedFolder) && (
                     <button
-                      onClick={(e) => handleDeleteFolder(selectedFolder.id, e)}
+                      onClick={(e) => handlePromptDeleteFolder(selectedFolder.id, selectedFolder.title, 0, e)}
                       className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-red-600/90 hover:bg-red-700 text-white text-xs font-normal transition cursor-pointer shadow-xs"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -1201,7 +1262,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               {/* Delete Video or Photo Asset */}
               {canEditOrDeleteAsset(selectedFolder, galleryItems[lightboxIndex]) && (
                 <button
-                  onClick={(e) => handleDeleteSingleAsset(galleryItems[lightboxIndex], e)}
+                  onClick={(e) => handlePromptDeleteSingleAsset(galleryItems[lightboxIndex], e)}
                   className="px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-red-600/90 hover:bg-red-600 active:scale-95 text-white text-[10px] sm:text-xs font-medium transition flex items-center gap-1 cursor-pointer shadow-xs"
                   title={`Permanently delete this ${galleryItems[lightboxIndex].type === "video" ? "video" : "photo"}`}
                 >
@@ -1352,6 +1413,144 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── IN-APP SINGLE ASSET DELETE CONFIRMATION MODAL ── */}
+      {deletingAssetItem && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-red-500/40 rounded-3xl p-6 shadow-2xl space-y-4 text-slate-900 dark:text-white">
+            <div className="flex items-start space-x-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Confirm Delete {deletingAssetItem.type === "video" ? "Video Clip" : "Photo"}
+                </h3>
+                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 font-medium">
+                  ⚠️ This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            {/* Asset Preview Card */}
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center space-x-3">
+              <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-900 shrink-0 relative flex items-center justify-center">
+                {deletingAssetItem.type === "video" ? (
+                  <div className="w-full h-full bg-slate-950 flex items-center justify-center">
+                    <Play className="w-5 h-5 text-red-500 fill-current" />
+                  </div>
+                ) : (
+                  <img src={deletingAssetItem.url} alt="preview" className="w-full h-full object-cover" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0 text-xs">
+                <p className="font-semibold text-slate-900 dark:text-white truncate">
+                  {deletingAssetItem.title || (deletingAssetItem.type === "video" ? "Video Clip" : "Photo Asset")}
+                </p>
+                <p className="text-slate-500 dark:text-slate-400 mt-0.5">
+                  Folder: <span className="font-medium text-slate-700 dark:text-slate-300">{selectedFolder?.title}</span>
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Are you sure you want to permanently delete this {deletingAssetItem.type === "video" ? "video clip instance" : "photo"} from the gallery and cloud storage?
+            </p>
+
+            <div className="flex items-center justify-end space-x-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeletingProcessing}
+                onClick={() => setDeletingAssetItem(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingProcessing}
+                onClick={handleExecuteSingleAssetDelete}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white rounded-xl text-xs font-semibold transition flex items-center space-x-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingProcessing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirm & Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── IN-APP FOLDER DELETE CONFIRMATION MODAL ── */}
+      {deletingFolderTarget && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-red-500/40 rounded-3xl p-6 shadow-2xl space-y-4 text-slate-900 dark:text-white">
+            <div className="flex items-start space-x-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Confirm Delete Entire Folder
+                </h3>
+                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 font-medium">
+                  ⚠️ This will delete all media inside this folder.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1 text-xs">
+              <p className="font-semibold text-slate-900 dark:text-white truncate">
+                📁 {deletingFolderTarget.title}
+              </p>
+              <p className="text-slate-500 dark:text-slate-400">
+                Contains {deletingFolderTarget.count} media asset(s)
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Are you sure you want to permanently delete this media folder and purge all attached photos and videos from YouTube and cloud storage?
+            </p>
+
+            <div className="flex items-center justify-end space-x-2.5 pt-2">
+              <button
+                type="button"
+                disabled={isDeletingProcessing}
+                onClick={() => setDeletingFolderTarget(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingProcessing}
+                onClick={handleExecuteFolderDelete}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white rounded-xl text-xs font-semibold transition flex items-center space-x-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {isDeletingProcessing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                    <span>Deleting Folder...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirm & Delete Folder</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

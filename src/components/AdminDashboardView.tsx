@@ -358,6 +358,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [createEventModalOpen, setCreateEventModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<GroupEvent | null>(null);
   const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
+  const [deletingCalendarEventTarget, setDeletingCalendarEventTarget] = useState<{ id: string; title: string } | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Cloud Config State
@@ -378,27 +379,27 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     setCreateEventModalOpen(true);
   };
 
-  const handleDeleteEvent = async (eventId: string, title: string) => {
-    if (
-      window.confirm(
-        `Are you sure you want to delete "${title}"?\n\nThis will permanently remove the event/announcement and its RSVP records from the calendar and database.`
-      )
-    ) {
+  const handleDeleteEvent = (eventId: string, title: string) => {
+    setDeletingCalendarEventTarget({ id: eventId, title });
+  };
+
+  const handleConfirmDeleteCalendarEvent = async () => {
+    if (!deletingCalendarEventTarget) return;
+    const { id: eventId } = deletingCalendarEventTarget;
+    try {
+      setDeletingEventId(eventId);
+      const remainingEvents = events.filter((e) => e.id !== eventId);
+      AppStateManager.saveEvents(remainingEvents);
+      await FirebaseSyncManager.deleteEvent(eventId);
       try {
-        setDeletingEventId(eventId);
-        const remainingEvents = events.filter((e) => e.id !== eventId);
-        AppStateManager.saveEvents(remainingEvents);
-        await FirebaseSyncManager.deleteEvent(eventId);
-        try {
-          await deleteEventApi(eventId);
-        } catch {}
-        onRefreshData();
-      } catch (err) {
-        logger.error("Delete event failed", err);
-        alert("Failed to delete event. Please try again.");
-      } finally {
-        setDeletingEventId(null);
-      }
+        await deleteEventApi(eventId);
+      } catch {}
+      onRefreshData();
+    } catch (err) {
+      logger.error("Delete event failed", err);
+    } finally {
+      setDeletingEventId(null);
+      setDeletingCalendarEventTarget(null);
     }
   };
 
@@ -1601,6 +1602,66 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <>
                     <Trash2 className="w-4 h-4" />
                     <span>Confirm & Reject {selectedMediaIds.size} Items</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── IN-APP CALENDAR EVENT DELETE CONFIRMATION MODAL ── */}
+      {deletingCalendarEventTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-fadeIn">
+          <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-red-500/40 rounded-3xl p-6 shadow-2xl space-y-4 text-slate-900 dark:text-white">
+            <div className="flex items-start space-x-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-red-500/20 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Confirm Delete Event
+                </h3>
+                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 font-medium">
+                  ⚠️ This will permanently remove this event from the calendar.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1 text-xs">
+              <p className="font-semibold text-slate-900 dark:text-white truncate">
+                📅 {deletingCalendarEventTarget.title}
+              </p>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+              Are you sure you want to permanently delete this event and its RSVP records from the database?
+            </p>
+
+            <div className="flex items-center justify-end space-x-2.5 pt-2">
+              <button
+                type="button"
+                disabled={!!deletingEventId}
+                onClick={() => setDeletingCalendarEventTarget(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!!deletingEventId}
+                onClick={handleConfirmDeleteCalendarEvent}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 active:scale-95 text-white rounded-xl text-xs font-semibold transition flex items-center space-x-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {deletingEventId ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                    <span>Deleting Event...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirm & Delete</span>
                   </>
                 )}
               </button>
