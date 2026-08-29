@@ -18,7 +18,9 @@ import {
   Printer,
   Sparkles,
   Layers,
-  HelpCircle
+  HelpCircle,
+  Lightbulb,
+  AlertTriangle
 } from "lucide-react";
 
 import imgLoginGate from "../assets/manual/01_login_gate.png";
@@ -66,348 +68,355 @@ const CHAPTERS: Chapter[] = [
   {
     id: "mem-login",
     section: "member",
-    title: "1. Login & Member Verification",
-    subtitle: "Authenticate using your registered Email, Phone Number, or Google Account",
+    title: "1. How to Log In & Sign In",
+    subtitle: "Simple 1-step sign in with your phone number, email, or Google account",
     icon: LogIn,
-    badgeText: "Member",
+    badgeText: "Member Guide",
     badgeColor: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 border-teal-300 dark:border-teal-800",
     screenshotSrc: imgLoginGate,
-    screenshotAlt: "Mobile Login Gate Interface",
+    screenshotAlt: "Mobile Login Gate Screen",
     content: {
-      purpose: "Enable instant verification for all Team Taraba River members without password friction.",
-      screenTitle: "Login Gate (Mobile View)",
+      purpose: "Get into the app in 3 seconds without having to remember any complicated passwords.",
+      screenTitle: "Login Gate Screen",
       uiCallouts: [
         {
           number: 1,
-          title: "Brand Logo & Welcome Header",
-          description: "Confirms official connection to URIP Team Taraba River - USOSA Port Harcourt portal.",
+          title: "Team Taraba River Logo",
+          description: "Confirms you are on the official USOSA Port Harcourt portal.",
         },
         {
           number: 2,
-          title: "Single Credential Input Box",
-          description: "Type either your registered Email or Nigerian Phone Number (e.g., 08023456789 or +234...).",
+          title: "Phone or Email Box",
+          description: "Tap here to type your registered phone number (e.g. 08031234567) or your email address.",
         },
         {
           number: 3,
-          title: "Instant Sign-In Action",
-          description: "Instantly queries offline and cloud rosters for matching records.",
+          title: "Green 'Sign In' Button",
+          description: "Tap this button after typing your number to enter the app immediately.",
         },
         {
           number: 4,
-          title: "Google One-Tap Authentication",
-          description: "Use your linked Google account (e.g. kefox.nwoko@gmail.com) for 1-tap secure sign-in.",
+          title: "Google Button",
+          description: "If your email is linked to Google, tap here for 1-tap instant sign in.",
         },
         {
           number: 5,
-          title: "Profile Registration Link",
-          description: "New members can register their profile if not yet in the official roster.",
+          title: "Register Your Profile Link",
+          description: "First time here? Tap this link to add your name, school, and photo.",
         }
       ],
       steps: [
-        "Open https://team-taraba-river.web.app/ on your mobile browser.",
-        "Enter your registered Email Address or Phone Number in the input box.",
-        "Tap the teal 'Sign In' button to authenticate.",
-        "Alternatively, tap 'Google' to sign in with your verified Google account.",
-        "If you are a new member, tap 'Register your profile' to fill in your personal details."
+        "Open the website on your phone browser (Chrome, Safari, etc.).",
+        "Tap inside the box labeled 'EMAIL OR PHONE NUMBER'.",
+        "Type your phone number (example: 08023456789) or your email.",
+        "Tap the green 'Sign In' button. You are in!",
+        "If you prefer Google, simply tap the white 'Google' button to log in automatically."
       ],
       proTips: [
-        "You can type your phone number with or without the Nigerian country code (+234 or 080...).",
-        "Your session is securely cached on your device, so you won't need to re-login every time."
+        "You do not need a password! Just typing your phone number will log you in.",
+        "Your phone saves your login so you won't have to type it again next time."
       ],
       importantNotes: [
-        "Ensure the phone number you enter matches the record submitted during chapter onboarding.",
-        "If your record is not found, tap 'Register your profile' to submit your details."
+        "Make sure to use the same phone number you gave when you joined Team Taraba River.",
+        "If you get an error, tap 'Register your profile' at the bottom to register your details."
       ]
     }
   },
   {
     id: "mem-home",
     section: "member",
-    title: "2. Home Hub & Event Calendar",
-    subtitle: "Personalized welcome, executive message, and community gatherings",
+    title: "2. Exploring Your Home Page & Calendar",
+    subtitle: "See upcoming gatherings, member stats, and personalized welcome notes",
     icon: Home,
-    badgeText: "Member",
+    badgeText: "Member Guide",
     badgeColor: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 border-teal-300 dark:border-teal-800",
     screenshotSrc: imgHomeEvents,
-    screenshotAlt: "Mobile Home Hub & Community Impact",
+    screenshotAlt: "Mobile Home Hub & Events Screen",
     content: {
-      purpose: "Serve as the central home dashboard greeting members, displaying community metrics, and upcoming events.",
-      screenTitle: "Home Hub & Events (Mobile View)",
+      purpose: "Your main dashboard showing community announcements, upcoming meetings, and member activities.",
+      screenTitle: "Home & Events Dashboard",
       uiCallouts: [
         {
           number: 1,
-          title: "Personalized Greeting & Avatar",
-          description: "Displays your first name (e.g., 'Welcome, back Kefox') and your profile avatar with quick dropdown access.",
+          title: "Your Name & Avatar (Top Right)",
+          description: "Shows your photo and greeting (e.g., 'Welcome, back Kefox'). Tap it to open your profile or log out.",
         },
         {
           number: 2,
-          title: "Executive Welcome Message",
-          description: "Official address encouraging active participation and brotherhood across USOSA Port Harcourt.",
+          title: "Community Welcome Notice",
+          description: "Official welcome address and updates from the executive team.",
         },
         {
           number: 3,
-          title: "Community Impact Real-Time Metrics",
-          description: "Live counters tracking total Registered Members, Active Events, and Portal Visits.",
+          title: "Live Community Counters",
+          description: "Shows total Registered Members, Active Events, and Portal Visits in real time.",
         },
         {
           number: 4,
-          title: "Mobile Bottom Navigation Bar",
-          description: "Instant switching between Home, Media Hub, Admin (for authorized personnel), and Dark Mode toggle.",
+          title: "Bottom Navigation Bar",
+          description: "The menu at the bottom of your phone screen that lets you jump between Home, Media, Admin, and Dark Mode.",
         }
       ],
       steps: [
-        "Upon successful login, you will arrive directly at the Home Hub.",
-        "Review community announcements and live participation stats.",
-        "Scroll down to explore upcoming chapter events and RSVP your attendance.",
-        "Use the bottom navigation bar to switch between app features effortlessly."
+        "When you log in, you will land directly on the Home page.",
+        "Look at the top right to see your name and picture.",
+        "Scroll down your screen to see upcoming events, meetings, and activities.",
+        "Tap on any event to see where it will hold and RSVP your attendance.",
+        "Use the buttons at the bottom of your screen to visit other sections of the app."
       ],
       proTips: [
-        "Tap your avatar in the top-right corner to access 'My Profile' or 'Sign Out' at any time.",
-        "Tap the Moon/Sun icon in the bottom bar to switch between Dark Mode and Light Mode."
+        "Tap the Moon icon at the bottom of your screen anytime to switch to comfortable Dark Mode at night.",
+        "Tap your profile picture at the top right anytime to view or edit your personal profile."
       ],
       importantNotes: [
-        "Community Impact metrics update in real-time as members engage across the portal."
+        "The member counters update automatically every time a new member joins or visits."
       ]
     }
   },
   {
     id: "mem-news",
     section: "member",
-    title: "3. USOSA News Updates & Audio Reader",
-    subtitle: "Stay updated with federal unity school news and voice-assisted article playback",
+    title: "3. Reading USOSA News & Listening to Audio",
+    subtitle: "Stay informed with national unity school news and voice-assisted article playback",
     icon: Newspaper,
-    badgeText: "Member",
+    badgeText: "Member Guide",
     badgeColor: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 border-teal-300 dark:border-teal-800",
     screenshotSrc: imgNewsReader,
-    screenshotAlt: "Mobile USOSA News Update Card",
+    screenshotAlt: "Mobile USOSA News Update Screen",
     content: {
-      purpose: "Deliver curated national USOSA news stories, national secretariat updates, and interactive audio narration.",
-      screenTitle: "USOSA News & Headlines (Mobile View)",
+      purpose: "Read national alumni news updates and listen to automated voice playback while on the road.",
+      screenTitle: "USOSA News & Audio Reader",
       uiCallouts: [
         {
           number: 1,
-          title: "USOSA News Update Card",
-          description: "Live feed aggregating the latest 15 stories from national unity alumni events and communiques.",
+          title: "USOSA News Card",
+          description: "Shows the latest headlines from Federal Unity Schools across Nigeria.",
         },
         {
           number: 2,
-          title: "Expand / Collapse Toggle",
-          description: "Tap to expand full headline cards with thumbnail images, dates, and summary snippets.",
+          title: "'Expand' Button",
+          description: "Tap here to open up the full list of news articles and read the complete stories.",
         },
         {
           number: 3,
-          title: "Headlines / AI Xplora Switcher",
-          description: "Switch between reading articles and asking AI Xplora about news context.",
+          title: "Headlines / AI Assistant Tab",
+          description: "Switch between reading recent news and asking AI questions about the articles.",
         },
         {
           number: 4,
-          title: "Back-to-Top Floating Button",
-          description: "Quickly return to the top of the feed with one tap.",
+          title: "Blue 'Scroll Up' Arrow",
+          description: "Tap this floating blue circle anytime to instantly return to the top of the page.",
         }
       ],
       steps: [
-        "Scroll down on the Home Hub to the 'USOSA News Update' card.",
-        "Tap 'Expand' to reveal all recent articles and headlines.",
-        "Tap any article title or thumbnail to open the full story reading modal.",
-        "Tap the 'Play / Listen' audio button inside the article to have the story read aloud in natural speech.",
-        "Tap the external link icon to read the source article on the original news publisher website."
+        "On the Home page, scroll down until you see the yellow 'USOSA News Update' card.",
+        "Tap the 'Expand' button on the right side of the card.",
+        "Tap any news headline that interests you to open the full article.",
+        "Don't want to read? Tap the 'Listen / Play' audio button to have the app read the news aloud to you.",
+        "Tap the 'X' button when you are done reading to close the article."
       ],
       proTips: [
-        "The built-in Audio Reader is ideal for listening to updates on the go.",
-        "Tap the refresh icon to pull the latest news feeds."
+        "The voice audio player is great for listening to community news while driving or multitasking.",
+        "Tap the small refresh circle icon to pull down the newest headlines."
       ],
       importantNotes: [
-        "Audio playback works in background mode on mobile browsers that support speech synthesis."
+        "Make sure your phone's volume is turned on if you want to use the audio reader feature."
       ]
     }
   },
   {
     id: "mem-birthdays",
     section: "member",
-    title: "4. Birthday Celebrations & Monthly Roll",
-    subtitle: "Celebrate chapter brothers and sisters with animated greetings and confetti",
+    title: "4. Celebrating Member Birthdays & Confetti",
+    subtitle: "Find out who is celebrating this month and shower them with festive confetti",
     icon: Cake,
-    badgeText: "Member",
+    badgeText: "Member Guide",
     badgeColor: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 border-teal-300 dark:border-teal-800",
     screenshotSrc: imgBirthdays,
-    screenshotAlt: "Mobile Birthday Celebrants Hub",
+    screenshotAlt: "Mobile Member Birthdays Screen",
     content: {
-      purpose: "Foster community spirit by highlighting monthly celebrants with festive confetti celebrations.",
-      screenTitle: "Member Birthdays (Mobile View)",
+      purpose: "Never miss a chapter brother or sister's birthday and celebrate them together.",
+      screenTitle: "Monthly Birthday Celebrations",
       uiCallouts: [
         {
           number: 1,
-          title: "Member Birthdays Card",
-          description: "Automatic monthly roll listing all chapter members celebrating in the active month.",
+          title: "Member Birthdays Banner",
+          description: "Highlights all chapter members having their birthdays in the current month.",
         },
         {
           number: 2,
-          title: "Celebrant Avatars & Names",
-          description: "Displays member initials/photo, full formal name, and birth date.",
+          title: "Celebrant Name & Date Card",
+          description: "Shows the celebrant's picture/initials, full name, and birth day (e.g. August 13).",
         },
         {
           number: 3,
-          title: "Interactive Celebration Trigger",
-          description: "Tapping any celebrant card triggers festive screen confetti and celebration greetings.",
+          title: "Tap to Celebrate Action",
+          description: "Tapping any celebrant's card launches colourful party confetti across your screen!",
         }
       ],
       steps: [
-        "Scroll to the 'Member Birthdays' section on the Home page.",
-        "View the list of celebrants for the current month.",
-        "Tap any celebrant's card to celebrate them with on-screen confetti.",
-        "Copy their contact or message them directly to send personal birthday wishes."
+        "Scroll down on the Home page to the 'Member Birthdays' card.",
+        "Look through the list of members celebrating this month.",
+        "Tap on any celebrant's name or picture to trigger a burst of celebration confetti on your screen.",
+        "Tap their phone number or WhatsApp icon to send them a warm personal birthday message."
       ],
       proTips: [
-        "Make sure your date of birth is up to date in 'My Profile' so the chapter can celebrate you on your special day.",
-        "Birth year is kept strictly private; only your birth day and month are displayed."
+        "Make sure your birthday is set in your profile so you can receive birthday love when your day arrives!",
+        "Your birth year is completely hidden for privacy; only your day and month are shown."
       ],
       importantNotes: [
-        "Only members with verified date of birth records appear in the monthly birthday roll."
+        "Only members with verified birthday records will appear in the monthly roll."
       ]
     }
   },
   {
     id: "mem-directory",
     section: "member",
-    title: "5. Member Directory & Multi-Field Search",
-    subtitle: "Search verified alumni by name, unity school, class year, profession, or location",
+    title: "5. Searching the Members Directory",
+    subtitle: "Easily search alumni by name, federal unity school, set year, or profession",
     icon: Users,
-    badgeText: "Member",
+    badgeText: "Member Guide",
     badgeColor: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 border-teal-300 dark:border-teal-800",
     screenshotSrc: imgMemberDirectory,
-    screenshotAlt: "Mobile Member Directory Search & Filters",
+    screenshotAlt: "Mobile Member Directory Screen",
     content: {
-      purpose: "Connect members with fellow USOSA alumni across 115 Federal Unity Colleges resident in Port Harcourt.",
-      screenTitle: "Members Directory (Mobile View)",
+      purpose: "Connect with classmates, find business partners, and reach fellow alumni across Port Harcourt.",
+      screenTitle: "Members Directory Search",
       uiCallouts: [
         {
           number: 1,
-          title: "Multi-Field Smart Search",
-          description: "Instant filtering by First Name, Surname, Federal College, Graduation Year, or Occupation.",
+          title: "Smart Search Input Box",
+          description: "Type any name, school name (e.g. 'Owerri', 'Enugu', 'Lagos'), graduation year (e.g. '2007'), or profession.",
         },
         {
           number: 2,
-          title: "Member Count Status",
-          description: "Shows real-time matching count (e.g., 'Showing 29 of 29 member entries').",
+          title: "Total Count Indicator",
+          description: "Shows how many members match your search in real time (e.g., 'Showing 29 of 29 member entries').",
         },
         {
           number: 3,
-          title: "Member Card Detail Deck",
-          description: "Displays verified avatar, full name, Federal Unity School badge, and contact links.",
+          title: "Member Information Card",
+          description: "Displays the member's photo/initials, full name, Federal Unity School, and occupation.",
         },
         {
           number: 4,
-          title: "Export to Excel (.csv) Action",
-          description: "Allows exporting the directory roster for chapter administration and offline records.",
+          title: "Green 'Export to Excel' Button",
+          description: "Allows chapter leaders to download a clean Excel CSV list of members for records.",
         }
       ],
       steps: [
-        "Navigate to the Members Directory via Admin or top menu.",
-        "Type any keyword into the search bar (e.g. 'Owerri', 'Doctor', 'Ikpeama').",
-        "Tap on any member card to view their verified details, Federal Unity School, and graduation year.",
-        "Tap phone or WhatsApp action icons to reach out directly."
+        "Open the Members Directory from the menu.",
+        "Tap on the search box with the magnifying glass.",
+        "Type any keyword (example: your school name like 'FGGC Owerri' or someone's surname).",
+        "The list instantly filters to show matching members.",
+        "Tap on any member's card to view their full details or contact them directly."
       ],
       proTips: [
-        "You can filter by graduation year (e.g. '2007') to find classmates from your set.",
+        "Try typing a year like '2005' or '2010' to find alumni who graduated in the same set as you.",
         "All 115 Federal Unity Colleges across Nigeria are supported."
       ],
       importantNotes: [
-        "Sensitive address details are protected and only accessible to authorized administrators."
+        "Private home addresses are protected and only accessible to authorized executive admins."
       ]
     }
   },
   {
     id: "mem-media-hub",
     section: "member",
-    title: "6. Event Media Hub & Album Browsing",
-    subtitle: "Browse chapter events, photos, videos, and switch between Grid and List layouts",
+    title: "6. Viewing Event Albums & Media Folders",
+    subtitle: "Browse photos and videos from past chapter gatherings, health walks, and hangouts",
     icon: FolderOpen,
-    badgeText: "Member",
+    badgeText: "Member Guide",
     badgeColor: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 border-teal-300 dark:border-teal-800",
     screenshotSrc: imgMediaFolders,
-    screenshotAlt: "Mobile Event Media Hub Folders",
+    screenshotAlt: "Mobile Event Media Hub Folders Screen",
     content: {
-      purpose: "Organize chapter memories and event galleries into categorized albums with cloud storage.",
-      screenTitle: "Media Hub & Folders (Mobile View)",
+      purpose: "Relive cherished memories, view high-definition event photos, and watch recorded video clips.",
+      screenTitle: "Event Media Folders",
       uiCallouts: [
         {
           number: 1,
-          title: "Event Folder Search",
-          description: "Quickly locate specific events by name, location, or date.",
+          title: "Search Folders Box",
+          description: "Type an event name (e.g., 'Aerobics' or 'Hangout') to quickly locate a specific photo album.",
         },
         {
           number: 2,
-          title: "Grid / List View Switcher",
-          description: "Toggle between 4-quadrant photo preview grids and compact list rows.",
+          title: "Grid / List Toggle Buttons",
+          description: "Tap the 4-box icon for big photo previews, or tap the list-lines icon for a compact list view.",
         },
         {
           number: 3,
-          title: "Event Album Cards",
-          description: "Shows event title, date, location, asset counter (e.g., '5 items'), and photo mosaic preview.",
+          title: "Event Album Cover Card",
+          description: "Shows 4 preview photos, the event title, date, and the total count of photos/videos inside.",
+        },
+        {
+          number: 4,
+          title: "Bottom Navigation 'Media' Icon",
+          description: "Tap the folder icon in the bottom menu at any time to open the Media Hub.",
         }
       ],
       steps: [
-        "Tap 'Media' in the bottom navigation bar.",
-        "Browse the available event folders (e.g., 'Testing event', 'URIP Health Aerobics').",
-        "Use the search box to find specific events by title or month.",
-        "Tap on any folder card to open the complete Event Media Gallery."
+        "Tap the 'Media' folder icon in the bottom navigation bar on your phone.",
+        "Scroll through the event albums (e.g., 'URIP Health Aerobics', 'Testing event').",
+        "Tap directly on any album card to open up all the photos and videos inside.",
+        "Tap the back arrow '<' at the top left anytime to return to the album list."
       ],
       proTips: [
-        "Use the List View toggle when browsing on slower mobile connections for faster scrolling.",
-        "Folders indicate the exact number of media items stored."
+        "If your internet connection is slow, tap the List icon (the lines) to load albums faster.",
+        "Each album tells you exactly how many photos and videos are stored inside."
       ],
       importantNotes: [
-        "All media items are optimized with responsive sizing for fast mobile loading."
+        "All photos are automatically optimized for your phone so they load smoothly without wasting data."
       ]
     }
   },
   {
     id: "mem-media-gallery",
     section: "member",
-    title: "7. Media Gallery, Multi-Upload & Batch Deletion",
-    subtitle: "View full-resolution photos, stream video clips, batch-select, and upload new media",
+    title: "7. Gallery Lightbox, Multi-Upload & Deletion",
+    subtitle: "View photos in full screen, select multiple files to delete, or upload new event media",
     icon: Upload,
-    badgeText: "Member",
+    badgeText: "Member Guide",
     badgeColor: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 border-teal-300 dark:border-teal-800",
     screenshotSrc: imgMediaGallery,
-    screenshotAlt: "Mobile Event Media Gallery & Controls",
+    screenshotAlt: "Mobile Event Media Gallery & Upload Controls",
     content: {
-      purpose: "Provide a comprehensive media gallery with live MB progress indicators, multi-select, and batch actions.",
-      screenTitle: "Event Media Gallery (Mobile View)",
+      purpose: "Manage event photos and videos with live upload progress bars and 1-tap batch selection.",
+      screenTitle: "Event Gallery & Multi-Upload",
       uiCallouts: [
         {
           number: 1,
-          title: "Select Multiple Action Button",
-          description: "Activates selection mode to choose multiple photos/videos for batch deletion or download.",
+          title: "Green 'Select Multiple' Button",
+          description: "Tap here to turn on checkmarks so you can select and delete multiple photos at once.",
         },
         {
           number: 2,
-          title: "Update / Add Media Button",
-          description: "Opens the Full-Page Multi-File Upload modal to add new photos and YouTube video links.",
+          title: "Teal 'Update / Add Media' Button",
+          description: "Tap here to pick photos and videos from your phone gallery and upload them to this album.",
         },
         {
           number: 3,
-          title: "Delete Folder Action",
-          description: "Permits folder deletion and cloud storage cleanup (with confirmation protection).",
+          title: "Red 'Delete Folder' Button",
+          description: "Allows deleting the entire album and its photos (with a safety confirmation prompt).",
         },
         {
           number: 4,
-          title: "Media Asset Grid",
-          description: "Interactive thumbnails with video play overlays, full-screen lightbox viewer, and captions.",
+          title: "Photo & Video Thumbnails",
+          description: "Tap any photo to view it full screen, or tap a video with the play icon to watch it.",
         }
       ],
       steps: [
-        "Inside any event album, tap on any thumbnail to open the full-screen photo/video lightbox.",
-        "To upload new media: Tap 'Update / Add Media'. Select photos or videos from your phone. Watch the live MB Transferred reading as files upload.",
-        "To delete multiple items: Tap 'Select Multiple'. Tap individual items (or 'Select All'), then tap 'Delete Selected' to purge.",
-        "Tap 'Return' to navigate back to the Media Hub."
+        "To view a photo or video: Tap on any picture to open it in full screen lightbox.",
+        "To upload new media: Tap the teal 'Update / Add Media' button. Select photos or videos from your phone. Watch the progress bar showing exactly how many Megabytes (MB) have uploaded.",
+        "To delete multiple photos: Tap 'Select Multiple'. Tap the checkmarks on the photos you want to remove, then tap 'Delete Selected'.",
+        "Tap the '<' back button at the top left when you want to return to the main folder list."
       ],
       proTips: [
-        "You can upload multiple high-res photos at once; the progress bar tracks individual and total MB transferred.",
-        "Future dates are restricted to prevent incorrect event timestamps."
+        "You can pick 10 or 20 photos at once from your phone gallery; the upload screen will upload them all smoothly.",
+        "Future dates are restricted on uploads to ensure accurate timestamps."
       ],
       importantNotes: [
-        "Deleted media is permanently removed from Cloud Storage and YouTube records."
+        "Deleted photos are permanently removed from cloud storage to protect member privacy."
       ]
     }
   },
@@ -416,51 +425,51 @@ const CHAPTERS: Chapter[] = [
   {
     id: "adm-portal",
     section: "admin",
-    title: "8. Administrator Portal & Governance",
-    subtitle: "Executive dashboard, member record management, moderation queue, and cloud sync",
+    title: "8. Administrator Portal & Chapter Governance",
+    subtitle: "Executive dashboard, member records, photo approval queue, and cloud storage management",
     icon: ShieldCheck,
     badgeText: "Admin Only",
     badgeColor: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300 dark:border-amber-800",
     screenshotSrc: imgAdminDashboard,
-    screenshotAlt: "Mobile Admin Portal Dashboard",
+    screenshotAlt: "Mobile Admin Portal Dashboard Screen",
     content: {
-      purpose: "Centralized administration console for chapter executives to manage members, moderate photos, and monitor cloud health.",
-      screenTitle: "Admin Portal (Mobile View)",
+      purpose: "Dedicated control panel for chapter executives to manage members, approve photos, and oversee system data.",
+      screenTitle: "Admin Portal & Governance",
       uiCallouts: [
         {
           number: 1,
-          title: "Admin Navigation Hub",
-          description: "Quick switcher between Members Directory, Events Management, Top Engagement, Media Moderation, and Cloud Media Integration.",
+          title: "Admin Navigation Switcher",
+          description: "Quick buttons to switch between Members Directory, Events, Top Engagement, Media Moderation, and Cloud Media.",
         },
         {
           number: 2,
-          title: "AI-Enhanced Member Search",
-          description: "Search across all member fields with real-time fuzzy matching.",
+          title: "AI-Powered Member Search",
+          description: "Instant search across all fields with fuzzy matching.",
         },
         {
           number: 3,
-          title: "Export to Excel (.csv)",
-          description: "Download the complete chapter membership dataset into Excel-compatible CSV format.",
+          title: "Green 'Export to Excel (.csv)' Button",
+          description: "Download the complete membership roster directly into an Excel spreadsheet file.",
         },
         {
           number: 4,
-          title: "Quick Action Toolbar",
-          description: "Back navigation, data refresh, and system health status.",
+          title: "Top Action Toolbar",
+          description: "Back button '<', refresh data circle, and system health status.",
         }
       ],
       steps: [
-        "Sign in using an authorized Google Admin account (e.g., kefox.nwoko@gmail.com or tarabateam@gmail.com).",
-        "Tap 'Admin' in the bottom navigation bar to open the Admin Portal.",
-        "Select 'Members Directory' to edit member profiles, assign admin roles, or seed 115 CSV records.",
-        "Select 'Media Moderation' to approve or reject pending member profile photos with 1-tap review.",
-        "Select 'Cloud Media Integration' to manage YouTube channel direct uploads and Google Drive backups."
+        "Sign in using an authorized Google Admin account (e.g. kefox.nwoko@gmail.com or tarabateam@gmail.com).",
+        "Tap the 'Admin' badge icon in the bottom navigation bar.",
+        "Tap 'Members Directory' to edit member profiles, assign roles, or seed member rosters.",
+        "Tap 'Media Moderation' to review and approve newly uploaded member profile pictures with 1 tap.",
+        "Tap 'Cloud Media Integration' to manage YouTube uploads and cloud backups."
       ],
       proTips: [
-        "Use 'Export to Excel' before general meetings to generate attendance rosters.",
-        "Photo approval queue ensures all member avatars meet community standards."
+        "Always use 'Export to Excel' before chapter general meetings to produce accurate physical attendance rolls.",
+        "The photo moderation queue helps maintain a professional, dignified appearance across the portal."
       ],
       importantNotes: [
-        "Only emails listed in the system's ADMIN_EMAILS configuration have access to the Admin Portal."
+        "Only emails configured in the chapter's authorized admin list have access to this section."
       ]
     }
   }
@@ -490,38 +499,38 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
   };
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 font-sans animate-fadeIn">
+    <div className="w-full max-w-5xl mx-auto px-3.5 sm:px-6 lg:px-8 py-5 sm:py-8 font-sans animate-fadeIn">
       {/* ── TOP HEADER / BREADCRUMB ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center space-x-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 sm:pb-6 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-start sm:items-center space-x-3">
           <button
             onClick={onBack}
-            className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all shadow-sm flex items-center justify-center cursor-pointer group"
+            className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-all shadow-sm flex items-center justify-center cursor-pointer shrink-0 group mt-0.5 sm:mt-0"
             title="Return to previous view"
           >
             <ArrowLeft className="w-5 h-5 group-hover:-translate-x-0.5 transition-transform" />
           </button>
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider bg-teal-100 dark:bg-teal-950/80 text-teal-800 dark:text-teal-300 border border-teal-300 dark:border-teal-800/60">
+          <div className="min-w-0">
+            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider bg-teal-100 dark:bg-teal-950/80 text-teal-800 dark:text-teal-300 border border-teal-300 dark:border-teal-800/60">
                 Official Help Center
               </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                • Version 2.4 (Mobile Edition)
+              <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium">
+                • Step-by-Step Mobile Guide
               </span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-1 flex items-center gap-2">
-              <BookOpen className="w-7 h-7 text-teal-700 dark:text-teal-400 shrink-0" />
-              User Manual & Operations Guide
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mt-1 flex items-center gap-2">
+              <BookOpen className="w-6 h-6 sm:w-7 sm:h-7 text-teal-700 dark:text-teal-400 shrink-0" />
+              <span>User Manual & Operations Guide</span>
             </h1>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 w-full sm:w-auto">
           <button
             onClick={handlePrint}
-            className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-xs font-semibold shadow-sm transition-all cursor-pointer"
+            className="flex-1 sm:flex-none inline-flex items-center justify-center space-x-1.5 px-3.5 py-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-bold shadow-sm transition-all cursor-pointer"
             title="Print or Save as PDF"
           >
             <Printer className="w-4 h-4 text-slate-600 dark:text-slate-400" />
@@ -529,7 +538,7 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
           </button>
           <button
             onClick={onBack}
-            className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold shadow-md shadow-teal-700/20 transition-all cursor-pointer"
+            className="flex-1 sm:flex-none inline-flex items-center justify-center space-x-1.5 px-4 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white text-xs font-bold shadow-md shadow-teal-700/20 transition-all cursor-pointer"
           >
             <span>Return to App</span>
           </button>
@@ -537,49 +546,49 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
       </div>
 
       {/* ── SECTION SELECTOR TABS & SEARCH BAR ── */}
-      <div className="mt-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        {/* Two-Part Switcher */}
-        <div className="inline-flex p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-inner">
+      <div className="mt-5 sm:mt-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Responsive Two-Part Grid Switcher */}
+        <div className="w-full md:w-auto grid grid-cols-1 sm:grid-cols-2 gap-2 p-1.5 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-inner">
           <button
             onClick={() => setActiveSection("member")}
-            className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+            className={`w-full flex items-center justify-center sm:justify-start space-x-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               activeSection === "member"
                 ? "bg-white dark:bg-slate-800 text-teal-800 dark:text-teal-300 shadow-md border border-slate-200/80 dark:border-slate-700"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
             }`}
           >
-            <User className="w-4 h-4" />
-            <span>Part 1: Member Operations Guide</span>
-            <span className="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+            <User className="w-4 h-4 shrink-0" />
+            <span>Part 1: Member Guide</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 shrink-0">
               7 Chapters
             </span>
           </button>
 
           <button
             onClick={() => setActiveSection("admin")}
-            className={`flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+            className={`w-full flex items-center justify-center sm:justify-start space-x-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               activeSection === "admin"
                 ? "bg-white dark:bg-slate-800 text-amber-800 dark:text-amber-300 shadow-md border border-slate-200/80 dark:border-slate-700"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
             }`}
           >
-            <ShieldCheck className="w-4 h-4" />
-            <span>Part 2: Administrator Portal Manual</span>
-            <span className="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+            <ShieldCheck className="w-4 h-4 shrink-0" />
+            <span>Part 2: Admin Portal</span>
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
               Executive
             </span>
           </button>
         </div>
 
-        {/* Live Search Filter */}
+        {/* Search Bar */}
         <div className="relative w-full md:w-80">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search manual topics & features..."
-            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-700 dark:focus:ring-teal-400 transition-all shadow-sm"
+            placeholder="Search topics (e.g. Login, Photos, News)..."
+            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs sm:text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-700 dark:focus:ring-teal-400 transition-all shadow-sm"
           />
           {searchQuery && (
             <button
@@ -592,14 +601,14 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
         </div>
       </div>
 
-      {/* ── CHAPTERS ACCORDION / LIST ── */}
-      <div className="mt-8 space-y-6">
+      {/* ── CHAPTERS LIST (ACCORDION) ── */}
+      <div className="mt-6 sm:mt-8 space-y-4 sm:space-y-6">
         {filteredChapters.length === 0 ? (
-          <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
+          <div className="p-8 sm:p-12 text-center bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800">
             <HelpCircle className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
             <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">No matching topics found</h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Try searching for terms like "Login", "Media", "News", "Birthdays", or "Admin".
+              Try searching for "Login", "Sign In", "Photos", "Birthdays", or "News".
             </p>
           </div>
         ) : (
@@ -611,48 +620,48 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
               <div
                 key={ch.id}
                 id={ch.id}
-                className={`rounded-3xl border transition-all duration-300 overflow-hidden ${
+                className={`rounded-2xl sm:rounded-3xl border transition-all duration-300 overflow-hidden ${
                   isExpanded
-                    ? "bg-white dark:bg-slate-900/95 border-teal-500/40 dark:border-teal-500/30 shadow-xl shadow-slate-900/5 ring-1 ring-teal-500/20"
-                    : "bg-white/80 dark:bg-slate-900/60 border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-sm"
+                    ? "bg-white dark:bg-slate-900 border-teal-500/50 dark:border-teal-500/40 shadow-xl ring-1 ring-teal-500/20"
+                    : "bg-white dark:bg-slate-900/70 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 shadow-sm"
                 }`}
               >
-                {/* Chapter Header Banner */}
+                {/* Chapter Banner Button */}
                 <button
                   onClick={() => setExpandedChapterId(isExpanded ? "" : ch.id)}
-                  className="w-full px-6 py-5 flex items-center justify-between text-left cursor-pointer transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/30"
+                  className="w-full px-4 py-4 sm:px-6 sm:py-5 flex items-center justify-between text-left cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40 gap-3"
                 >
-                  <div className="flex items-center space-x-4 min-w-0">
+                  <div className="flex items-start sm:items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
                     <div
-                      className={`p-3 rounded-2xl shrink-0 ${
+                      className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl shrink-0 mt-0.5 sm:mt-0 ${
                         ch.section === "admin"
                           ? "bg-amber-100 dark:bg-amber-950/80 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800/60"
                           : "bg-teal-100 dark:bg-teal-950/80 text-teal-700 dark:text-teal-300 border border-teal-300 dark:border-teal-800/60"
                       }`}
                     >
-                      <Icon className="w-5 h-5" />
+                      <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
                     </div>
 
-                    <div className="min-w-0">
-                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-0.5">
                         <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wide border ${ch.badgeColor}`}
+                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wide border ${ch.badgeColor}`}
                         >
                           {ch.badgeText}
                         </span>
-                        <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white truncate">
+                        <h2 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 dark:text-white leading-snug">
                           {ch.title}
                         </h2>
                       </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                      <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
                         {ch.subtitle}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-3 shrink-0 ml-4">
-                    <span className="hidden sm:inline-block text-[11px] font-semibold text-teal-700 dark:text-teal-400">
-                      {isExpanded ? "Hide Details" : "View Chapter & Phone Guide"}
+                  <div className="flex items-center space-x-2 shrink-0">
+                    <span className="hidden md:inline-block text-xs font-semibold text-teal-700 dark:text-teal-400">
+                      {isExpanded ? "Close Guide" : "Open Guide"}
                     </span>
                     <div
                       className={`p-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 transition-transform duration-300 ${
@@ -666,68 +675,68 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
 
                 {/* Chapter Expanded Body */}
                 {isExpanded && (
-                  <div className="px-6 pb-8 pt-2 border-t border-slate-100 dark:border-slate-800/80 animate-fadeIn">
-                    {/* Purpose Statement */}
-                    <div className="p-4 rounded-2xl bg-teal-50/70 dark:bg-teal-950/30 border border-teal-200/60 dark:border-teal-900/40 text-xs sm:text-sm text-teal-950 dark:text-teal-200 mb-8 flex items-start space-x-3">
-                      <Sparkles className="w-5 h-5 text-teal-700 dark:text-teal-400 shrink-0 mt-0.5" />
+                  <div className="px-4 pb-6 pt-2 sm:px-6 sm:pb-8 border-t border-slate-100 dark:border-slate-800 animate-fadeIn">
+                    {/* Plain English Objective */}
+                    <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-900/50 text-xs sm:text-sm text-teal-950 dark:text-teal-200 mb-6 flex items-start space-x-3">
+                      <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-teal-700 dark:text-teal-400 shrink-0 mt-0.5" />
                       <div>
-                        <span className="font-bold">Feature Objective: </span>
+                        <span className="font-bold">What this is for: </span>
                         <span>{ch.content.purpose}</span>
                       </div>
                     </div>
 
-                    {/* 2-Column Responsive Layout: Real Mobile Phone Frame vs Callout Specs */}
-                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                      {/* Left Column: Real Mobile Phone Screen Canvas */}
-                      <div className="lg:col-span-5 flex flex-col items-center">
-                        <div className="w-full max-w-[340px] bg-slate-950 p-3 rounded-[40px] shadow-2xl border-4 border-slate-800 ring-1 ring-slate-700/60 relative">
-                          {/* Speaker Notch */}
-                          <div className="absolute top-4 left-1/2 -translate-x-1/2 w-20 h-4 bg-slate-900 rounded-full z-20 flex items-center justify-center">
-                            <div className="w-3 h-3 rounded-full bg-slate-800 mr-2" />
+                    {/* Responsive Grid: Smartphone Canvas + Callouts / Steps */}
+                    <div className="flex flex-col lg:flex-row gap-6 sm:gap-8 items-start">
+                      {/* Left: Responsive Real Mobile Phone Mockup */}
+                      <div className="w-full lg:w-[340px] shrink-0 flex flex-col items-center">
+                        <div className="w-full max-w-[280px] sm:max-w-[320px] bg-slate-950 p-2.5 sm:p-3 rounded-[36px] sm:rounded-[44px] shadow-2xl border-4 border-slate-800 ring-1 ring-slate-700/60 relative">
+                          {/* Top Speaker / Dynamic Island */}
+                          <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-20 sm:w-24 h-4 sm:h-4.5 bg-slate-900 rounded-full z-20 flex items-center justify-center gap-1.5 shadow-inner">
+                            <div className="w-2.5 h-2.5 rounded-full bg-slate-800" />
                             <div className="w-8 h-1 rounded-full bg-slate-800" />
                           </div>
 
-                          {/* Screenshot Container */}
-                          <div className="rounded-[32px] overflow-hidden bg-slate-900 border border-slate-800 pt-3 relative">
+                          {/* Mobile Screenshot Screen */}
+                          <div className="rounded-[28px] sm:rounded-[34px] overflow-hidden bg-slate-900 border border-slate-800/80 pt-4 relative">
                             <img
                               src={ch.screenshotSrc}
                               alt={ch.screenshotAlt}
-                              className="w-full h-auto object-cover rounded-b-[30px] select-none pointer-events-none"
+                              className="w-full h-auto object-cover rounded-b-[26px] select-none pointer-events-none"
                               loading="lazy"
                             />
-                            {/* Glass overlay badge */}
-                            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-full border border-teal-500/40 text-[10px] text-teal-300 font-bold tracking-wider whitespace-nowrap">
+                            {/* Glass screen label */}
+                            <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 bg-slate-950/85 backdrop-blur-md px-3 py-1 rounded-full border border-teal-500/40 text-[9px] sm:text-[10px] text-teal-300 font-bold tracking-wider whitespace-nowrap shadow-lg">
                               📱 {ch.content.screenTitle}
                             </div>
                           </div>
 
                           {/* Home Bar Indicator */}
-                          <div className="w-24 h-1 bg-slate-700 rounded-full mx-auto mt-2" />
+                          <div className="w-20 sm:w-24 h-1 bg-slate-700 rounded-full mx-auto mt-2" />
                         </div>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-3 text-center font-medium">
-                          Captured live on mobile browser canvas
+                        <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 mt-2 text-center font-medium">
+                          Real mobile phone view
                         </p>
                       </div>
 
-                      {/* Right Column: Detailed Numbered Feature Callouts & Step-by-Step */}
-                      <div className="lg:col-span-7 space-y-6">
-                        {/* Numbered Callout Breakdown */}
+                      {/* Right: Callouts Breakdown, Simple Steps, Pro Tips */}
+                      <div className="w-full flex-1 space-y-5 sm:space-y-6">
+                        {/* 1. Key Interface Elements */}
                         <div>
                           <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-1.5">
                             <Layers className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                            Key Interface Elements & Badges
+                            <span>What You See on Your Screen</span>
                           </h3>
-                          <div className="space-y-3">
+                          <div className="space-y-2.5 sm:space-y-3">
                             {ch.content.uiCallouts.map((callout) => (
                               <div
                                 key={callout.number}
-                                className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 flex items-start space-x-3 hover:border-teal-500/40 transition-colors"
+                                className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex items-start gap-3 hover:border-teal-500/40 transition-colors"
                               >
-                                <span className="w-6 h-6 rounded-full bg-teal-700 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-sm">
+                                <span className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-teal-700 text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-sm mt-0.5">
                                   {callout.number}
                                 </span>
-                                <div>
-                                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                                <div className="min-w-0 flex-1">
+                                  <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white leading-snug">
                                     {callout.title}
                                   </h4>
                                   <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
@@ -739,50 +748,60 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
                           </div>
                         </div>
 
-                        {/* Step-by-Step How To Use */}
+                        {/* 2. Step-by-Step Instructions */}
                         <div>
                           <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3 flex items-center gap-1.5">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                            Step-by-Step Instructions
+                            <span>Simple Step-by-Step Actions</span>
                           </h3>
-                          <ol className="space-y-2.5">
+                          <div className="space-y-2">
                             {ch.content.steps.map((step, idx) => (
-                              <li
+                              <div
                                 key={idx}
-                                className="flex items-start space-x-3 text-xs sm:text-sm text-slate-700 dark:text-slate-300"
+                                className="flex items-start gap-3 p-2.5 sm:p-3 rounded-xl bg-white dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60"
                               >
-                                <span className="w-5 h-5 rounded-md bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-[11px] flex items-center justify-center shrink-0 mt-0.5">
+                                <span className="w-5 h-5 rounded-md bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 font-extrabold text-[11px] flex items-center justify-center shrink-0 mt-0.5">
                                   {idx + 1}
                                 </span>
-                                <span className="leading-relaxed">{step}</span>
-                              </li>
+                                <span className="text-xs sm:text-sm text-slate-700 dark:text-slate-200 leading-relaxed">
+                                  {step}
+                                </span>
+                              </div>
                             ))}
-                          </ol>
+                          </div>
                         </div>
 
-                        {/* Pro Tips & Notes */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                        {/* 3. Pro Tips & Important Notes */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4 pt-1">
                           {ch.content.proTips.length > 0 && (
-                            <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40">
+                            <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40">
                               <h4 className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5 mb-2">
-                                <span>💡</span> Pro Tip
+                                <Lightbulb className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                                <span>Helpful Tip</span>
                               </h4>
                               <ul className="space-y-1.5 text-xs text-amber-950 dark:text-amber-200">
                                 {ch.content.proTips.map((tip, idx) => (
-                                  <li key={idx} className="leading-relaxed">• {tip}</li>
+                                  <li key={idx} className="leading-relaxed flex items-start gap-1.5">
+                                    <span className="text-amber-600 font-bold">•</span>
+                                    <span>{tip}</span>
+                                  </li>
                                 ))}
                               </ul>
                             </div>
                           )}
 
                           {ch.content.importantNotes.length > 0 && (
-                            <div className="p-4 rounded-2xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40">
+                            <div className="p-3.5 sm:p-4 rounded-xl sm:rounded-2xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40">
                               <h4 className="text-xs font-bold text-blue-900 dark:text-blue-300 flex items-center gap-1.5 mb-2">
-                                <Info className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" /> Important Note
+                                <Info className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                <span>Please Remember</span>
                               </h4>
                               <ul className="space-y-1.5 text-xs text-blue-950 dark:text-blue-200">
                                 {ch.content.importantNotes.map((note, idx) => (
-                                  <li key={idx} className="leading-relaxed">• {note}</li>
+                                  <li key={idx} className="leading-relaxed flex items-start gap-1.5">
+                                    <span className="text-blue-600 font-bold">•</span>
+                                    <span>{note}</span>
+                                  </li>
                                 ))}
                               </ul>
                             </div>
@@ -799,16 +818,16 @@ export const UserManualView: React.FC<UserManualViewProps> = ({ onBack, isAdmin 
       </div>
 
       {/* ── FOOTER ACTIONS ── */}
-      <div className="mt-12 p-8 rounded-3xl bg-slate-900 text-white flex flex-col sm:flex-row items-center justify-between gap-6 shadow-xl">
+      <div className="mt-8 sm:mt-12 p-6 sm:p-8 rounded-2xl sm:rounded-3xl bg-slate-900 text-white flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6 shadow-xl">
         <div className="space-y-1 text-center sm:text-left">
-          <h3 className="text-lg font-bold">Have additional questions or feedback?</h3>
+          <h3 className="text-base sm:text-lg font-bold">Still need help or have a question?</h3>
           <p className="text-xs text-slate-400">
-            Reach out to chapter executives or use the AI Xplora assistant for 24/7 instant guidance.
+            Reach out to chapter executives anytime or use the AI Assistant for instant guidance.
           </p>
         </div>
         <button
           onClick={onBack}
-          className="px-6 py-3 rounded-2xl bg-teal-700 hover:bg-teal-600 text-white font-bold text-sm shadow-lg shadow-teal-700/30 transition-all cursor-pointer shrink-0"
+          className="w-full sm:w-auto px-6 py-3 rounded-xl bg-teal-700 hover:bg-teal-600 text-white font-bold text-xs sm:text-sm shadow-lg shadow-teal-700/30 transition-all cursor-pointer shrink-0"
         >
           Return to Community Portal
         </button>
