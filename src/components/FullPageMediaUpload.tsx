@@ -1187,13 +1187,13 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           {isUploading && (
             <div className="space-y-4 p-5 rounded-3xl bg-cyan-50/60 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800/80 shadow-md animate-fadeIn">
               {/* Header */}
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-2 text-xs font-semibold text-slate-800 dark:text-slate-200">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2 text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
                   <Loader2 className="w-4 h-4 animate-spin text-cyan-600 dark:text-cyan-400 shrink-0" />
-                  <span>{uploadProgressText}</span>
+                  <span className="truncate">{uploadProgressText}</span>
                 </span>
-                <span className="font-mono font-bold text-cyan-700 dark:text-cyan-300 text-sm">
-                  {uploadProgress}%
+                <span className="font-mono font-bold text-cyan-700 dark:text-cyan-300 text-sm shrink-0">
+                  {activeFileProgress}%
                 </span>
               </div>
 
@@ -1204,7 +1204,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                     Current {activeFileType === "video" ? "Video" : "Photo"}: <strong>{activeFileName || "Processing..."}</strong>
                   </span>
                   <span className="font-mono text-cyan-600 dark:text-cyan-400 font-semibold">
-                    {activeFileProgress}% ({activeFileMBTransferred} MB / {activeFileTotalMB} MB)
+                    {activeFileMBTransferred} MB / {activeFileTotalMB} MB
                   </span>
                 </div>
                 <div className="w-full h-2.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
