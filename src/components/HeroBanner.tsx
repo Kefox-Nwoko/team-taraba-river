@@ -176,13 +176,10 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
 
             {/* Right: Clean Participation Reference (Stripped of card boxes, simple and elegant) */}
             <div className="lg:col-span-7 lg:border-l lg:border-slate-200 dark:lg:border-slate-800 lg:pl-8 space-y-2.5">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-amber-500" />
                   <span>Community Engagement &amp; Points Reference</span>
-                </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-800 dark:text-amber-300 border border-amber-400/30">
-                  Participation Guide
                 </span>
               </div>
 
