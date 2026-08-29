@@ -33,6 +33,8 @@ import {
   queryAiXplora,
   searchMembers,
   fetchMembers,
+  markNewsArticleAsRead,
+  getMemberReadArticles,
   MemberSearchResult,
   NewsHeadline,
 } from "../services/apiClient";
@@ -81,8 +83,8 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
   const [selectedHeadline, setSelectedHeadline] = useState<NewsHeadline | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string>("");
 
-  const isAdmin = currentUser?.role === "admin";
-  const userReadStorageKey = `usosa_news_read_v1_${currentUser?.id || "guest"}`;
+  const memberId = currentUser?.id || "guest";
+  const userReadStorageKey = `usosa_news_read_v1_${memberId}`;
 
   const sortedHeadlines = useMemo(() => {
     return [...headlines].sort((a, b) => {
@@ -95,28 +97,43 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
     });
   }, [headlines]);
 
-  // Track read article IDs per member
+  // Track permanently read article IDs per member across logins & devices
   const [readArticleKeys, setReadArticleKeys] = useState<Set<string>>(() => {
     try {
-      const saved = localStorage.getItem(userReadStorageKey);
+      const saved = localStorage.getItem(userReadStorageKey) || localStorage.getItem("usosa_news_read_v1_persisted");
       return saved ? new Set(JSON.parse(saved)) : new Set();
     } catch {
       return new Set();
     }
   });
 
+  // Re-sync read articles permanently from Cloud Firestore & LocalStorage whenever user profile loads
+  useEffect(() => {
+    let isMounted = true;
+    getMemberReadArticles(memberId)
+      .then((articles) => {
+        if (isMounted && Array.isArray(articles) && articles.length > 0) {
+          setReadArticleKeys(new Set(articles));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, [memberId]);
+
   const handleOpenHeadline = (h: NewsHeadline) => {
     setSelectedHeadline(h);
-    if (!isAdmin) {
-      const key = (h.url || h.title).trim();
+    const key = (h.url || h.title).trim();
+    if (key) {
+      // Optimistic local state update
       setReadArticleKeys((prev) => {
         const next = new Set(prev);
         next.add(key);
-        try {
-          localStorage.setItem(userReadStorageKey, JSON.stringify(Array.from(next)));
-        } catch {}
         return next;
       });
+      // Permanent cloud & device sync (retains across 20+ logins)
+      markNewsArticleAsRead(memberId, key).catch(() => {});
     }
   };
 
@@ -544,7 +561,7 @@ What would you like to explore or find today?`;
               {!newsLoading &&
                 sortedHeadlines.map((h, idx) => {
                   const articleKey = (h.url || h.title).trim();
-                  const isUnread = !isAdmin && !readArticleKeys.has(articleKey);
+                  const isUnread = !readArticleKeys.has(articleKey);
 
                   return (
                     <button

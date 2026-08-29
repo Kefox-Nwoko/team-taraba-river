@@ -33,6 +33,7 @@ export interface Member {
   nextOfKinName?: string;
   nextOfKinPhone?: string;
   isGoogleAuth?: boolean;
+  readNewsArticles?: string[];
 }
 
 export interface GroupEvent {

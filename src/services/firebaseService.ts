@@ -11,6 +11,7 @@ import {
   orderBy,
   increment,
   serverTimestamp,
+  arrayUnion,
 } from "firebase/firestore";
 import {
   signInWithPopup,
@@ -195,6 +196,98 @@ export class FirebaseSyncManager {
     } catch (err) {
       logger.error("Failed to save member to Firestore", err);
     }
+  }
+
+  /**
+   * Persistently marks a headline article as read in both LocalStorage and Firestore
+   * so that across 20+ logins and different devices, read status is permanently retained.
+   */
+  public static async markNewsArticleAsRead(memberId: string, articleKey: string): Promise<string[]> {
+    const cleanKey = (articleKey || "").trim();
+    if (!cleanKey) return [];
+
+    const storageKeys = [
+      `usosa_news_read_v1_${memberId || "guest"}`,
+      `usosa_news_read_v1_persisted`,
+    ];
+
+    let currentSet = new Set<string>();
+
+    storageKeys.forEach((k) => {
+      try {
+        const saved = localStorage.getItem(k);
+        if (saved) {
+          const arr = JSON.parse(saved);
+          if (Array.isArray(arr)) arr.forEach((item) => currentSet.add(item));
+        }
+      } catch {}
+    });
+
+    currentSet.add(cleanKey);
+    const updatedArray = Array.from(currentSet);
+
+    storageKeys.forEach((k) => {
+      try {
+        localStorage.setItem(k, JSON.stringify(updatedArray));
+      } catch {}
+    });
+
+    // Cloud persistence in Firestore if member ID exists
+    if (memberId && memberId !== "guest") {
+      try {
+        const memberDocRef = doc(db, "members", memberId);
+        await setDoc(memberDocRef, { readNewsArticles: arrayUnion(cleanKey) }, { merge: true });
+      } catch (err) {
+        logger.warn("Failed to persist read news article to Firestore", err);
+      }
+    }
+
+    return updatedArray;
+  }
+
+  /**
+   * Fetches the complete, deduplicated set of read news articles across LocalStorage & Firestore.
+   */
+  public static async getMemberReadArticles(memberId: string): Promise<string[]> {
+    const merged = new Set<string>();
+
+    const storageKeys = [
+      `usosa_news_read_v1_${memberId || "guest"}`,
+      `usosa_news_read_v1_persisted`,
+    ];
+
+    storageKeys.forEach((k) => {
+      try {
+        const saved = localStorage.getItem(k);
+        if (saved) {
+          const arr = JSON.parse(saved);
+          if (Array.isArray(arr)) arr.forEach((item) => merged.add(item));
+        }
+      } catch {}
+    });
+
+    if (memberId && memberId !== "guest") {
+      try {
+        const memberDocRef = doc(db, "members", memberId);
+        const snap = await getDoc(memberDocRef);
+        if (snap.exists()) {
+          const data = snap.data();
+          if (Array.isArray(data?.readNewsArticles)) {
+            data.readNewsArticles.forEach((item: string) => merged.add(item));
+          }
+        }
+      } catch (err) {
+        logger.warn("Failed to read news articles from Firestore", err);
+      }
+    }
+
+    const result = Array.from(merged);
+    try {
+      localStorage.setItem(`usosa_news_read_v1_${memberId || "guest"}`, JSON.stringify(result));
+      localStorage.setItem(`usosa_news_read_v1_persisted`, JSON.stringify(result));
+    } catch {}
+
+    return result;
   }
   public static async saveEvent(event: GroupEvent): Promise<void> {
     try {

@@ -42,6 +42,14 @@ async function getAuthHeaders(): Promise<HeadersInit> {
     return { "Content-Type": "application/json" };
   }
 }
+export async function markNewsArticleAsRead(memberId: string, articleKey: string): Promise<string[]> {
+  return await FirebaseSyncManager.markNewsArticleAsRead(memberId, articleKey);
+}
+
+export async function getMemberReadArticles(memberId: string): Promise<string[]> {
+  return await FirebaseSyncManager.getMemberReadArticles(memberId);
+}
+
 export async function fetchMembers(): Promise<Member[]> {
   try {
     const headers = await getAuthHeaders();
