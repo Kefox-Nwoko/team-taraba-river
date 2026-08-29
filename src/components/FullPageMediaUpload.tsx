@@ -27,6 +27,7 @@ import {
   Clock,
 } from "lucide-react";
 import { uploadVideoDirectToYouTube, deleteYouTubeVideo } from "../services/youtubeDirectUpload";
+import { uploadImageDirectToDrive } from "../services/googleDriveDirectUpload";
 import { AppStateManager } from "../services/storage";
 
 interface MediaItem {
@@ -227,7 +228,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       return ytUrl;
     }
 
-    // 2. For Photos: Multi-tier resilient upload pipeline (WebP Compressed)
+    // 2. For Photos: Google Drive Direct Upload Pipeline (WebP Compressed)
     let uploadPayload: Blob = item.file;
     let contentType = item.file.type || "image/jpeg";
     let ext = "webp";
@@ -241,13 +242,25 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       ext = item.file.name.split(".").pop() || "jpg";
     }
 
-    onFileProgress(35);
+    const cleanName = (item.file.name.replace(/\.[^/.]+$/, "") || `media_${index + 1}`).replace(/[^a-zA-Z0-9._-]/g, "_") + `.${ext}`;
 
-    // Tier 1: Try Firebase Cloud Storage with timeout
+    // Tier 1: Stream directly to Google Drive folder
     try {
-      const cleanName = (item.file.name.replace(/\.[^/.]+$/, "") || `media_${index + 1}`).replace(/[^a-zA-Z0-9._-]/g, "_");
+      const driveUrl = await uploadImageDirectToDrive(
+        uploadPayload,
+        cleanName,
+        folderName,
+        onFileProgress
+      );
+      return driveUrl;
+    } catch (driveErr) {
+      logger.warn("[MediaUpload] Google Drive direct upload notice, engaging secondary cloud storage:", driveErr);
+    }
+
+    // Tier 2: Try Firebase Cloud Storage
+    try {
       const folderPath = "photos";
-      const storageRef = ref(storage, `events/${eventId}/${folderPath}/${Date.now()}_${index + 1}_${cleanName}.${ext}`);
+      const storageRef = ref(storage, `events/${eventId}/${folderPath}/${Date.now()}_${index + 1}_${cleanName}`);
 
       const downloadUrl = await new Promise<string>((resolve, reject) => {
         const uploadTask = uploadBytesResumable(storageRef, uploadPayload, {
@@ -258,7 +271,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           try {
             uploadTask.cancel();
           } catch {}
-          reject(new Error("Cloud storage timeout — activating instant WebP fallback"));
+          reject(new Error("Cloud storage timeout"));
         }, 8000);
 
         uploadTask.on(
@@ -289,8 +302,8 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       onFileProgress(100);
       return downloadUrl;
     } catch (storageErr) {
-      logger.info("[MediaUpload] Cloud storage bypassed, using high-efficiency WebP payload:", storageErr);
-      // Tier 2: Instant High-Efficiency WebP Data URL fallback (Zero failure, ultra-fast)
+      logger.info("[MediaUpload] Secondary storage bypassed, using high-efficiency WebP payload:", storageErr);
+      // Tier 3: Instant High-Efficiency WebP Data URL fallback (Zero failure, ultra-fast)
       onFileProgress(80);
       const dataUrl = await blobToDataUrl(uploadPayload);
       onFileProgress(100);
