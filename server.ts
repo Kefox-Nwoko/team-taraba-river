@@ -24,6 +24,7 @@ import {
   YouTubeParseSchema,
   LoginCredentialSchema,
   AdminAISearchSchema,
+  MemberContactSearchSchema,
   MediaUploadSchema,
   MediaFinalizeSchema,
 } from "./server/validation";
@@ -651,6 +652,133 @@ app.get("/api/members", conditionalAuth, async (req: Request, res: Response) => 
     res.status(500).json({ error: 'Failed to fetch members.' });
   }
 });
+
+// 4b. Member Service: AI-Powered Contact Search
+app.post("/api/members/search", conditionalAuth, async (req: Request, res: Response) => {
+  const validation = validateBody(MemberContactSearchSchema, req.body);
+  if (!validation.success) {
+    res.status(400).json({ error: (validation as any).error });
+    return;
+  }
+
+  const { query } = validation.data;
+
+  try {
+    const members = await getMembers();
+    const ai = getGeminiClient();
+
+    if (!ai || members.length === 0) {
+      const fallback = simpleContactSearch(members, query);
+      return res.json({ members: fallback, total: fallback.length, aiPowered: false });
+    }
+
+    const memberDb = members.map((m, idx) => ({
+      id: m.id,
+      name: m.fullName,
+      occupation: m.occupation || "",
+      skills: Array.isArray(m.skills) ? m.skills.join(", ") : "",
+      phone: m.phoneNumber || "",
+      email: m.email || "",
+    }));
+
+    const prompt = `You are a contact search assistant for a team member database.
+Your task: Given a user's search query, identify which team members match.
+
+MEMBERS DATABASE:
+${JSON.stringify(memberDb)}
+
+RULES:
+1. Match members whose occupation, skills, phone number, or email relates to the query.
+2. "medical doctor", "doctor", "health", "health management", "clinical management" should all match medical/health professionals.
+3. Be generous with related terms (e.g. "nurse" matches health, "engineer" matches technical roles).
+4. Return ONLY a JSON array of matching member IDs. No explanation.
+5. If no members match, return an empty array [].
+
+User query: "${query}"
+
+Return format: ["id1", "id2", ...]`;
+
+    let response: any = null;
+    try {
+      response = await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+        contents: prompt,
+        config: {
+          temperature: 0.2,
+          responseMimeType: "application/json",
+        },
+      });
+    } catch (aiErr: any) {
+      serverLogger.warn("AI contact search failed, falling back to simple search", { error: aiErr?.message || aiErr });
+      const fallback = simpleContactSearch(members, query);
+      return res.json({ members: fallback, total: fallback.length, aiPowered: false });
+    }
+
+    let matchedIds: string[] = [];
+    try {
+      const text = response?.text || "[]";
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        matchedIds = parsed.filter((id): id is string => typeof id === "string");
+      }
+    } catch {
+      matchedIds = [];
+    }
+
+    const idSet = new Set(matchedIds);
+    const results = members
+      .filter((m) => idSet.has(m.id))
+      .map((m) => ({
+        id: m.id,
+        fullName: m.fullName,
+        firstName: m.firstName,
+        surname: m.surname,
+        occupation: m.occupation,
+        skills: m.skills,
+        phoneNumber: m.phoneNumber,
+        whatsappNumber: m.whatsappNumber,
+        email: m.email,
+        photoUrl: m.photoUrl,
+        title: m.title,
+      }));
+
+    res.json({ members: results, total: results.length, aiPowered: true });
+  } catch (error) {
+    serverLogger.error("Member search error", error);
+    res.status(500).json({ error: "Member search failed." });
+  }
+});
+
+function simpleContactSearch(members: Member[], query: string): Array<{ id: string; fullName: string; firstName?: string; surname?: string; occupation: string; skills: string[]; phoneNumber: string; whatsappNumber?: string; email: string; photoUrl: string; title?: string }> {
+  const term = query.toLowerCase().trim();
+  return members
+    .filter((m) => {
+      const searchFields = [
+        m.fullName, m.firstName, m.surname, m.occupation,
+        m.phoneNumber, m.whatsappNumber, m.email,
+        ...(m.skills || []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      const termWords = term.split(/\s+/).filter(Boolean);
+      return termWords.every((word) => searchFields.includes(word));
+    })
+    .map((m) => ({
+      id: m.id,
+      fullName: m.fullName,
+      firstName: m.firstName,
+      surname: m.surname,
+      occupation: m.occupation,
+      skills: m.skills,
+      phoneNumber: m.phoneNumber,
+      whatsappNumber: m.whatsappNumber,
+      email: m.email,
+      photoUrl: m.photoUrl,
+      title: m.title,
+    }));
+}
 
 // 5. Member Service: Registration
 app.post("/api/members", conditionalAuth, async (req: Request, res: Response) => {

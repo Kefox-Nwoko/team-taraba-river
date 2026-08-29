@@ -103,6 +103,12 @@ export const AdminAISearchSchema = z.object({
   query: z.string().min(1, 'Search query is required').max(500),
 });
 
+// --- Member Contact Search Schema ---
+
+export const MemberContactSearchSchema = z.object({
+  query: z.string().min(1, 'Search query is required').max(500),
+});
+
 // --- Media Pipeline Schemas ---
 
 export const MediaUploadSchema = z.object({
