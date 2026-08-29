@@ -175,50 +175,51 @@ const CHAPTERS: Chapter[] = [
   {
     id: "mem-news",
     section: "member",
-    title: "3. Reading USOSA News Updates",
-    subtitle: "Stay informed with the latest 15 national unity school stories and alumni headlines",
+    title: "3. USOSA News, AI Xplora & Contact Search",
+    subtitle: "Browse latest unity school stories, ask AI anything live on the web, or find members by profession, phone, and email",
     icon: Newspaper,
     badgeText: "Member Guide",
     badgeColor: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 border-teal-300 dark:border-teal-800",
     screenshotSrc: imgNewsReader,
     screenshotAlt: "Mobile USOSA News Update Screen",
     content: {
-      purpose: "Read curated national alumni news stories, national secretariat updates, and official communiques directly in the portal.",
-      screenTitle: "USOSA News Updates",
+      purpose: "Read national alumni news stories, access live web AI intelligence, and quickly find member contact details by occupation (e.g. medical doctors for urgent health emergencies).",
+      screenTitle: "News, AI Xplora & Contact Hub",
       uiCallouts: [
         {
           number: 1,
-          title: "USOSA News Update Card",
+          title: "Headlines Tab",
           description: "Shows the latest 15 headlines and stories from Federal Unity Schools across Nigeria.",
         },
         {
           number: 2,
-          title: "'Expand' Button",
-          description: "Tap here to open up the full list of news articles with story summaries and photos.",
+          title: "AI Xplora Tab",
+          description: "Live web-connected AI assistant capable of answering questions on science, tech, research, and unity schools.",
         },
         {
           number: 3,
-          title: "Headlines & AI Xplora Switcher",
-          description: "Switch between browsing latest articles and asking the AI questions about unity schools.",
+          title: "Contact Search Tab (New)",
+          description: "Dedicated AI search scoped exclusively to querying the full registered member database by occupation, skills, phone, and email.",
         },
         {
           number: 4,
-          title: "Blue 'Scroll Up' Arrow",
-          description: "Tap this floating blue circle anytime to instantly return to the top of the page.",
+          title: "'Expand' Button",
+          description: "Tap here to open up the full list of news articles with story summaries and photos.",
         }
       ],
       steps: [
-        "On the Home page, scroll down until you see the yellow 'USOSA News Update' card.",
-        "Tap the 'Expand' button on the right side of the card to see all news articles.",
-        "Scroll through the headlines and tap on any story to read the full summary or original source article.",
-        "Tap the refresh icon on the card anytime to check for new stories."
+        "On the Home page, scroll down to the 'USOSA News & AI Knowledge Hub' card.",
+        "Tap 'Headlines' to read curated national stories, or tap 'Expand' to view complete summaries.",
+        "Tap 'AI Xplora' to chat with live web AI and explore topics on any subject.",
+        "Tap 'Contact Search' to find doctors, lawyers, engineers, or specific phone numbers (e.g. search 'medical doctor' or 'clinical management' for health emergencies).",
+        "Tap the phone or WhatsApp icons on any result to call or message the member immediately."
       ],
       proTips: [
-        "Tap the refresh circle icon at any time to pull in breaking news and latest stories.",
-        "You can tap the 'AI Xplora' tab to ask questions about the news stories or federal unity school history."
+        "In Contact Search, you can tap quick filter chips like '🏥 Medical Doctors & Health' for instant 1-tap discovery.",
+        "Your AI Xplora chat history is securely saved on your device for 3 months so you can resume conversations anytime."
       ],
       importantNotes: [
-        "USOSA news feeds update automatically from verified national alumni sources."
+        "Contact Search queries only verified registered chapter members to protect privacy while enabling rapid emergency response."
       ]
     }
   },

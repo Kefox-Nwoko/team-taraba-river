@@ -1221,6 +1221,171 @@ export async function queryAiXplora(
   };
 }
 
+export interface MemberSearchResult {
+  id: string;
+  fullName: string;
+  firstName?: string;
+  surname?: string;
+  occupation: string;
+  skills: string[];
+  phoneNumber: string;
+  whatsappNumber?: string;
+  email: string;
+  photoUrl: string;
+  title?: string;
+  schoolName?: string;
+  gradYear?: string;
+}
+
+export interface MemberSearchResponse {
+  members: MemberSearchResult[];
+  total: number;
+  aiPowered: boolean;
+}
+
+const OCCUPATION_SYNONYMS: Record<string, string[]> = {
+  doctor: ["medical", "physician", "doctor", "health", "clinical", "medicine", "surgeon", "dr", "pediatrician", "cardiologist", "pathologist", "healthcare", "hospital", "clinic", "treatment", "dental", "dentist", "optometrist", "radiologist", "pharmacist", "nurse", "nursing", "emergency"],
+  medical: ["doctor", "physician", "health", "clinical", "medicine", "surgeon", "healthcare", "hospital", "pediatrician", "nurse", "emergency", "dr"],
+  "medical doctor": ["doctor", "physician", "medical", "health", "clinical", "medicine", "surgeon", "dr", "pediatrician", "consultant physician", "healthcare", "hospital"],
+  health: ["doctor", "medical", "physician", "clinical", "medicine", "healthcare", "hospital", "wellness", "fitness", "nurse", "health management", "emergency"],
+  "health management": ["doctor", "medical", "hospital", "clinical", "health", "healthcare", "administrator", "public health", "physician"],
+  "clinical management": ["doctor", "medical", "hospital", "clinical", "health", "physician", "surgeon", "clinic", "treatment"],
+  clinical: ["doctor", "medical", "hospital", "clinical", "health", "physician", "surgeon", "clinic", "medicine"],
+  nurse: ["nursing", "medical", "health", "hospital", "clinical", "healthcare", "caregiver"],
+  lawyer: ["attorney", "legal", "solicitor", "barrister", "advocate", "counsel", "law", "jurist", "litigation"],
+  legal: ["lawyer", "attorney", "solicitor", "barrister", "advocate", "counsel", "law", "chambers"],
+  engineer: ["engineering", "technical", "technologist", "developer", "software", "mechanical", "electrical", "civil", "petroleum", "chemical", "structural"],
+  engineering: ["engineer", "technical", "mechanical", "electrical", "civil", "petroleum", "chemical", "structural", "software"],
+  software: ["developer", "programmer", "engineer", "tech", "coding", "web", "frontend", "backend", "fullstack", "it", "devops"],
+  tech: ["software", "developer", "it", "engineer", "data", "computer", "systems", "network", "cybersecurity", "ai"],
+  accountant: ["accounting", "finance", "audit", "tax", "banking", "banker", "financial", "bookkeeper", "chartered"],
+  accounting: ["accountant", "finance", "audit", "tax", "banking", "financial", "bookkeeper"],
+  finance: ["accountant", "accounting", "banker", "banking", "financial", "investment", "audit", "tax", "treasury"],
+  teacher: ["lecturer", "educator", "professor", "tutor", "instructor", "academic", "education"],
+  education: ["teacher", "lecturer", "educator", "professor", "tutor", "academic", "school", "training"],
+};
+
+export function performClientSemanticMemberSearch(allMembers: Member[], query: string): MemberSearchResult[] {
+  const qClean = query.toLowerCase().trim();
+  if (!qClean || qClean.length < 2) return [];
+
+  // Expand query terms with synonyms
+  const queryTokens = qClean.split(/\s+/).filter(Boolean);
+  const expandedSynonyms = new Set<string>();
+  expandedSynonyms.add(qClean);
+
+  for (const [key, syns] of Object.entries(OCCUPATION_SYNONYMS)) {
+    if (qClean.includes(key) || key.includes(qClean) || queryTokens.some((t) => key.includes(t))) {
+      syns.forEach((s) => expandedSynonyms.add(s));
+    }
+  }
+  queryTokens.forEach((t) => {
+    if (OCCUPATION_SYNONYMS[t]) {
+      OCCUPATION_SYNONYMS[t].forEach((s) => expandedSynonyms.add(s));
+    }
+  });
+
+  const queryDigitsOnly = qClean.replace(/\D/g, "");
+
+  const scored = allMembers.map((m) => {
+    let score = 0;
+    const occ = (m.occupation || "").toLowerCase();
+    const skills = Array.isArray(m.skills) ? m.skills.map((s) => s.toLowerCase()).join(" ") : "";
+    const name = `${m.title || ""} ${m.firstName || ""} ${m.surname || ""} ${m.fullName || ""}`.toLowerCase();
+    const phone = (m.phoneNumber || "").toLowerCase();
+    const phoneDigits = phone.replace(/\D/g, "");
+    const whatsapp = (m.whatsappNumber || "").toLowerCase();
+    const whatsappDigits = whatsapp.replace(/\D/g, "");
+    const email = (m.email || "").toLowerCase();
+    const school = (m.schoolName || "").toLowerCase();
+
+    // 1. Direct phone / email matching (Highest relevance for contact search)
+    if (queryDigitsOnly && queryDigitsOnly.length >= 4) {
+      if (phoneDigits.includes(queryDigitsOnly) || whatsappDigits.includes(queryDigitsOnly)) score += 50;
+    }
+    if (email.includes(qClean)) score += 40;
+
+    // 2. Direct occupation & skills exact or partial match
+    if (occ.includes(qClean)) score += 35;
+    if (skills.includes(qClean)) score += 30;
+
+    // 3. Name & School match
+    if (name.includes(qClean)) score += 25;
+    if (school.includes(qClean)) score += 15;
+
+    // 4. Token & Synonym matches
+    for (const token of queryTokens) {
+      if (token.length < 2) continue;
+      if (occ.includes(token)) score += 15;
+      if (skills.includes(token)) score += 12;
+      if (name.includes(token)) score += 10;
+    }
+
+    for (const syn of Array.from(expandedSynonyms)) {
+      if (syn.length < 3) continue;
+      if (occ.includes(syn)) score += 20;
+      if (skills.includes(syn)) score += 15;
+    }
+
+    return {
+      member: {
+        id: m.id,
+        fullName: m.fullName || "Community Member",
+        firstName: m.firstName,
+        surname: m.surname,
+        occupation: m.occupation || "Member",
+        skills: Array.isArray(m.skills) ? m.skills : [],
+        phoneNumber: m.phoneNumber || "",
+        whatsappNumber: m.whatsappNumber || m.phoneNumber || "",
+        email: m.email || "",
+        photoUrl: m.photoUrl || "",
+        title: m.title || "",
+        schoolName: m.schoolName || "",
+        gradYear: m.gradYear ? String(m.gradYear) : "",
+      },
+      score,
+    };
+  });
+
+  return scored
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((s) => s.member);
+}
+
+export async function searchMembers(query: string): Promise<MemberSearchResponse> {
+  const localMembers = AppStateManager.getMembers();
+
+  // Try backend API first
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(apiUrl("/api/members/search"), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ query }),
+    });
+    const contentType = res.headers.get("content-type") || "";
+    if (res.ok && contentType.includes("application/json")) {
+      const data = await res.json();
+      if (Array.isArray(data.members) && data.members.length > 0) {
+        return {
+          members: data.members,
+          total: typeof data.total === "number" ? data.total : data.members.length,
+          aiPowered: Boolean(data.aiPowered),
+        };
+      }
+    }
+  } catch {}
+
+  // Fallback to local / cached semantic search
+  const fallbackResults = performClientSemanticMemberSearch(localMembers, query);
+  return {
+    members: fallbackResults,
+    total: fallbackResults.length,
+    aiPowered: true,
+  };
+}
+
 export async function adminAISearch(query: string): Promise<Member[]> {
   try {
     const headers = await getAuthHeaders();
