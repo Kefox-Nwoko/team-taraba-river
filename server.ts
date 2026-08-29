@@ -672,36 +672,47 @@ app.post("/api/members/search", conditionalAuth, async (req: Request, res: Respo
       return res.json({ members: fallback, total: fallback.length, aiPowered: false });
     }
 
-    const memberDb = members.map((m, idx) => ({
+    const memberDb = members.map((m) => ({
       id: m.id,
-      name: m.fullName,
+      name: `${m.title ? `${m.title} ` : ""}${m.fullName || ""}`.trim(),
       occupation: m.occupation || "",
       skills: Array.isArray(m.skills) ? m.skills.join(", ") : "",
+      school: m.schoolName || "",
+      gradYear: m.gradYear || "",
+      location: [m.area, m.otherArea, m.estateName, m.streetName].filter(Boolean).join(", "),
       phone: m.phoneNumber || "",
       email: m.email || "",
     }));
 
-    const prompt = `You are a contact search assistant for a team member database.
-Your task: Given a user's search query, identify which team members match.
+    const prompt = `You are an intelligent contact & networking assistant for the Team Taraba River member database.
+Your task: Understand the user's search prompt or question (which may be conversational, a direct keyword, a natural language question, or specific contact details) and identify ALL matching team members.
 
 MEMBERS DATABASE:
 ${JSON.stringify(memberDb)}
 
-RULES:
-1. Match members whose occupation, skills, phone number, email, or name relates to the query across ANY field of work or life.
-2. Be generous with domain synonyms across all industries:
-   - Health & Medicine: "medical doctor", "physician", "doctor", "health", "clinical management", "surgeon", "nurse", "pharmacist".
-   - Legal: "lawyer", "attorney", "barrister", "solicitor", "legal", "counsel".
-   - Engineering & Tech: "engineer", "software", "tech", "developer", "civil", "mechanical", "electrical", "petroleum".
-   - Finance & Business: "accountant", "accounting", "banker", "finance", "consultant", "analyst", "project manager".
-   - Real Estate & Built Environment: "architect", "real estate", "property", "builder", "surveyor", "interior designer".
-   - Media, PR & Arts: "journalist", "media", "pr", "marketing", "designer", "photographer", "content creator".
-   - Logistics, Agriculture & Energy: "logistics", "supply chain", "oil and gas", "energy", "farming", "agribusiness".
-3. Support direct phone number digit queries and email substring queries.
-4. Return ONLY a JSON array of matching member IDs. No explanation.
-5. If no members match, return an empty array [].
+RULES & CAPABILITIES:
+1. Flexible Prompt Understanding: Interpret natural conversational requests like:
+   - "I need a doctor for health emergency"
+   - "Who is the lawyer in our chapter?"
+   - "Find someone who does architecture or building plans"
+   - "Who works in tech, programming or IT?"
+   - "Members who went to FGGC Owerri or graduated in 2007"
+   - "Who lives around Choba or Abuja Campus?"
+   - "What is Kefox's phone number?"
+   - Direct digits ("0703...", "0814...") or emails ("@gmail.com")
+2. Broad Cross-Industry Semantic Matchmaking:
+   - Health & Emergency: "medical doctor", "physician", "doctor", "health", "clinical management", "surgeon", "nurse", "pharmacist", "dentist".
+   - Legal: "lawyer", "attorney", "barrister", "solicitor", "legal", "counsel", "advocate".
+   - Tech & Engineering: "engineer", "software", "tech", "developer", "civil", "mechanical", "electrical", "petroleum", "data", "cybersecurity".
+   - Finance & Business: "accountant", "accounting", "banker", "finance", "consultant", "tax", "audit", "analyst", "project manager".
+   - Real Estate & Built Environment: "architect", "real estate", "property", "builder", "surveyor", "interior designer", "construction".
+   - Media, PR & Creative: "journalist", "media", "pr", "marketing", "designer", "photographer", "content creator", "writer".
+   - Logistics, Energy & Agriculture: "logistics", "supply chain", "oil and gas", "energy", "farming", "agribusiness", "procurement".
+   - Education & Academia: "lecturer", "teacher", "professor", "tutor", "academic", "researcher".
+3. Return ONLY a JSON array of matching member IDs. No explanations, no markdown ticks.
+4. If no members match, return an empty array [].
 
-User query: "${query}"
+User prompt: "${query}"
 
 Return format: ["id1", "id2", ...]`;
 

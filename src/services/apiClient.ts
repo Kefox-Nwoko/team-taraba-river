@@ -1311,21 +1311,33 @@ const OCCUPATION_SYNONYMS: Record<string, string[]> = {
   education: ["teacher", "lecturer", "educator", "professor", "tutor", "academic", "school", "training"],
 };
 
+const PROMPT_STOP_WORDS = new Set([
+  "who", "is", "are", "the", "in", "our", "chapter", "give", "me", "contact", "contacts",
+  "of", "find", "a", "an", "someone", "can", "help", "with", "where", "do", "we",
+  "have", "looking", "for", "please", "search", "show", "tell", "any", "which",
+  "members", "member", "people", "person", "need", "i", "what", "whats", "number", "phone",
+  "email", "address", "details", "info", "information", "to", "at", "from"
+]);
+
 export function performClientSemanticMemberSearch(allMembers: Member[], query: string): MemberSearchResult[] {
   const qClean = query.toLowerCase().trim();
   if (!qClean || qClean.length < 2) return [];
 
-  // Expand query terms with synonyms
-  const queryTokens = qClean.split(/\s+/).filter(Boolean);
+  // Tokenize and extract both raw tokens and meaningful keyword tokens
+  const allTokens = qClean.split(/[\s,?.!/\\-]+/).filter(Boolean);
+  const keywordTokens = allTokens.filter((t) => !PROMPT_STOP_WORDS.has(t) && t.length >= 2);
+  const effectiveTokens = keywordTokens.length > 0 ? keywordTokens : allTokens;
+
   const expandedSynonyms = new Set<string>();
   expandedSynonyms.add(qClean);
+  effectiveTokens.forEach((t) => expandedSynonyms.add(t));
 
   for (const [key, syns] of Object.entries(OCCUPATION_SYNONYMS)) {
-    if (qClean.includes(key) || key.includes(qClean) || queryTokens.some((t) => key.includes(t))) {
+    if (qClean.includes(key) || key.includes(qClean) || effectiveTokens.some((t) => key.includes(t) || t.includes(key))) {
       syns.forEach((s) => expandedSynonyms.add(s));
     }
   }
-  queryTokens.forEach((t) => {
+  effectiveTokens.forEach((t) => {
     if (OCCUPATION_SYNONYMS[t]) {
       OCCUPATION_SYNONYMS[t].forEach((s) => expandedSynonyms.add(s));
     }
@@ -1333,7 +1345,8 @@ export function performClientSemanticMemberSearch(allMembers: Member[], query: s
 
   const queryDigitsOnly = qClean.replace(/\D/g, "");
 
-  const scored = allMembers.map((m) => {
+  const scored = allMembers.map((rawM) => {
+    const m = sanitizeMemberRecord(rawM);
     let score = 0;
     const occ = (m.occupation || "").toLowerCase();
     const skills = Array.isArray(m.skills) ? m.skills.map((s) => s.toLowerCase()).join(" ") : "";
@@ -1344,33 +1357,39 @@ export function performClientSemanticMemberSearch(allMembers: Member[], query: s
     const whatsappDigits = whatsapp.replace(/\D/g, "");
     const email = (m.email || "").toLowerCase();
     const school = (m.schoolName || "").toLowerCase();
+    const gradYear = (m.gradYear ? String(m.gradYear) : "").toLowerCase();
+    const location = `${m.area || ""} ${m.otherArea || ""} ${m.estateName || ""} ${m.streetName || ""}`.toLowerCase();
 
-    // 1. Direct phone / email matching (Highest relevance for contact search)
+    // 1. Direct phone / email matching (Highest relevance)
     if (queryDigitsOnly && queryDigitsOnly.length >= 4) {
-      if (phoneDigits.includes(queryDigitsOnly) || whatsappDigits.includes(queryDigitsOnly)) score += 50;
+      if (phoneDigits.includes(queryDigitsOnly) || whatsappDigits.includes(queryDigitsOnly)) score += 60;
     }
-    if (email.includes(qClean)) score += 40;
+    if (email && (email.includes(qClean) || effectiveTokens.some((t) => t.length >= 4 && email.includes(t)))) {
+      score += 45;
+    }
 
-    // 2. Direct occupation & skills exact or partial match
-    if (occ.includes(qClean)) score += 35;
-    if (skills.includes(qClean)) score += 30;
+    // 2. Direct exact or multi-word match
+    if (occ && (occ.includes(qClean) || qClean.includes(occ))) score += 40;
+    if (skills && (skills.includes(qClean) || qClean.includes(skills))) score += 35;
+    if (name && (name.includes(qClean) || qClean.includes(name))) score += 35;
+    if (school && (school.includes(qClean) || qClean.includes(school))) score += 25;
+    if (location && location.includes(qClean)) score += 20;
 
-    // 3. Name & School match
-    if (name.includes(qClean)) score += 25;
-    if (school.includes(qClean)) score += 15;
-
-    // 4. Token & Synonym matches
-    for (const token of queryTokens) {
+    // 3. Keyword Token & Cross-Industry Synonym matching
+    for (const token of effectiveTokens) {
       if (token.length < 2) continue;
-      if (occ.includes(token)) score += 15;
-      if (skills.includes(token)) score += 12;
-      if (name.includes(token)) score += 10;
+      if (occ.includes(token)) score += 18;
+      if (skills.includes(token)) score += 14;
+      if (name.includes(token)) score += 15;
+      if (school.includes(token)) score += 10;
+      if (location.includes(token)) score += 10;
+      if (gradYear === token) score += 12;
     }
 
     for (const syn of Array.from(expandedSynonyms)) {
       if (syn.length < 3) continue;
-      if (occ.includes(syn)) score += 20;
-      if (skills.includes(syn)) score += 15;
+      if (occ.includes(syn)) score += 22;
+      if (skills.includes(syn)) score += 16;
     }
 
     return {

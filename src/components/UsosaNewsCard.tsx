@@ -56,21 +56,6 @@ interface ChatMessage {
 const TABS = ["Headlines", "AI Xplora", "Contact Search"] as const;
 type Tab = (typeof TABS)[number];
 
-const QUICK_CONTACT_FILTERS = [
-  { label: "🏥 Medical & Health", query: "medical doctor" },
-  { label: "⚖️ Legal & Law", query: "lawyer" },
-  { label: "💻 Tech & Software", query: "software engineer" },
-  { label: "🏗️ Engineering", query: "engineer" },
-  { label: "🏛️ Architecture & Property", query: "real estate architect" },
-  { label: "📊 Finance & Banking", query: "finance accountant" },
-  { label: "🛢️ Oil, Gas & Energy", query: "petroleum energy" },
-  { label: "🎨 Media & Creative", query: "media marketing" },
-  { label: "📦 Logistics & Supply", query: "logistics" },
-  { label: "🌾 Agriculture", query: "agriculture" },
-  { label: "👔 Consulting & Strategy", query: "consultant" },
-  { label: "🎓 Education", query: "education" },
-];
-
 export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => {
   const [activeTab, setActiveTab] = useState<Tab>("Headlines");
   const [isCollapsedOnMobile, setIsCollapsedOnMobile] = useState(true);
@@ -351,11 +336,6 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
   function handleContactSearch(e: React.FormEvent) {
     e.preventDefault();
     executeContactSearch(contactQuery);
-  }
-
-  function handleQuickChipClick(chipQuery: string) {
-    setContactQuery(chipQuery);
-    executeContactSearch(chipQuery);
   }
 
   const handleCopyContact = (m: MemberSearchResult) => {
@@ -734,8 +714,8 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                 </div>
               </div>
 
-              {/* Search Form with Instant Chips */}
-              <div className="shrink-0 p-3.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2.5">
+              {/* Search Form */}
+              <div className="shrink-0 p-3.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
                 <form onSubmit={handleContactSearch} className="flex items-center gap-2">
                   <div className="relative flex-1">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
@@ -743,7 +723,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                       type="text"
                       value={contactQuery}
                       onChange={(e) => setContactQuery(e.target.value)}
-                      placeholder="Search any profession, skills, phone, email (e.g. 'doctor', 'lawyer', 'engineer', 'real estate')..."
+                      placeholder="Ask or prompt anything (e.g. 'find a doctor', 'who is a lawyer', '0803...', 'architects')..."
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-9 py-2.5 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                     />
                     {contactQuery && (
@@ -754,7 +734,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                           setContactResults([]);
                           setContactTotal(0);
                         }}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-1 cursor-pointer"
                       >
                         ✕
                       </button>
@@ -763,7 +743,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                   <button
                     type="submit"
                     disabled={!contactQuery.trim() || contactLoading}
-                    className="px-3.5 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 disabled:opacity-40 text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 shrink-0 transition shadow-sm cursor-pointer"
+                    className="px-4 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 disabled:opacity-40 text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 shrink-0 transition shadow-sm cursor-pointer"
                   >
                     {contactLoading ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -775,25 +755,6 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                     )}
                   </button>
                 </form>
-
-                {/* Quick 1-Tap Filter Chips */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-                  <span className="text-[11px] font-bold text-slate-400 shrink-0">Suggestions:</span>
-                  {QUICK_CONTACT_FILTERS.map((chip, cIdx) => (
-                    <button
-                      key={cIdx}
-                      type="button"
-                      onClick={() => handleQuickChipClick(chip.query)}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition cursor-pointer shrink-0 border ${
-                        contactQuery.toLowerCase() === chip.query.toLowerCase()
-                          ? "bg-teal-700 text-white border-teal-700 shadow-xs"
-                          : "bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-teal-50 hover:text-teal-800 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700"
-                      }`}
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
-                </div>
               </div>
 
               {/* Results Container */}
@@ -801,7 +762,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                 {contactLoading && (
                   <div className="flex flex-col items-center justify-center py-12 space-y-2 text-slate-400">
                     <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
-                    <p className="text-xs sm:text-sm font-medium">Querying registered member database...</p>
+                    <p className="text-xs sm:text-sm font-medium">Processing prompt across registered member database...</p>
                   </div>
                 )}
 
@@ -810,7 +771,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                     <Users className="w-10 h-10 opacity-30" />
                     <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No members matched "{contactQuery}"</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs leading-relaxed">
-                      Try searching by other keywords (e.g. law, doctor, engineer, tech, finance, property, media) or directly by phone number digits or email.
+                      Try prompting in another way or searching by professions, skills, school, location, or direct phone digits/email.
                     </p>
                   </div>
                 )}
@@ -825,7 +786,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                         Universal Professional & Contact AI Finder
                       </h4>
                       <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                        Search members across <strong>any field of work or life</strong> (Healthcare, Legal, Engineering, Tech, Finance, Real Estate, Agriculture, Media, Consulting, Education), verified skills, phone number, or email for seamless business networking and emergency coordination.
+                        Prompt or search for members across <strong>any field of work, profession, or life skill</strong> (Healthcare, Legal, Engineering, Tech, Finance, Real Estate, Agriculture, Media, Education), locations, verified skills, phone numbers, or emails.
                       </p>
                     </div>
                   </div>
