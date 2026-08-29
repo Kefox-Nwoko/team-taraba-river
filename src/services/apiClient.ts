@@ -1244,6 +1244,7 @@ export interface MemberSearchResponse {
 }
 
 const OCCUPATION_SYNONYMS: Record<string, string[]> = {
+  // Healthcare & Medicine
   doctor: ["medical", "physician", "doctor", "health", "clinical", "medicine", "surgeon", "dr", "pediatrician", "cardiologist", "pathologist", "healthcare", "hospital", "clinic", "treatment", "dental", "dentist", "optometrist", "radiologist", "pharmacist", "nurse", "nursing", "emergency"],
   medical: ["doctor", "physician", "health", "clinical", "medicine", "surgeon", "healthcare", "hospital", "pediatrician", "nurse", "emergency", "dr"],
   "medical doctor": ["doctor", "physician", "medical", "health", "clinical", "medicine", "surgeon", "dr", "pediatrician", "consultant physician", "healthcare", "hospital"],
@@ -1252,15 +1253,49 @@ const OCCUPATION_SYNONYMS: Record<string, string[]> = {
   "clinical management": ["doctor", "medical", "hospital", "clinical", "health", "physician", "surgeon", "clinic", "treatment"],
   clinical: ["doctor", "medical", "hospital", "clinical", "health", "physician", "surgeon", "clinic", "medicine"],
   nurse: ["nursing", "medical", "health", "hospital", "clinical", "healthcare", "caregiver"],
-  lawyer: ["attorney", "legal", "solicitor", "barrister", "advocate", "counsel", "law", "jurist", "litigation"],
+  pharmacy: ["pharmacist", "pharmaceutical", "drugs", "dispensary", "chemist", "medicine"],
+
+  // Legal & Judiciary
+  lawyer: ["attorney", "legal", "solicitor", "barrister", "advocate", "counsel", "law", "jurist", "litigation", "chambers"],
   legal: ["lawyer", "attorney", "solicitor", "barrister", "advocate", "counsel", "law", "chambers"],
-  engineer: ["engineering", "technical", "technologist", "developer", "software", "mechanical", "electrical", "civil", "petroleum", "chemical", "structural"],
-  engineering: ["engineer", "technical", "mechanical", "electrical", "civil", "petroleum", "chemical", "structural", "software"],
-  software: ["developer", "programmer", "engineer", "tech", "coding", "web", "frontend", "backend", "fullstack", "it", "devops"],
-  tech: ["software", "developer", "it", "engineer", "data", "computer", "systems", "network", "cybersecurity", "ai"],
-  accountant: ["accounting", "finance", "audit", "tax", "banking", "banker", "financial", "bookkeeper", "chartered"],
-  accounting: ["accountant", "finance", "audit", "tax", "banking", "financial", "bookkeeper"],
-  finance: ["accountant", "accounting", "banker", "banking", "financial", "investment", "audit", "tax", "treasury"],
+
+  // Engineering & Technology
+  engineer: ["engineering", "technical", "technologist", "developer", "software", "mechanical", "electrical", "civil", "petroleum", "chemical", "structural", "marine", "systems"],
+  engineering: ["engineer", "technical", "mechanical", "electrical", "civil", "petroleum", "chemical", "structural", "software", "marine"],
+  software: ["developer", "programmer", "engineer", "tech", "coding", "web", "frontend", "backend", "fullstack", "it", "devops", "cloud", "software engineer"],
+  tech: ["software", "developer", "it", "engineer", "data", "computer", "systems", "network", "cybersecurity", "ai", "cloud", "technology"],
+  data: ["analyst", "data scientist", "analytics", "database", "bi", "business intelligence", "machine learning"],
+
+  // Finance, Accounting & Banking
+  accountant: ["accounting", "finance", "audit", "tax", "banking", "banker", "financial", "bookkeeper", "chartered", "treasury"],
+  accounting: ["accountant", "finance", "audit", "tax", "banking", "financial", "bookkeeper", "chartered"],
+  finance: ["accountant", "accounting", "banker", "banking", "financial", "investment", "audit", "tax", "treasury", "fintech"],
+  banking: ["banker", "bank", "finance", "credit", "loans", "teller", "account officer"],
+
+  // Built Environment & Real Estate
+  architect: ["architecture", "building design", "draftsman", "interior design", "cad", "bim", "designer"],
+  architecture: ["architect", "building design", "draftsman", "interior design", "cad", "bim"],
+  "real estate": ["realtor", "property", "estate surveyor", "land", "valuation", "broker", "developer", "facility management", "housing"],
+  property: ["real estate", "realtor", "estate", "housing", "landlord", "land"],
+  construction: ["builder", "quantity surveyor", "qs", "civil engineer", "contractor", "site engineer", "mason", "structural"],
+
+  // Oil, Gas & Energy
+  "oil and gas": ["petroleum", "drilling", "energy", "pipeline", "offshore", "geologist", "geosciences", "refinery"],
+  energy: ["oil", "gas", "power", "solar", "renewable", "electrical", "petroleum"],
+
+  // Media, PR, Creative & Marketing
+  marketing: ["branding", "advertising", "digital marketing", "seo", "sales", "pr", "communications"],
+  media: ["journalism", "journalist", "pr", "communications", "content creator", "writer", "editor", "photographer", "videographer", "broadcast"],
+  creative: ["graphics", "graphic design", "artist", "ui/ux", "designer", "creative director", "videography", "photography"],
+
+  // Logistics, Supply Chain & Agriculture
+  logistics: ["supply chain", "procurement", "freight", "shipping", "transport", "aviation", "maritime", "cargo", "warehouse", "fleet"],
+  agriculture: ["farming", "farmer", "agribusiness", "agronomist", "poultry", "fishery", "livestock", "crop"],
+
+  // Management, HR & Education
+  consultant: ["consulting", "strategy", "advisor", "management", "business development", "analyst"],
+  management: ["manager", "director", "executive", "administrator", "operations", "project manager", "pmp", "scrum master"],
+  hr: ["human resources", "talent", "recruitment", "recruiter", "personnel", "people operations"],
   teacher: ["lecturer", "educator", "professor", "tutor", "instructor", "academic", "education"],
   education: ["teacher", "lecturer", "educator", "professor", "tutor", "academic", "school", "training"],
 };

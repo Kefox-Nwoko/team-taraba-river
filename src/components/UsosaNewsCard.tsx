@@ -54,11 +54,17 @@ const TABS = ["Headlines", "AI Xplora", "Contact Search"] as const;
 type Tab = (typeof TABS)[number];
 
 const QUICK_CONTACT_FILTERS = [
-  { label: "🏥 Medical Doctors & Health", query: "medical doctor" },
+  { label: "🏥 Medical & Health", query: "medical doctor" },
   { label: "⚖️ Legal & Law", query: "lawyer" },
   { label: "💻 Tech & Software", query: "software engineer" },
   { label: "🏗️ Engineering", query: "engineer" },
-  { label: "📊 Finance & Accounting", query: "accountant" },
+  { label: "🏛️ Architecture & Property", query: "real estate architect" },
+  { label: "📊 Finance & Banking", query: "finance accountant" },
+  { label: "🛢️ Oil, Gas & Energy", query: "petroleum energy" },
+  { label: "🎨 Media & Creative", query: "media marketing" },
+  { label: "📦 Logistics & Supply", query: "logistics" },
+  { label: "🌾 Agriculture", query: "agriculture" },
+  { label: "👔 Consulting & Strategy", query: "consultant" },
   { label: "🎓 Education", query: "education" },
 ];
 
@@ -706,7 +712,7 @@ What would you like to explore or find today?`;
               <div className="flex items-center justify-between px-4 py-2 bg-slate-100/90 dark:bg-slate-900/90 border-b border-slate-200/80 dark:border-slate-800 text-xs shrink-0">
                 <span className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
                   <Users className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
-                  <span>Member Database AI Search · Networking & Health Emergencies</span>
+                  <span>Member Database AI Search · All Professions, Networking & Emergency Coordination</span>
                 </span>
                 <div className="flex items-center gap-2">
                   {contactAiPowered && (
@@ -731,7 +737,7 @@ What would you like to explore or find today?`;
                       type="text"
                       value={contactQuery}
                       onChange={(e) => setContactQuery(e.target.value)}
-                      placeholder="Search occupation, skills, phone, email (e.g. 'medical doctor', 'health management')..."
+                      placeholder="Search any profession, skills, phone, email (e.g. 'doctor', 'lawyer', 'engineer', 'real estate')..."
                       className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-9 py-2.5 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
                     />
                     {contactQuery && (
@@ -798,7 +804,7 @@ What would you like to explore or find today?`;
                     <Users className="w-10 h-10 opacity-30" />
                     <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No members matched "{contactQuery}"</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs leading-relaxed">
-                      Try broader terms like "health", "doctor", "law", "engineer", or search directly by phone digits or email.
+                      Try searching by other keywords (e.g. law, doctor, engineer, tech, finance, property, media) or directly by phone number digits or email.
                     </p>
                   </div>
                 )}
@@ -806,14 +812,14 @@ What would you like to explore or find today?`;
                 {!contactLoading && contactQuery.trim().length < 2 && (
                   <div className="flex flex-col items-center justify-center py-10 text-slate-400 space-y-3 text-center">
                     <div className="w-12 h-12 rounded-2xl bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-400 flex items-center justify-center shadow-sm">
-                      <Stethoscope className="w-6 h-6" />
+                      <Briefcase className="w-6 h-6" />
                     </div>
                     <div className="space-y-1 max-w-sm">
                       <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                        Professional & Contact AI Finder
+                        Universal Professional & Contact AI Finder
                       </h4>
                       <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                        Search team members by occupation (e.g. <em>"medical doctor"</em>, <em>"health management"</em>, <em>"clinical management"</em>), skills, phone, or email to facilitate business networking and urgent health emergency coordination.
+                        Search members across <strong>any field of work or life</strong> (Healthcare, Legal, Engineering, Tech, Finance, Real Estate, Agriculture, Media, Consulting, Education), verified skills, phone number, or email for seamless business networking and emergency coordination.
                       </p>
                     </div>
                   </div>

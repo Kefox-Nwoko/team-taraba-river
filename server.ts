@@ -688,9 +688,16 @@ MEMBERS DATABASE:
 ${JSON.stringify(memberDb)}
 
 RULES:
-1. Match members whose occupation, skills, phone number, or email relates to the query.
-2. "medical doctor", "doctor", "health", "health management", "clinical management" should all match medical/health professionals.
-3. Be generous with related terms (e.g. "nurse" matches health, "engineer" matches technical roles).
+1. Match members whose occupation, skills, phone number, email, or name relates to the query across ANY field of work or life.
+2. Be generous with domain synonyms across all industries:
+   - Health & Medicine: "medical doctor", "physician", "doctor", "health", "clinical management", "surgeon", "nurse", "pharmacist".
+   - Legal: "lawyer", "attorney", "barrister", "solicitor", "legal", "counsel".
+   - Engineering & Tech: "engineer", "software", "tech", "developer", "civil", "mechanical", "electrical", "petroleum".
+   - Finance & Business: "accountant", "accounting", "banker", "finance", "consultant", "analyst", "project manager".
+   - Real Estate & Built Environment: "architect", "real estate", "property", "builder", "surveyor", "interior designer".
+   - Media, PR & Arts: "journalist", "media", "pr", "marketing", "designer", "photographer", "content creator".
+   - Logistics, Agriculture & Energy: "logistics", "supply chain", "oil and gas", "energy", "farming", "agribusiness".
+3. Support direct phone number digit queries and email substring queries.
 4. Return ONLY a JSON array of matching member IDs. No explanation.
 5. If no members match, return an empty array [].
 
