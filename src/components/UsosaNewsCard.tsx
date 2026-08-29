@@ -40,7 +40,7 @@ type Tab = (typeof TABS)[number];
 
 export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => {
   const [activeTab, setActiveTab] = useState<Tab>("Headlines");
-  const [isCollapsedOnMobile, setIsCollapsedOnMobile] = useState(false);
+  const [isCollapsedOnMobile, setIsCollapsedOnMobile] = useState(true);
 
   // ---------- Headlines state ----------
   const [headlines, setHeadlines] = useState<NewsHeadline[]>([]);
@@ -111,7 +111,11 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          // Sanitize any legacy cached messages to ensure "Gemini AI" is stripped
+          return parsed.map((m: ChatMessage) => ({
+            ...m,
+            text: typeof m.text === "string" ? m.text.replace(/Gemini AI Xplora/g, "AI Xplora").replace(/Gemini AI/g, "AI Xplora") : m.text,
+          }));
         }
       }
     } catch {}
@@ -283,7 +287,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
             </div>
             <div className="min-w-0 flex-1">
               <h3 className="text-sm sm:text-base font-medium text-slate-900 dark:text-white tracking-tight truncate">
-                USOSA & Unity Colleges News
+                USOSA News Update
               </h3>
               {fetchedAt && activeTab === "Headlines" && (
                 <p className="text-xs sm:text-sm font-normal text-slate-500 dark:text-slate-400 mt-0.5 truncate">

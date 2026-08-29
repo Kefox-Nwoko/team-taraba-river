@@ -194,9 +194,9 @@ const FolderCollagePreview: React.FC<{
             decoding="async"
           />
           {previewItems[0].isVideo && (
-            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-              <div className="w-7 h-7 rounded-full bg-red-600 text-white flex items-center justify-center shadow-md">
-                <Play className="w-4 h-4 fill-current ml-0.5" />
+            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+              <div className="w-5 h-5 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md">
+                <Play className="w-2.5 h-2.5 fill-current ml-0.5" />
               </div>
             </div>
           )}
@@ -219,9 +219,9 @@ const FolderCollagePreview: React.FC<{
               loading="lazy"
             />
             {item.isVideo && (
-              <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                <div className="w-7 h-7 rounded-full bg-red-600 text-white flex items-center justify-center shadow-md">
-                  <Play className="w-4 h-4 fill-current ml-0.5" />
+              <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                <div className="w-5 h-5 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md">
+                  <Play className="w-2.5 h-2.5 fill-current ml-0.5" />
                 </div>
               </div>
             )}
@@ -246,9 +246,9 @@ const FolderCollagePreview: React.FC<{
             decoding="async"
           />
           {previewItems[0].isVideo && (
-            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-              <div className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-md">
-                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+              <div className="w-4 h-4 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md">
+                <Play className="w-2 h-2 fill-current ml-0.5" />
               </div>
             </div>
           )}
@@ -265,9 +265,9 @@ const FolderCollagePreview: React.FC<{
             decoding="async"
           />
           {previewItems[1].isVideo && (
-            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-              <div className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-md">
-                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+              <div className="w-4 h-4 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md">
+                <Play className="w-2 h-2 fill-current ml-0.5" />
               </div>
             </div>
           )}
@@ -284,9 +284,9 @@ const FolderCollagePreview: React.FC<{
             decoding="async"
           />
           {previewItems[2].isVideo && (
-            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-              <div className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-md">
-                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+              <div className="w-4 h-4 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md">
+                <Play className="w-2 h-2 fill-current ml-0.5" />
               </div>
             </div>
           )}
@@ -309,9 +309,9 @@ const FolderCollagePreview: React.FC<{
             decoding="async"
           />
           {item.isVideo && (
-            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-              <div className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center shadow-md">
-                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+              <div className="w-4 h-4 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md">
+                <Play className="w-2 h-2 fill-current ml-0.5" />
               </div>
             </div>
           )}
@@ -1184,19 +1184,11 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                       onError={handleGoogleDriveImageError}
                     />
                     {item.type === "video" && (
-                      <>
-                        <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                          <div className="w-12 h-12 rounded-full bg-red-600/90 text-white flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform">
-                            <Play className="w-6 h-6 fill-current ml-0.5" />
-                          </div>
+                      <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md group-hover:opacity-75 group-hover:scale-105 transition-all">
+                          <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current ml-0.5" />
                         </div>
-                        <div className="absolute bottom-2 left-2 right-2 bg-slate-950/85 backdrop-blur-md px-2.5 py-1 rounded-lg text-white text-xs flex items-center justify-between font-normal">
-                          <span className="truncate">VIDEO</span>
-                          <span className="bg-red-600 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold">
-                            {item.videoUrl?.includes("youtube") || item.videoUrl?.includes("youtu.be") ? "YouTube" : "Video"}
-                          </span>
-                        </div>
-                      </>
+                      </div>
                     )}
                   </div>
                 ))}
