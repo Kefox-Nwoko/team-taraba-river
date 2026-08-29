@@ -4,6 +4,7 @@ import { GroupEvent, Member } from "../types";
 import { FullPageMediaUpload } from "./FullPageMediaUpload";
 import { DatePicker } from "./DatePicker";
 import { ReturnButton } from "./ReturnButton";
+import { useToast } from "./ui/Toast";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import { AppStateManager } from "../services/storage";
 import { deleteEvent as deleteEventApi, updateEvent } from "../services/apiClient";
@@ -331,6 +332,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
   syncAttemptCount = 0,
   syncErrorMessage = null,
 }) => {
+  const { notify } = useToast();
   const mappedEvents = useMemo(() => {
     return (events || []).map((event) => {
       if (!event) return event;
@@ -1079,7 +1081,27 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                       </div>
                       <DatePicker
                         value={editDate}
-                        onChange={setEditDate}
+                        maxDate={new Date().toISOString().split("T")[0]}
+                        onDateRestricted={(attemptedDate, reason) => {
+                          if (reason === "future") {
+                            notify(
+                              `⚠️ Future dates (${formatDateLabel(attemptedDate)}) are restricted. Media folders must be for past or present (same day) events.`,
+                              "error"
+                            );
+                          }
+                        }}
+                        onChange={(val) => {
+                          const today = new Date().toISOString().split("T")[0];
+                          if (val && val > today) {
+                            notify(
+                              "⚠️ Future dates are restricted. Media folders must be for past or present (same day) events.",
+                              "error"
+                            );
+                            setEditDate(today);
+                            return;
+                          }
+                          setEditDate(val || today);
+                        }}
                       />
                     </div>
                   </div>

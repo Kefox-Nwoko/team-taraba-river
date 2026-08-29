@@ -641,6 +641,12 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       setErrorMessage("Please select an existing event folder.");
       return;
     }
+    const todayStr = new Date().toISOString().split("T")[0];
+    if (folderMode === "new" && newDate > todayStr) {
+      setErrorMessage("Future dates are restricted. Media uploads must be for past or present (same day) events.");
+      notify("⚠️ Future dates are restricted. Media uploads must be for past or present (same day) events.", "error");
+      return;
+    }
 
     setIsUploading(true);
     setUploadProgress(5);
@@ -1003,7 +1009,27 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                       </div>
                       <DatePicker
                         value={newDate}
-                        onChange={setNewDate}
+                        maxDate={new Date().toISOString().split("T")[0]}
+                        onDateRestricted={(attemptedDate, reason) => {
+                          if (reason === "future") {
+                            notify(
+                              `⚠️ Future dates (${formatDateLabel(attemptedDate)}) are restricted. Media uploads are only permitted for past or present (same day) events.`,
+                              "error"
+                            );
+                          }
+                        }}
+                        onChange={(val) => {
+                          const today = new Date().toISOString().split("T")[0];
+                          if (val && val > today) {
+                            notify(
+                              "⚠️ Future dates are restricted. Media uploads must be for past or present (same day) events.",
+                              "error"
+                            );
+                            setNewDate(today);
+                            return;
+                          }
+                          setNewDate(val || today);
+                        }}
                         required
                       />
                     </div>

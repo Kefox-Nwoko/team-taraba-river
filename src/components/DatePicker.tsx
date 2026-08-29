@@ -5,6 +5,9 @@ interface DatePickerProps {
   value: string; // "YYYY-MM-DD"
   onChange: (value: string) => void;
   required?: boolean;
+  maxDate?: string; // "YYYY-MM-DD" - restricts future dates beyond this
+  minDate?: string; // "YYYY-MM-DD" - restricts past dates before this
+  onDateRestricted?: (attemptedDate: string, reason: "future" | "past") => void;
 }
 
 const MONTH_NAMES = [
@@ -31,7 +34,14 @@ function getFirstDayOfWeek(year: number, month: number) {
   return d === 0 ? 6 : d - 1; // Monday = 0
 }
 
-export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, required }) => {
+export const DatePicker: React.FC<DatePickerProps> = ({
+  value,
+  onChange,
+  required,
+  maxDate,
+  minDate,
+  onDateRestricted,
+}) => {
   const parsed = parseDate(value || new Date().toISOString().split("T")[0]);
   const [viewYear, setViewYear] = useState(parsed.year);
   const [viewMonth, setViewMonth] = useState(parsed.month);
@@ -98,9 +108,27 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, require
     else setViewMonth(viewMonth + 1);
   };
 
+  const isDayRestricted = (day: number, isCurrent: boolean): { restricted: boolean; reason?: "future" | "past" } => {
+    if (!isCurrent) return { restricted: false };
+    const dateStr = formatISO(viewYear, viewMonth, day);
+    if (maxDate && dateStr > maxDate) {
+      return { restricted: true, reason: "future" };
+    }
+    if (minDate && dateStr < minDate) {
+      return { restricted: true, reason: "past" };
+    }
+    return { restricted: false };
+  };
+
   const handleSelectDay = (day: number, isCurrent: boolean) => {
     if (isCurrent) {
-      onChange(formatISO(viewYear, viewMonth, day));
+      const selectedIso = formatISO(viewYear, viewMonth, day);
+      const { restricted, reason } = isDayRestricted(day, isCurrent);
+      if (restricted && reason) {
+        onDateRestricted?.(selectedIso, reason);
+        return;
+      }
+      onChange(selectedIso);
       setIsOpen(false);
     }
   };
@@ -115,9 +143,18 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, require
     const y = now.getFullYear();
     const m = now.getMonth();
     const d = now.getDate();
+    const todayIso = formatISO(y, m, d);
+    if (maxDate && todayIso > maxDate) {
+      onDateRestricted?.(todayIso, "future");
+      return;
+    }
+    if (minDate && todayIso < minDate) {
+      onDateRestricted?.(todayIso, "past");
+      return;
+    }
     setViewYear(y);
     setViewMonth(m);
-    onChange(formatISO(y, m, d));
+    onChange(todayIso);
     setIsOpen(false);
   };
 
@@ -137,6 +174,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, require
         <input
           type="date"
           required
+          max={maxDate}
+          min={minDate}
           value={value}
           onChange={() => {}}
           tabIndex={-1}
@@ -185,22 +224,28 @@ export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, require
             {allDays.map((d, i) => {
               const selected = isSelected(d.day, d.current);
               const today = isToday(d.day, d.current);
+              const { restricted } = isDayRestricted(d.day, d.current);
+
               return (
                 <button
                   key={i}
                   type="button"
                   onClick={() => handleSelectDay(d.day, d.current)}
+                  disabled={!d.current}
                   className={`
-                    w-10 h-10 rounded-xl flex items-center justify-center text-sm transition-all duration-150 cursor-pointer
+                    w-10 h-10 rounded-xl flex items-center justify-center text-sm transition-all duration-150
                     ${!d.current
-                      ? "text-slate-300 dark:text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                      : selected
-                        ? "bg-cyan-500 text-white font-bold shadow-md shadow-cyan-500/30"
-                        : today
-                          ? "border-2 border-cyan-400 text-cyan-600 dark:text-cyan-400 font-semibold hover:bg-cyan-50 dark:hover:bg-cyan-950"
-                          : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium"
+                      ? "text-slate-300 dark:text-slate-600 cursor-default"
+                      : restricted
+                        ? "text-slate-300 dark:text-slate-700 cursor-not-allowed opacity-35 hover:bg-transparent"
+                        : selected
+                          ? "bg-cyan-500 text-white font-bold shadow-md shadow-cyan-500/30 cursor-pointer"
+                          : today
+                            ? "border-2 border-cyan-400 text-cyan-600 dark:text-cyan-400 font-semibold hover:bg-cyan-50 dark:hover:bg-cyan-950 cursor-pointer"
+                            : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium cursor-pointer"
                     }
                   `}
+                  title={restricted ? "Date restricted: future dates not allowed for media" : undefined}
                 >
                   {d.day}
                 </button>
