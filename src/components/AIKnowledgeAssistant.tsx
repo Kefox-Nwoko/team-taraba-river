@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { AIQueryResponse, Member } from "../types";
 import { queryAIAssistant } from "../services/apiClient";
 import { Sparkles, Send, Bot, User, FileText, ExternalLink, Zap, ArrowLeft, ChevronLeft } from "lucide-react";
+import { MarkdownMessage } from "./MarkdownMessage";
 interface AIKnowledgeAssistantProps {
   isOpen: boolean;
   onClose: () => void;
@@ -140,11 +141,10 @@ export const AIKnowledgeAssistant: React.FC<AIKnowledgeAssistantProps> = ({
                   </span>{" "}
                   <span>{msg.timestamp}</span>{" "}
                 </div>{" "}
-                {/* Message Content */}{" "}
-                <p className="whitespace-pre-line leading-relaxed text-sm sm:text-sm">
-                  {" "}
-                  {msg.text}{" "}
-                </p>{" "}
+                {/* Message Content */}
+                <div className="leading-relaxed text-sm sm:text-sm">
+                  <MarkdownMessage content={msg.text} isUser={msg.sender === "user"} />
+                </div>
                 {/* If AI message with routed metadata */}{" "}
                 {msg.responseMeta && (
                   <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2 text-sm">

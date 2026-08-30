@@ -38,6 +38,7 @@ import {
   MemberSearchResult,
   NewsHeadline,
 } from "../services/apiClient";
+import { MarkdownMessage } from "./MarkdownMessage";
 import { formatMemberDisplayName } from "../utils/nameUtils";
 import { Member } from "../types";
 
@@ -619,13 +620,13 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                           {isUser ? "You" : "AI Xplora"}
                         </span>
                         <div
-                          className={`px-4 py-3 rounded-2xl text-xs sm:text-sm leading-relaxed whitespace-pre-wrap ${
+                          className={`px-4 py-3 rounded-2xl text-xs sm:text-sm leading-relaxed ${
                             isUser
                               ? "bg-teal-700 text-white rounded-tr-xs shadow-sm font-normal"
                               : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200/90 dark:border-slate-700/80 rounded-tl-xs shadow-xs font-normal"
                           }`}
                         >
-                          {msg.text}
+                          <MarkdownMessage content={msg.text} isUser={isUser} />
                         </div>
                         {msg.sources && msg.sources.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 pt-1">
