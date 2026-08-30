@@ -137,12 +137,13 @@ export class FirebaseSyncManager {
         const clean = sanitizeMemberRecord(raw);
         firestoreMembers.push(clean);
 
-        // Self-heal records in Firestore if there were repeated title prefixes
+        // Self-heal records in Firestore if there were repeated title prefixes or placeholder 'Member' occupation
         if (
           raw.fullName !== clean.fullName ||
           raw.firstName !== clean.firstName ||
           raw.surname !== clean.surname ||
-          raw.title !== clean.title
+          raw.title !== clean.title ||
+          raw.occupation !== clean.occupation
         ) {
           setDoc(doc(db, "members", clean.id), clean, { merge: true }).catch(() => {});
         }

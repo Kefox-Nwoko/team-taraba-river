@@ -823,10 +823,12 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                         </div>
 
                         {/* Occupation */}
-                        <div className="flex items-center gap-1.5 text-xs text-teal-800 dark:text-teal-300 font-bold">
-                          <Briefcase className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
-                          <span className="truncate">{m.occupation || "Member"}</span>
-                        </div>
+                        {m.occupation && m.occupation.trim() && m.occupation.trim().toLowerCase() !== "member" && (
+                          <div className="flex items-center gap-1.5 text-xs text-teal-800 dark:text-teal-300 font-bold">
+                            <Briefcase className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400 shrink-0" />
+                            <span className="truncate">{m.occupation}</span>
+                          </div>
+                        )}
 
                         {/* Skills */}
                         {m.skills && m.skills.length > 0 && (

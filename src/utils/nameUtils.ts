@@ -125,17 +125,28 @@ export function extractAndCleanMemberNames(member: {
 }
 
 /**
- * Sanitizes an entire Member object to ensure database consistency without title duplication.
+ * Sanitizes an entire Member object to ensure database consistency without title duplication,
+ * and clears placeholder 'Member' occupations to blank.
  */
 export function sanitizeMemberRecord<T extends Partial<Member>>(member: T): T {
   if (!member) return member;
   const names = extractAndCleanMemberNames(member);
+  let occ = member.occupation || "";
+  if (occ.trim().toLowerCase() === "member") {
+    occ = "";
+  }
+  let skills = Array.isArray(member.skills) ? [...member.skills] : [];
+  if (skills.length > 0 && skills[0].toLowerCase() === "community support") {
+    skills = [];
+  }
   return {
     ...member,
     title: names.title,
     firstName: names.firstName,
     surname: names.surname,
     fullName: names.fullName,
+    occupation: occ,
+    skills,
   };
 }
 
