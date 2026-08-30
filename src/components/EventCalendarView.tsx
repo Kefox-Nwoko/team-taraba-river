@@ -524,46 +524,6 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
             </div>
           </div>
 
-          {/* Filter Pills Bar */}
-          <div className="flex flex-wrap items-center gap-3 font-normal">
-            <button
-              onClick={() => setSelectedCategory("all")}
-              className={`px-3 py-1.5 rounded-xl text-xs transition font-normal ${
-                selectedCategory === "all"
-                  ? "bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 shadow-sm border border-slate-200 dark:border-slate-700"
-                  : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
-              }`}
-            >
-              All Events
-            </button>
-            {eventsInNext7Days.length > 0 && (
-              <button
-                onClick={() => setSelectedCategory("next7days")}
-                className={`px-3 py-1.5 rounded-xl text-xs transition flex items-center space-x-2 font-normal ${
-                  selectedCategory === "next7days"
-                    ? "bg-amber-500 text-slate-950 shadow-sm"
-                    : "text-amber-700 dark:text-amber-400 hover:bg-amber-100/50"
-                }`}
-              >
-                <Flame className="w-5 h-5" />
-                <span>Next 7 Days ({eventsInNext7Days.length})</span>
-              </button>
-            )}
-            {dynamicCategories.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3 py-1.5 rounded-xl text-xs capitalize transition font-normal ${
-                  selectedCategory === cat
-                    ? "bg-white dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 shadow-sm border border-slate-200 dark:border-slate-700"
-                    : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
           {/* USOSA News Update Card — full width above events */}
           <div className="pt-1 font-normal">
             <UsosaNewsCard currentUser={currentUser} />
