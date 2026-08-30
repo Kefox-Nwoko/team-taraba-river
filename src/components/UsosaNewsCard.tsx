@@ -815,9 +815,16 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                           <h4 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-tight">
                             {formatMemberDisplayName(m.title, m.fullName)}
                           </h4>
-                          {m.schoolName && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs sm:text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300/80 dark:border-slate-700 shadow-2xs truncate max-w-xs">
-                              🎓 {m.schoolName}
+                          {(m.schoolName || m.gradYear) && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs sm:text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300/80 dark:border-slate-700 shadow-2xs">
+                              {m.schoolName && <span>🎓 {m.schoolName}</span>}
+                              {!m.schoolName && <span>🎓 Alumni</span>}
+                              {m.gradYear && (
+                                <>
+                                  <span className="text-slate-400 font-normal">•</span>
+                                  <span className="text-teal-700 dark:text-teal-300 font-bold">Class of {m.gradYear}</span>
+                                </>
+                              )}
                             </span>
                           )}
                         </div>
@@ -845,17 +852,17 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                         )}
 
                         {/* Phone & Email labels */}
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs text-slate-600 dark:text-slate-400">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-1 text-xs text-slate-600 dark:text-slate-400">
                           {m.phoneNumber && (
                             <span className="flex items-center gap-1 font-medium">
-                              <Phone className="w-3 h-3 text-slate-400" />
+                              <Phone className="w-3 h-3 text-slate-400 shrink-0" />
                               <span>{m.phoneNumber}</span>
                             </span>
                           )}
                           {m.email && (
-                            <span className="flex items-center gap-1 font-medium truncate max-w-[200px]">
+                            <span className="flex items-center gap-1 font-medium select-all">
                               <Mail className="w-3 h-3 text-slate-400 shrink-0" />
-                              <span className="truncate">{m.email}</span>
+                              <span>{m.email}</span>
                             </span>
                           )}
                         </div>

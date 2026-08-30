@@ -766,6 +766,8 @@ Return format: ["id1", "id2", ...]`;
         email: m.email,
         photoUrl: m.photoUrl,
         title: m.title,
+        schoolName: m.schoolName,
+        gradYear: m.gradYear ? String(m.gradYear) : undefined,
       }));
 
     res.json({ members: results, total: results.length, aiPowered: true });
@@ -776,7 +778,7 @@ Return format: ["id1", "id2", ...]`;
   }
 });
 
-function simpleContactSearch(members: Member[], query: string): Array<{ id: string; fullName: string; firstName?: string; surname?: string; occupation: string; skills: string[]; phoneNumber: string; whatsappNumber?: string; email: string; photoUrl: string; title?: string }> {
+function simpleContactSearch(members: Member[], query: string): Array<{ id: string; fullName: string; firstName?: string; surname?: string; occupation: string; skills: string[]; phoneNumber: string; whatsappNumber?: string; email: string; photoUrl: string; title?: string; schoolName?: string; gradYear?: string }> {
   const qClean = query.toLowerCase().trim();
   if (!qClean || qClean.length < 2) return [];
 
@@ -837,6 +839,8 @@ function simpleContactSearch(members: Member[], query: string): Array<{ id: stri
       email: s.member.email,
       photoUrl: s.member.photoUrl,
       title: s.member.title,
+      schoolName: s.member.schoolName,
+      gradYear: s.member.gradYear ? String(s.member.gradYear) : undefined,
     }));
 }
 
