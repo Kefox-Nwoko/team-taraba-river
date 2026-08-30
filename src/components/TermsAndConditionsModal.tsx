@@ -90,7 +90,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                 1. Membership Eligibility &amp; Requirements
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                <li>Membership on this portal is open to all verified members of <strong className="text-slate-700 dark:text-slate-200">Team Taraba River</strong> — comprising USOSA alumni and invited associates resident in or connected to Port Harcourt.</li>
+                <li>Membership on this portal is open to all verified members of <strong className="text-slate-700 dark:text-slate-200">Team Taraba River</strong> — comprising USOSA alumni who are members resident in Port Harcourt (URIP) and are part of a group of Alumni in a team (Team Taraba River).</li>
                 <li>Members must provide accurate and truthful personal information at the point of registration, including a valid phone number and email address. This information must be kept up-to-date at all times.</li>
                 {/* [AMENDED] Added explicit age requirement */}
                 <li>You must be at least <strong className="text-slate-700 dark:text-slate-200">18 years of age</strong> to register for and use this portal. By registering, you represent and warrant that you meet this age requirement.</li>
