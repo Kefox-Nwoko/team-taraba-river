@@ -832,11 +832,11 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
 
                         {/* Skills */}
                         {m.skills && m.skills.length > 0 && (
-                          <div className="flex flex-wrap gap-1 pt-0.5">
-                            {m.skills.slice(0, 3).map((s, idx) => (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {m.skills.map((s, idx) => (
                               <span
                                 key={idx}
-                                className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800"
+                                className="px-2.5 py-1 rounded-lg text-xs sm:text-[13px] font-semibold bg-teal-50 dark:bg-teal-950/80 text-teal-900 dark:text-teal-200 border border-teal-300/80 dark:border-teal-700 shadow-2xs"
                               >
                                 {s}
                               </span>
