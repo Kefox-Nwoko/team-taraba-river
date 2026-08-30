@@ -81,25 +81,41 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<Member | null>(AppStateManager.getCurrentUser());
   const [activeTab, setActiveTab] = useState<
     "media" | "events" | "admin" | "architecture" | "upload" | "profile" | "manual"
-  >("events");
+  >(() => {
+    try {
+      const savedTab = localStorage.getItem("taraba_active_tab");
+      const user = AppStateManager.getCurrentUser();
+      if (user?.role === "admin") {
+        if (savedTab === "admin" || !savedTab) return "admin";
+      }
+      if (savedTab && ["media", "events", "admin", "architecture", "upload", "profile", "manual"].includes(savedTab)) {
+        return savedTab as any;
+      }
+    } catch {}
+    return "events";
+  });
 
   const handleSetActiveTab = (tab: any) => {
     if (tab === "manual") {
       setActiveTab("manual");
+      try { localStorage.setItem("taraba_active_tab", "manual"); } catch {}
       return;
     }
     if (currentUser && !isProfileComplete(currentUser)) {
       notify("Action Required: Please complete all required profile fields before accessing other features.", "info");
       setActiveTab("profile");
+      try { localStorage.setItem("taraba_active_tab", "profile"); } catch {}
       return;
     }
     setActiveTab(tab);
+    try { localStorage.setItem("taraba_active_tab", tab); } catch {}
   };
 
-  // Redirect to profile page if user profile is incomplete on load or login
+  // Redirect to profile page if user profile is incomplete on load or login (never for admin)
   useEffect(() => {
-    if (currentUser && !isProfileComplete(currentUser)) {
+    if (currentUser && currentUser.role !== "admin" && !isProfileComplete(currentUser)) {
       setActiveTab("profile");
+      try { localStorage.setItem("taraba_active_tab", "profile"); } catch {}
     }
   }, [currentUser]);
   const [members, setMembers] = useState<Member[]>(AppStateManager.getMembers());
@@ -369,11 +385,12 @@ export default function App() {
     setRegisterModalOpen(false);
     setArchModalOpen(false);
     setAiAssistantOpen(false);
-    setSignInModalOpen(false);
     try {
       const adminMember = await triggerGoogleAdminSignIn();
+      AppStateManager.setCurrentUser(adminMember);
       setCurrentUser(adminMember);
       setActiveTab("admin");
+      try { localStorage.setItem("taraba_active_tab", "admin"); } catch {}
     } catch (err) {
       logger.error("Google Admin Sign In error", err);
     }
@@ -409,9 +426,11 @@ export default function App() {
       <div className="min-h-screen bg-white dark:bg-[#121212] font-sans">
         <LoginGate
           onLoginSuccess={(loggedUser) => {
-            setCurrentUser(loggedUser);
             AppStateManager.setCurrentUser(loggedUser);
-            setActiveTab("events");
+            setCurrentUser(loggedUser);
+            const targetTab = loggedUser.role === "admin" ? "admin" : "events";
+            setActiveTab(targetTab);
+            try { localStorage.setItem("taraba_active_tab", targetTab); } catch {}
             // Fetch updated visit metrics to reflect the new login
             fetchVisitMetrics().then(metrics => setTotalVisits(metrics.totalVisits)).catch((err) => logger.error("Failed to fetch visit metrics", err));
           }}

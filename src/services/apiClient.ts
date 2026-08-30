@@ -1323,6 +1323,11 @@ export function performClientSemanticMemberSearch(allMembers: Member[], query: s
   const qClean = query.toLowerCase().trim();
   if (!qClean || qClean.length < 2) return [];
 
+  // Detect Broad/Global Query Intents (e.g. "list all those with occupation in the database")
+  const isOccupationIntent = /\b(occupation|occupations|job|jobs|profession|professions|career|careers|work|working|employed|vocation|vocations)\b/i.test(qClean);
+  const isSkillsIntent = /\b(skill|skills|expertise|specialization|speciality|talents)\b/i.test(qClean);
+  const isAllMembersIntent = /\b(all\s+members|everyone|everybody|whole\s+database|entire\s+database|all\s+in\s+the\s+database|all\s+those\s+in|list\s+all|show\s+all|who\s+is\s+in\s+the\s+database|list\s+those\s+in\s+the\s+database|database)\b/i.test(qClean);
+
   // Tokenize and extract both raw tokens and meaningful keyword tokens
   const allTokens = qClean.split(/[\s,?.!/\\-]+/).filter(Boolean);
   const keywordTokens = allTokens.filter((t) => !PROMPT_STOP_WORDS.has(t) && t.length >= 2);
@@ -1359,6 +1364,17 @@ export function performClientSemanticMemberSearch(allMembers: Member[], query: s
     const school = (m.schoolName || "").toLowerCase();
     const gradYear = (m.gradYear ? String(m.gradYear) : "").toLowerCase();
     const location = `${m.area || ""} ${m.otherArea || ""} ${m.estateName || ""} ${m.streetName || ""}`.toLowerCase();
+
+    // 0. Handle broad / global intent queries
+    if (isOccupationIntent) {
+      if (occ && occ !== "member" && occ.trim().length > 0) score += 50;
+    }
+    if (isSkillsIntent) {
+      if (Array.isArray(m.skills) && m.skills.length > 0) score += 50;
+    }
+    if (isAllMembersIntent) {
+      score += 30;
+    }
 
     // 1. Direct phone / email matching (Highest relevance)
     if (queryDigitsOnly && queryDigitsOnly.length >= 4) {
@@ -1418,10 +1434,110 @@ export function performClientSemanticMemberSearch(allMembers: Member[], query: s
     .map((s) => s.member);
 }
 
+async function queryDirectGeminiMemberSearch(
+  allMembers: Member[],
+  query: string,
+  apiKey: string
+): Promise<MemberSearchResult[] | null> {
+  const models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.6-flash", "gemini-flash-latest"];
+  const memberDb = allMembers.map((m) => ({
+    id: m.id,
+    name: `${m.title ? `${m.title} ` : ""}${m.fullName || ""}`.trim(),
+    occupation: m.occupation || "",
+    skills: Array.isArray(m.skills) ? m.skills.join(", ") : "",
+    school: m.schoolName || "",
+    gradYear: m.gradYear || "",
+    location: [m.area, m.otherArea, m.estateName, m.streetName].filter(Boolean).join(", "),
+    phone: m.phoneNumber || "",
+    email: m.email || "",
+  }));
+
+  const prompt = `You are an intelligent contact & networking AI assistant for the Team Taraba River USOSA member database.
+Your task: Understand the user's search prompt or natural language question and return ALL matching team members.
+
+MEMBERS DATABASE:
+${JSON.stringify(memberDb)}
+
+RULES & CAPABILITIES:
+1. Interpret conversational and general requests:
+   - "list all those with occupation in the database" -> Return all members who have a listed occupation/profession.
+   - "show all members in the database" / "who is in the database" -> Return all members.
+   - "I need a doctor for emergency" -> Return doctors, physicians, healthcare workers.
+   - "Who works in tech, engineering, programming?" -> Return engineers, software developers, technical professionals.
+   - "Who is a lawyer or legal counsel?" -> Return lawyers, attorneys, barristers.
+   - "Members who attended FGGC or graduated in 2007" -> Return matching schools/years.
+2. Return ONLY a JSON array of matching member IDs, e.g. ["mem_1", "mem_2"]. No markdown ticks, no commentary.
+3. If no members match, return [].
+
+User prompt: "${query}"`;
+
+  for (const model of models) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.2,
+          },
+        }),
+      });
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        const parsed = JSON.parse(text.replace(/```json/g, "").replace(/```/g, "").trim());
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const idSet = new Set(parsed);
+          const matched = allMembers
+            .filter((m) => idSet.has(m.id))
+            .map((rawM) => {
+              const m = sanitizeMemberRecord(rawM);
+              return {
+                id: m.id,
+                fullName: m.fullName || "Community Member",
+                firstName: m.firstName,
+                surname: m.surname,
+                occupation: m.occupation || "Member",
+                skills: Array.isArray(m.skills) ? m.skills : [],
+                phoneNumber: m.phoneNumber || "",
+                whatsappNumber: m.whatsappNumber || m.phoneNumber || "",
+                email: m.email || "",
+                photoUrl: m.photoUrl || "",
+                title: m.title || "",
+                schoolName: m.schoolName || "",
+                gradYear: m.gradYear ? String(m.gradYear) : "",
+              };
+            });
+          if (matched.length > 0) return matched;
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
 export async function searchMembers(query: string): Promise<MemberSearchResponse> {
   const localMembers = AppStateManager.getMembers();
+  const storedKey = localStorage.getItem("gemini_api_key") || DEFAULT_GEMINI_KEY;
 
-  // Try backend API first
+  // Step 1: Try direct Gemini AI search if key is available
+  if (storedKey && localMembers.length > 0) {
+    try {
+      const directAiResults = await queryDirectGeminiMemberSearch(localMembers, query, storedKey);
+      if (directAiResults && directAiResults.length > 0) {
+        return {
+          members: directAiResults,
+          total: directAiResults.length,
+          aiPowered: true,
+        };
+      }
+    } catch {}
+  }
+
+  // Step 2: Try backend API
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(apiUrl("/api/members/search"), {
@@ -1442,7 +1558,7 @@ export async function searchMembers(query: string): Promise<MemberSearchResponse
     }
   } catch {}
 
-  // Fallback to local / cached semantic search
+  // Step 3: Fast client-side semantic search engine
   const fallbackResults = performClientSemanticMemberSearch(localMembers, query);
   return {
     members: fallbackResults,
@@ -1452,6 +1568,20 @@ export async function searchMembers(query: string): Promise<MemberSearchResponse
 }
 
 export async function adminAISearch(query: string): Promise<Member[]> {
+  const localMembers = AppStateManager.getMembers();
+  const storedKey = localStorage.getItem("gemini_api_key") || DEFAULT_GEMINI_KEY;
+
+  // Try direct Gemini first
+  if (storedKey && localMembers.length > 0) {
+    try {
+      const directAiResults = await queryDirectGeminiMemberSearch(localMembers, query, storedKey);
+      if (directAiResults && directAiResults.length > 0) {
+        const idSet = new Set(directAiResults.map((r) => r.id));
+        return localMembers.filter((m) => idSet.has(m.id));
+      }
+    } catch {}
+  }
+
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(apiUrl("/api/admin/ai-search"), {
@@ -1460,11 +1590,15 @@ export async function adminAISearch(query: string): Promise<Member[]> {
       body: JSON.stringify({ query }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "AI search failed");
-    return data.members || [];
-  } catch {
-    return [];
-  }
+    if (res.ok && Array.isArray(data.members) && data.members.length > 0) {
+      return data.members;
+    }
+  } catch {}
+
+  // Fallback to local semantic search
+  const semanticResults = performClientSemanticMemberSearch(localMembers, query);
+  const idSet = new Set(semanticResults.map((r) => r.id));
+  return localMembers.filter((m) => idSet.has(m.id));
 }
 
 export interface MediaUploadResponse {

@@ -662,9 +662,10 @@ app.post("/api/members/search", conditionalAuth, async (req: Request, res: Respo
   }
 
   const { query } = validation.data;
+  let members: Member[] = [];
 
   try {
-    const members = await getMembers();
+    members = await getMembers();
     const ai = getGeminiClient();
 
     if (!ai || members.length === 0) {
@@ -717,30 +718,37 @@ User prompt: "${query}"
 Return format: ["id1", "id2", ...]`;
 
     let response: any = null;
-    try {
-      response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
-        contents: prompt,
-        config: {
-          temperature: 0.2,
-          responseMimeType: "application/json",
-        },
-      });
-    } catch (aiErr: any) {
-      serverLogger.warn("AI contact search failed, falling back to simple search", { error: aiErr?.message || aiErr });
-      const fallback = simpleContactSearch(members, query);
-      return res.json({ members: fallback, total: fallback.length, aiPowered: false });
+    const aiModels = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.6-flash"];
+    for (const model of aiModels) {
+      try {
+        response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            temperature: 0.2,
+            responseMimeType: "application/json",
+          },
+        });
+        if (response?.text) break;
+      } catch (err) {}
     }
 
     let matchedIds: string[] = [];
-    try {
-      const text = response?.text || "[]";
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) {
-        matchedIds = parsed.filter((id): id is string => typeof id === "string");
+    if (response?.text) {
+      try {
+        const text = response.text.replace(/```json/g, "").replace(/```/g, "").trim();
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+          matchedIds = parsed.filter((id): id is string => typeof id === "string");
+        }
+      } catch {
+        matchedIds = [];
       }
-    } catch {
-      matchedIds = [];
+    }
+
+    if (matchedIds.length === 0) {
+      const fallback = simpleContactSearch(members, query);
+      return res.json({ members: fallback, total: fallback.length, aiPowered: true });
     }
 
     const idSet = new Set(matchedIds);
@@ -763,38 +771,72 @@ Return format: ["id1", "id2", ...]`;
     res.json({ members: results, total: results.length, aiPowered: true });
   } catch (error) {
     serverLogger.error("Member search error", error);
-    res.status(500).json({ error: "Member search failed." });
+    const fallback = simpleContactSearch(members, query);
+    res.json({ members: fallback, total: fallback.length, aiPowered: false });
   }
 });
 
 function simpleContactSearch(members: Member[], query: string): Array<{ id: string; fullName: string; firstName?: string; surname?: string; occupation: string; skills: string[]; phoneNumber: string; whatsappNumber?: string; email: string; photoUrl: string; title?: string }> {
-  const term = query.toLowerCase().trim();
-  return members
-    .filter((m) => {
-      const searchFields = [
-        m.fullName, m.firstName, m.surname, m.occupation,
-        m.phoneNumber, m.whatsappNumber, m.email,
-        ...(m.skills || []),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+  const qClean = query.toLowerCase().trim();
+  if (!qClean || qClean.length < 2) return [];
 
-      const termWords = term.split(/\s+/).filter(Boolean);
-      return termWords.every((word) => searchFields.includes(word));
-    })
-    .map((m) => ({
-      id: m.id,
-      fullName: m.fullName,
-      firstName: m.firstName,
-      surname: m.surname,
-      occupation: m.occupation,
-      skills: m.skills,
-      phoneNumber: m.phoneNumber,
-      whatsappNumber: m.whatsappNumber,
-      email: m.email,
-      photoUrl: m.photoUrl,
-      title: m.title,
+  const isOccupationIntent = /\b(occupation|occupations|job|jobs|profession|professions|career|careers|work|working|employed|vocation|vocations)\b/i.test(qClean);
+  const isSkillsIntent = /\b(skill|skills|expertise|specialization|speciality|talents)\b/i.test(qClean);
+  const isAllMembersIntent = /\b(all\s+members|everyone|everybody|whole\s+database|entire\s+database|all\s+in\s+the\s+database|all\s+those\s+in|list\s+all|show\s+all|who\s+is\s+in\s+the\s+database|list\s+those\s+in\s+the\s+database|database)\b/i.test(qClean);
+
+  const stopWords = new Set(["who", "is", "are", "the", "in", "our", "chapter", "give", "me", "contact", "contacts", "of", "find", "a", "an", "someone", "can", "help", "with", "where", "do", "we", "have", "looking", "for", "please", "search", "show", "tell", "any", "which", "members", "member", "people", "person", "need", "i", "what", "whats", "number", "phone", "email", "address", "details", "info", "information", "to", "at", "from"]);
+  const tokens = qClean.split(/[\s,?.!/\\-]+/).filter((t) => !stopWords.has(t) && t.length >= 2);
+
+  const scored = members.map((m) => {
+    let score = 0;
+    const occ = (m.occupation || "").toLowerCase();
+    const skills = Array.isArray(m.skills) ? m.skills.join(" ").toLowerCase() : "";
+    const name = `${m.title || ""} ${m.firstName || ""} ${m.surname || ""} ${m.fullName || ""}`.toLowerCase();
+    const phone = (m.phoneNumber || "").toLowerCase();
+    const email = (m.email || "").toLowerCase();
+    const school = (m.schoolName || "").toLowerCase();
+    const location = `${m.area || ""} ${m.otherArea || ""} ${m.estateName || ""} ${m.streetName || ""}`.toLowerCase();
+
+    if (isOccupationIntent && occ && occ !== "member" && occ.trim().length > 0) score += 50;
+    if (isSkillsIntent && Array.isArray(m.skills) && m.skills.length > 0) score += 50;
+    if (isAllMembersIntent) score += 30;
+
+    if (occ && (occ.includes(qClean) || qClean.includes(occ))) score += 40;
+    if (skills && (skills.includes(qClean) || qClean.includes(skills))) score += 35;
+    if (name && (name.includes(qClean) || qClean.includes(name))) score += 35;
+    if (phone && phone.includes(qClean)) score += 50;
+    if (email && email.includes(qClean)) score += 40;
+    if (school && school.includes(qClean)) score += 25;
+    if (location && location.includes(qClean)) score += 20;
+
+    for (const token of tokens) {
+      if (occ.includes(token)) score += 18;
+      if (skills.includes(token)) score += 14;
+      if (name.includes(token)) score += 15;
+      if (phone.includes(token)) score += 20;
+      if (email.includes(token)) score += 15;
+      if (school.includes(token)) score += 10;
+      if (location.includes(token)) score += 10;
+    }
+
+    return { member: m, score };
+  });
+
+  return scored
+    .filter((s) => s.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((s) => ({
+      id: s.member.id,
+      fullName: s.member.fullName,
+      firstName: s.member.firstName,
+      surname: s.member.surname,
+      occupation: s.member.occupation,
+      skills: s.member.skills,
+      phoneNumber: s.member.phoneNumber,
+      whatsappNumber: s.member.whatsappNumber,
+      email: s.member.email,
+      photoUrl: s.member.photoUrl,
+      title: s.member.title,
     }));
 }
 
