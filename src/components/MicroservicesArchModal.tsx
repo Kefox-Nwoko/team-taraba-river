@@ -137,7 +137,7 @@ export const MicroservicesArchModal: React.FC<MicroservicesArchModalProps> = ({
               </div>{" "}
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
                 {" "}
-                Real-time activity point tracking and data visualization of top 5 active members on
+                Real-time activity point tracking and data visualization of top 10 active members on
                 the admin dashboard.{" "}
               </p>{" "}
             </div>{" "}

@@ -738,7 +738,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const topActiveMembers = [...members]
     .filter((m) => (m.activityPoints || 0) > 0)
     .sort((a, b) => (b.activityPoints || 0) - (a.activityPoints || 0))
-    .slice(0, 5);
+    .slice(0, 10);
 
   return (
     <div className="space-y-6 font-sans font-normal">
@@ -1018,7 +1018,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <div>
                   <h3 className="text-sm text-slate-900 dark:text-white flex items-center space-x-2 font-normal">
                     <Award className="w-5 h-5 text-amber-500" />
-                    <span>Top 5 Active Members Engagement</span>
+                    <span>Top 10 Active Members Engagement</span>
                   </h3>
                 </div>
                 <button
