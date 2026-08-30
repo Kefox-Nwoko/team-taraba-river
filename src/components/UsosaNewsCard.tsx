@@ -816,7 +816,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                             {formatMemberDisplayName(m.title, m.fullName)}
                           </h4>
                           {m.schoolName && (
-                            <span className="px-1.5 py-0.2 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 truncate max-w-[160px]">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs sm:text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300/80 dark:border-slate-700 shadow-2xs truncate max-w-xs">
                               🎓 {m.schoolName}
                             </span>
                           )}
