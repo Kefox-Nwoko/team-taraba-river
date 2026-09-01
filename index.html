@@ -28,13 +28,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <style>
       /* Critical scroll fix & sticky positioning support */
-      html, body {
+      html {
+        margin: 0;
+        padding: 0;
+        min-height: 100%;
+        height: auto;
+        overflow-x: clip;
+      }
+      body {
         margin: 0;
         padding: 0;
         min-height: 100vh;
-        height: auto !important;
-        overflow-x: clip;
-        overflow-y: auto !important;
+        height: auto;
       }
       #root {
         min-height: 100vh;

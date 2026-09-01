@@ -406,7 +406,7 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
       </div>
 
       {/* RESPONSIVE TABLE / CONTAINER */}
-      <div className="transition-colors font-normal overflow-hidden">
+      <div className="transition-colors font-normal overflow-visible">
         {/* Rows (Desktop) / Lists (Mobile) */}
         <div className="p-4 md:p-0">
           {displayedMembers.length === 0 ? (
