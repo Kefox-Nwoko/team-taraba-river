@@ -61,10 +61,10 @@ export function usePWAInstall() {
       const isCooldownActive = dismissedAt && Date.now() - parseInt(dismissedAt, 10) < DISMISS_COOLDOWN_MS;
 
       if (!isCooldownActive) {
-        // Show non-intrusive install prompt after a short 1.8s delay on launch
+        // Show non-intrusive install prompt after a 2-second delay on launch
         const timer = setTimeout(() => {
           setShowAutoInstallPrompt(true);
-        }, 1800);
+        }, 2000);
         return () => clearTimeout(timer);
       }
     }
