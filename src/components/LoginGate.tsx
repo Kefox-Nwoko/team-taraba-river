@@ -14,8 +14,6 @@ interface LoginGateProps {
   availableMembers: Member[];
   onExploreGuest?: () => void;
   onOpenManual?: () => void;
-  onOpenInstallModal?: () => void;
-  isStandalone?: boolean;
 }
 export const LoginGate: React.FC<LoginGateProps> = ({
   onLoginSuccess,
@@ -23,8 +21,6 @@ export const LoginGate: React.FC<LoginGateProps> = ({
   availableMembers,
   onExploreGuest,
   onOpenManual,
-  onOpenInstallModal,
-  isStandalone = false,
 }) => {
   const [credential, setCredential] = useState("");
   const [isLoading, setIsLoading] = useState(false);

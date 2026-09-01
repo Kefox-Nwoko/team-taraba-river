@@ -30,8 +30,6 @@ interface NavbarProps {
   isAiAssistantOpen?: boolean;
   pendingApprovalsCount?: number;
   onCreateEvent?: () => void;
-  onOpenInstallModal?: () => void;
-  isStandalone?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -41,9 +39,10 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenSignIn,
   onOpenRegister,
   onSignOut,
+  onToggleAiAssistant,
+  isAiAssistantOpen,
   pendingApprovalsCount = 0,
-  onOpenInstallModal,
-  isStandalone = false,
+  onCreateEvent,
 }) => {
   const { theme, toggleTheme } = useTheme();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
