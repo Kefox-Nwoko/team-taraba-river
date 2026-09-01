@@ -393,6 +393,7 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
       {/* ── UNIFIED STICKY CONTROL PANEL (Sub-Tabs + Search & Export Toolbar) ── */}
       <div
         className="sticky top-[80px] sm:top-[92px] z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200/80 dark:border-slate-800/80 shadow-md transition-all space-y-3 pt-2.5 pb-3.5 font-normal"
+        style={{ position: "-webkit-sticky" }}
       >
         {/* Row 1: Sub-Tabs Navigation (if provided) */}
         {subTabsHeader}

@@ -88,17 +88,13 @@ function getPointsTier(points: number): PointsTier {
 interface MyProfileViewProps {
   currentUser: Member;
   onUpdateSuccess: (m: Member) => void;
-  onOpenTerms?: () => void;
-  onOpenInstallModal?: () => void;
-  isStandalone?: boolean;
+  onOpenTerms: () => void;
 }
 
 export const MyProfileView: React.FC<MyProfileViewProps> = ({
   currentUser,
   onUpdateSuccess,
   onOpenTerms,
-  onOpenInstallModal,
-  isStandalone = false,
 }) => {
   const isIncomplete = !isMemberProfileComplete(currentUser);
   const [isEditing, setIsEditing] = useState(isIncomplete);

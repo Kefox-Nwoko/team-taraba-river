@@ -690,8 +690,6 @@ export default function App() {
                 <MyProfileView
                   currentUser={currentUser}
                   onOpenTerms={() => setTermsModalOpen(true)}
-                  onOpenInstallModal={pwa.openInstallModal}
-                  isStandalone={pwa.isStandalone}
                   onUpdateSuccess={(updatedUser) => {
                     setCurrentUser(updatedUser);
                     AppStateManager.setCurrentUser(updatedUser);
