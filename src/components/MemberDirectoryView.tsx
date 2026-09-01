@@ -29,6 +29,7 @@ interface MemberDirectoryViewProps {
   currentUser: Member | null;
   onEditMember: (member: Member) => void;
   onRegisterClick: () => void;
+  subTabsHeader?: React.ReactNode;
 }
 
 function formatWhatsappUrl(num: string): string {
@@ -103,6 +104,7 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
   currentUser,
   onEditMember,
   onRegisterClick,
+  subTabsHeader,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [aiResults, setAiResults] = useState<Member[] | null>(null);
@@ -345,21 +347,25 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
 
   return (
     <div className="space-y-6 font-sans font-normal">
-      {/* Sticky Filter & Search Bar - Pinned directly below the sticky Sub-Tabs Bar */}
-      <div className="sticky top-[136px] sm:top-[150px] z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl pt-2.5 pb-3.5 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200/80 dark:border-slate-800 transition-colors shadow-xs font-normal">
+      {/* ── UNIFIED STICKY CONTROL PANEL (Sub-Tabs + Search & Export Toolbar) ── */}
+      <div className="sticky top-[80px] sm:top-[92px] z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200/80 dark:border-slate-800/80 shadow-md transition-all space-y-3 pt-2.5 pb-3.5 font-normal">
+        {/* Row 1: Sub-Tabs Navigation (if provided) */}
+        {subTabsHeader}
+
+        {/* Row 2: Search Input & Export to Excel */}
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
           <form onSubmit={handleSearchSubmit} className="relative flex-1">
-            <Search className="w-6 h-6 text-slate-400 absolute left-4 top-3.5" />
+            <Search className="w-5 h-5 sm:w-6 sm:h-6 text-slate-400 absolute left-4 top-3 sm:top-3.5" />
             <input
               type="text"
               placeholder="Search members by any detail — AI-enhanced for birthdays, locations, skills..."
               value={searchTerm}
               onChange={handleSearchChange}
-              className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl pl-13 pr-6 py-3.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-normal shadow-xs"
+              className="w-full bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700/80 rounded-2xl pl-12 sm:pl-13 pr-6 py-2.5 sm:py-3.5 text-xs sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-normal shadow-xs"
             />
             {isAiSearching && (
-              <div className="absolute right-4 top-3.5">
-                <Sparkles className="w-5 h-5 text-purple-500 animate-spin" />
+              <div className="absolute right-4 top-3 sm:top-3.5">
+                <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-purple-500 animate-spin" />
               </div>
             )}
           </form>
@@ -368,7 +374,7 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
             <button
               type="button"
               onClick={handleExportToExcel}
-              className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-semibold rounded-2xl transition shadow-sm flex items-center justify-center space-x-2 shrink-0 cursor-pointer"
+              className="px-4 py-2.5 sm:py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs sm:text-sm font-semibold rounded-2xl transition shadow-sm flex items-center justify-center space-x-2 shrink-0 cursor-pointer"
               title="Download full member database as Microsoft Excel CSV"
             >
               <FileSpreadsheet className="w-4 h-4" />
@@ -376,9 +382,11 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
             </button>
           )}
         </div>
-        <div className="flex items-center justify-between text-xs sm:text-sm text-slate-500 dark:text-slate-400 pt-2.5 border-t border-slate-200/60 dark:border-slate-800/60 font-normal mt-2.5">
+
+        {/* Row 3: Result Entries Count & AI Indicator */}
+        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-200/60 dark:border-slate-800/60 font-normal">
           <span>
-            Showing <strong className="text-slate-900 dark:text-white font-normal">{displayedMembers.length}</strong> of {members.length} member entries
+            Showing <strong className="text-slate-900 dark:text-white font-semibold">{displayedMembers.length}</strong> of {members.length} member entries
             {aiResults !== null && isAiSearching === false && (
               <span className="ml-2 text-purple-600 dark:text-purple-400 font-medium flex items-center gap-1 inline-flex">
                 <Sparkles className="w-3 h-3" /> AI ranked
