@@ -72,6 +72,19 @@ export async function fetchMembers(): Promise<Member[]> {
 
   return AppStateManager.getMembers();
 }
+
+export async function deleteMember(memberId: string): Promise<void> {
+  try {
+    const headers = await getAuthHeaders();
+    await fetch(apiUrl(`/api/members/${memberId}`), {
+      method: "DELETE",
+      headers,
+    });
+  } catch {}
+
+  await FirebaseSyncManager.deleteMember(memberId);
+  AppStateManager.deleteMember(memberId);
+}
 export async function loginMember(
   credential: string
 ): Promise<{ member: Member; customToken?: string }> {

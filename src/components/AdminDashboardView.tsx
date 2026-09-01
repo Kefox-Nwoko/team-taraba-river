@@ -853,6 +853,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               currentUser={currentUser}
               onEditMember={onEditMember}
               onRegisterClick={onRegisterClick}
+              onRefreshData={onRefreshData}
               subTabsHeader={subTabsBar}
             />
           );

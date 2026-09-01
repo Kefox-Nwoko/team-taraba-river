@@ -214,6 +214,14 @@ export class FirebaseSyncManager {
     }
   }
 
+  public static async deleteMember(memberId: string): Promise<void> {
+    try {
+      await deleteDoc(doc(db, "members", memberId));
+    } catch (err) {
+      logger.error("Failed to delete member from Firestore", err);
+    }
+  }
+
   /**
    * Persistently marks a headline article as read in both LocalStorage and Firestore
    * so that across 20+ logins and different devices, read status is permanently retained.

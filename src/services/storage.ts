@@ -118,6 +118,11 @@ export class AppStateManager {
     localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(members));
     this.notify();
   }
+  public static deleteMember(memberId: string): Member[] {
+    const list = this.getMembers().filter((m) => m.id !== memberId);
+    this.saveMembers(list);
+    return list;
+  }
   public static getEvents(): GroupEvent[] {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY_EVENTS);
     if (!raw) {

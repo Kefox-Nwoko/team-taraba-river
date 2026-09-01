@@ -1136,6 +1136,43 @@ app.put("/api/members/:id", conditionalAuth, async (req: Request, res: Response)
   }
 });
 
+// 6b. Member Service: Delete Profile (Admin only)
+app.delete("/api/members/:id", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
+  const { id } = req.params;
+  try {
+    if (!isFirestoreAvailable()) {
+      fallbackMembers = fallbackMembers.filter((m) => m.id !== id);
+      invalidateMembersCache();
+      res.json({ success: true, message: "Member deleted successfully." });
+      return;
+    }
+
+    const docRef = db.collection(COLLECTIONS.members).doc(id);
+    const docSnap = await docRef.get();
+    if (!docSnap.exists) {
+      res.status(404).json({ error: "Member not found" });
+      return;
+    }
+
+    const memberData = docSnap.data() as Member;
+    await docRef.delete();
+    invalidateMembersCache();
+
+    await addActivityLog({
+      id: `act_${Date.now()}`,
+      memberId: id,
+      memberName: memberData?.fullName || "Member",
+      action: `Admin permanently deleted member profile (${memberData?.fullName || id})`,
+      timestamp: new Date().toISOString(),
+    });
+
+    res.json({ success: true, message: "Member deleted successfully." });
+  } catch (error) {
+    serverLogger.error("Delete member error", error);
+    res.status(500).json({ error: "Failed to delete member profile." });
+  }
+});
+
 // 7. Events Service: List
 app.get("/api/events", conditionalAuth, async (req: Request, res: Response) => {
   try {
