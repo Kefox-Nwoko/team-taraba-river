@@ -59,6 +59,8 @@ const ModalFallback = () => (
 import { isMemberProfileComplete, getMissingMemberFields } from "./utils/memberValidation";
 import { usePWAInstall } from "./hooks/usePWAInstall";
 import { PWAInstallModal } from "./components/PWAInstallModal";
+import { PWAInstallBanner } from "./components/PWAInstallBanner";
+import { PWAUpdateModal } from "./components/PWAUpdateModal";
 
 export default function App() {
   const { notify } = useToast();
@@ -449,12 +451,32 @@ export default function App() {
           onOpenInstallModal={pwa.openInstallModal}
           isStandalone={pwa.isStandalone}
         />
+        <PWAInstallBanner
+          isOpen={pwa.showAutoInstallPrompt}
+          platform={pwa.platform}
+          hasNativePrompt={pwa.hasNativePrompt}
+          onInstallClick={() => {
+            if (pwa.hasNativePrompt) {
+              pwa.triggerNativeInstall();
+            } else {
+              pwa.openInstallModal();
+            }
+          }}
+          onDismiss={pwa.dismissAutoInstallPrompt}
+        />
         <PWAInstallModal
           isOpen={pwa.isInstallModalOpen}
           onClose={pwa.closeInstallModal}
           platform={pwa.platform}
           hasNativePrompt={pwa.hasNativePrompt}
           onTriggerNativeInstall={pwa.triggerNativeInstall}
+        />
+        <PWAUpdateModal
+          isOpen={pwa.updateAvailable}
+          isUpdating={pwa.isUpdating}
+          onApplyUpdate={pwa.applyUpdate}
+          onDismiss={pwa.dismissUpdate}
+          isStandalone={pwa.isStandalone}
         />
         {registerModalOpen && (
           <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-16 overflow-y-auto flex items-start justify-center animate-fadeIn">
@@ -534,13 +556,33 @@ export default function App() {
         isStandalone={pwa.isStandalone}
       />
 
-      {/* PWA Multi-Platform Install Modal */}
+      {/* PWA Multi-Platform Install Banner & Modals */}
+      <PWAInstallBanner
+        isOpen={pwa.showAutoInstallPrompt}
+        platform={pwa.platform}
+        hasNativePrompt={pwa.hasNativePrompt}
+        onInstallClick={() => {
+          if (pwa.hasNativePrompt) {
+            pwa.triggerNativeInstall();
+          } else {
+            pwa.openInstallModal();
+          }
+        }}
+        onDismiss={pwa.dismissAutoInstallPrompt}
+      />
       <PWAInstallModal
         isOpen={pwa.isInstallModalOpen}
         onClose={pwa.closeInstallModal}
         platform={pwa.platform}
         hasNativePrompt={pwa.hasNativePrompt}
         onTriggerNativeInstall={pwa.triggerNativeInstall}
+      />
+      <PWAUpdateModal
+        isOpen={pwa.updateAvailable}
+        isUpdating={pwa.isUpdating}
+        onApplyUpdate={pwa.applyUpdate}
+        onDismiss={pwa.dismissUpdate}
+        isStandalone={pwa.isStandalone}
       />
 
       {/* Terms and Conditions Modal */}

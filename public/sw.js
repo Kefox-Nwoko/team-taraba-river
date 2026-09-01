@@ -7,7 +7,7 @@
  * - In-app cache clearance IPC message handling
  */
 
-const CACHE_VERSION = "taraba-river-v4";
+const CACHE_VERSION = "taraba-river-v5";
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const MAX_RUNTIME_ITEMS = 40;
 
@@ -46,7 +46,7 @@ self.addEventListener("install", (event) => {
   );
 });
 
-// 2. Activation Phase — Clean up old caches
+// 2. Activation Phase — Clean up old caches and claim clients immediately
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
@@ -59,6 +59,13 @@ self.addEventListener("activate", (event) => {
         )
       )
       .then(() => self.clients.claim())
+      .then(() => {
+        return self.clients.matchAll({ type: "window" }).then((clients) => {
+          clients.forEach((client) => {
+            client.postMessage({ type: "SW_ACTIVATED", version: CACHE_VERSION });
+          });
+        });
+      })
   );
 });
 
