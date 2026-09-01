@@ -345,8 +345,8 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
 
   return (
     <div className="space-y-6 font-sans font-normal">
-      {/* Sticky Filter Bar - Pinned below the fixed Navbar when scrolling for seamless access */}
-      <div className="sticky top-[80px] sm:top-[92px] z-40 bg-white/95 dark:bg-[#121212]/95 backdrop-blur-xl pt-3 pb-4 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200 dark:border-slate-800 transition-colors shadow-xs font-normal">
+      {/* Sticky Filter & Search Bar - Pinned directly below the sticky Sub-Tabs Bar */}
+      <div className="sticky top-[136px] sm:top-[150px] z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl pt-2.5 pb-3.5 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200/80 dark:border-slate-800 transition-colors shadow-xs font-normal">
         <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
           <form onSubmit={handleSearchSubmit} className="relative flex-1">
             <Search className="w-6 h-6 text-slate-400 absolute left-4 top-3.5" />

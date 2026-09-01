@@ -26,7 +26,7 @@
 html {
   min-height: 100%;
   height: auto !important;
-  overflow-x: hidden;
+  overflow-x: clip;
   overflow-y: auto !important;
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
@@ -37,7 +37,7 @@ body {
   height: auto !important;
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch;
 }

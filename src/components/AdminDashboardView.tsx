@@ -780,67 +780,69 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Navigation Sub-Tabs Bar - Responsive Grid on Mobile, Flex on Desktop */}
-      <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 sm:gap-2.5 w-full font-normal">
-        <button onClick={() => setActiveTab("directory")}
-          className={`px-3 py-2.5 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer min-h-[42px] ${
-            activeTab === "directory"
-              ? "bg-teal-700 text-white shadow-md shadow-teal-700/20"
-              : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
-          }`}
-        >
-          <Users className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-          <span className="truncate">Members Directory</span>
-        </button>
+      {/* Sticky Navigation Sub-Tabs Bar — Locked directly below the fixed navbar */}
+      <div className="sticky top-[80px] sm:top-[92px] z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl py-2 sm:py-2.5 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-slate-200/80 dark:border-slate-800 shadow-xs transition-colors font-normal">
+        <div className="flex items-center gap-2 sm:gap-2.5 overflow-x-auto no-scrollbar py-0.5 w-full">
+          <button onClick={() => setActiveTab("directory")}
+            className={`px-3 py-2 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer shrink-0 min-h-[40px] ${
+              activeTab === "directory"
+                ? "bg-teal-700 text-white shadow-md shadow-teal-700/20 font-semibold"
+                : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+            }`}
+          >
+            <Users className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+            <span className="truncate">Members Directory</span>
+          </button>
 
-        <button onClick={() => setActiveTab("rsvps")}
-          className={`px-3 py-2.5 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer min-h-[42px] ${
-            activeTab === "rsvps"
-              ? "bg-teal-700 text-white shadow-md shadow-teal-700/20"
-              : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
-          }`}
-        >
-          <Calendar className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-          <span className="truncate">Events</span>
-        </button>
+          <button onClick={() => setActiveTab("rsvps")}
+            className={`px-3 py-2 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer shrink-0 min-h-[40px] ${
+              activeTab === "rsvps"
+                ? "bg-teal-700 text-white shadow-md shadow-teal-700/20 font-semibold"
+                : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+            }`}
+          >
+            <Calendar className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+            <span className="truncate">Events</span>
+          </button>
 
-        <button onClick={() => setActiveTab("analytics")}
-          className={`px-3 py-2.5 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer min-h-[42px] ${
-            activeTab === "analytics"
-              ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-semibold"
-              : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
-          }`}
-        >
-          <Award className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-          <span className="truncate">Top Engagement</span>
-        </button>
+          <button onClick={() => setActiveTab("analytics")}
+            className={`px-3 py-2 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer shrink-0 min-h-[40px] ${
+              activeTab === "analytics"
+                ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-bold"
+                : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+            }`}
+          >
+            <Award className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+            <span className="truncate">Top Engagement</span>
+          </button>
 
-        <button onClick={() => setActiveTab("moderation")}
-          className={`relative px-3 py-2.5 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer min-h-[42px] ${
-            activeTab === "moderation"
-              ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-semibold"
-              : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
-          }`}
-        >
-          <Clock className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-          <span className="truncate">Media Moderation</span>
-          {pendingApprovals.length > 0 && (
-            <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1">
-              {pendingApprovals.length}
-            </span>
-          )}
-        </button>
+          <button onClick={() => setActiveTab("moderation")}
+            className={`relative px-3 py-2 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer shrink-0 min-h-[40px] ${
+              activeTab === "moderation"
+                ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-bold"
+                : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+            }`}
+          >
+            <Clock className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
+            <span className="truncate">Media Moderation</span>
+            {pendingApprovals.length > 0 && (
+              <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1">
+                {pendingApprovals.length}
+              </span>
+            )}
+          </button>
 
-        <button onClick={() => setActiveTab("cloud_settings")}
-          className={`px-3 py-2.5 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer min-h-[42px] ${
-            activeTab === "cloud_settings"
-              ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/20"
-              : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
-          }`}
-        >
-          <FolderOpen className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 text-cyan-400" />
-          <span className="truncate">Cloud Media</span>
-        </button>
+          <button onClick={() => setActiveTab("cloud_settings")}
+            className={`px-3 py-2 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer shrink-0 min-h-[40px] ${
+              activeTab === "cloud_settings"
+                ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/20 font-semibold"
+                : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+            }`}
+          >
+            <FolderOpen className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 text-cyan-400" />
+            <span className="truncate">Cloud Media</span>
+          </button>
+        </div>
       </div>
 
       {/* TAB 0: MEMBERS DIRECTORY */}
