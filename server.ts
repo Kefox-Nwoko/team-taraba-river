@@ -39,7 +39,7 @@ import { getEmailConfig, updateEmailConfig, sendEmail } from "./server/emailServ
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
 // Adaptive body-size limits — 50MB for media upload routes, 2MB for everything else
 const MEDIA_UPLOAD_PATHS = ['/api/media/upload', '/api/media/finalize', '/api/media/upload-video-to-youtube'];
@@ -57,7 +57,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   (isMedia ? largeUrlParser : smallUrlParser)(req, res, next);
 });
 
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,https://team-taraba-river.web.app").split(",").map((s) => s.trim()).filter(Boolean);
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,http://localhost:3001,https://team-taraba-river.web.app").split(",").map((s) => s.trim()).filter(Boolean);
 
 app.use((req: Request, res: Response, next: NextFunction) => {
   const origin = req.headers.origin;
