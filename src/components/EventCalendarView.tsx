@@ -15,6 +15,7 @@ import { MemberAvatar } from "./MemberAvatar";
 import { ReturnButton } from "./ReturnButton";
 import { UsosaNewsCard } from "./UsosaNewsCard";
 import { BirthdayCelebrationAnimation } from "./BirthdayCelebrationAnimation";
+import { isOfficialFutureEvent, getDaysUntilEvent } from "../utils/eventUtils";
 import {
   Calendar as CalendarIcon,
   MapPin,
@@ -119,19 +120,6 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
     if (e.target) e.target.value = "";
   };
 
-  const getDaysUntilEvent = (dateStr?: string): number | null => {
-    if (!dateStr || typeof dateStr !== "string") return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const parts = dateStr.split("-");
-    if (parts.length !== 3) return null;
-    const eventDateObj = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-    if (isNaN(eventDateObj.getTime())) return null;
-    eventDateObj.setHours(0, 0, 0, 0);
-    const diffTime = eventDateObj.getTime() - today.getTime();
-    return Math.round(diffTime / (1000 * 60 * 60 * 24));
-  };
-
   const formatDateLabel = (dateStr?: string) => {
     if (!dateStr || typeof dateStr !== "string") return "";
     try {
@@ -146,7 +134,10 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
     }
   };
 
-  const eventsInNext7Days = events
+  // STRICT RULE: Only official future chapter events (excludes past events and media gallery folders)
+  const officialUpcomingEvents = events.filter(isOfficialFutureEvent);
+
+  const eventsInNext7Days = officialUpcomingEvents
     .filter((e) => {
       const days = getDaysUntilEvent(e.date);
       return days !== null && days >= 0 && days <= 7;
@@ -157,25 +148,23 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
       return dA - dB;
     });
 
-  const filteredEvents = events.filter((e) => {
-    const days = getDaysUntilEvent(e.date);
-    if (days !== null && days < -7) return false;
-    if (selectedCategory === "next7days") {
-      return days !== null && days >= 0 && days <= 7;
-    }
-    if (selectedCategory === "all") return true;
-    return e.category === selectedCategory;
-  });
+  const filteredEvents = officialUpcomingEvents
+    .filter((e) => {
+      if (selectedCategory === "next7days") {
+        const days = getDaysUntilEvent(e.date);
+        return days !== null && days >= 0 && days <= 7;
+      }
+      if (selectedCategory === "all") return true;
+      return e.category === selectedCategory;
+    })
+    .sort((a, b) => {
+      const dA = getDaysUntilEvent(a.date) ?? 999;
+      const dB = getDaysUntilEvent(b.date) ?? 999;
+      return dA - dB;
+    });
 
   const dynamicCategories = Array.from(
-    new Set(
-      events
-        .filter((e) => {
-          const days = getDaysUntilEvent(e.date);
-          return !(days !== null && days < -7);
-        })
-        .map((e) => e.category)
-    )
+    new Set(officialUpcomingEvents.map((e) => e.category))
   ).filter(Boolean).sort();
 
   // BIRTHDAYS FILTER: Current month, and next month's birthdays starting from the 25th of the current month
@@ -235,10 +224,11 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
       }
 
       const isToday = bMonth === currentMonth && bDay === currentDay;
-      const isCurrentMonth = bMonth === currentMonth;
+      // Birthdays that have passed (bDay < currentDay) disappear once the day is over
+      const isUpcomingThisMonth = bMonth === currentMonth && bDay >= currentDay;
       const isNextMonthNearEnd = currentDay >= 25 && bMonth === nextMonth;
 
-      const isVisible = isCurrentMonth || isNextMonthNearEnd;
+      const isVisible = isUpcomingThisMonth || isNextMonthNearEnd;
 
       return {
         memberId: m.id,
@@ -600,9 +590,10 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                         </div>
                       </div>
 
-                      {/* Right: Inline RSVP Buttons & Admin Edit/Delete Controls */}
+                      {/* Right: Inline RSVP Buttons (Members Only) & Admin Edit/Delete Controls */}
                       <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800/60">
-                        {currentUser && (
+                        {/* Member RSVP Buttons (Shown ONLY to regular members, hidden for Admin) */}
+                        {currentUser && !isAdmin && (
                           <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1">
                             <button
                               type="button"
@@ -640,7 +631,8 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                           </div>
                         )}
 
-                        {(isAdmin || (currentUser && event.createdById === currentUser.id)) && (
+                        {/* Admin Event Controls */}
+                        {isAdmin && (
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
@@ -679,7 +671,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                   </h3>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-2.5">
                   {birthdaysList.length === 0 ? (
                     <div className="py-6 text-center text-slate-500 dark:text-slate-400 text-sm font-normal">
                       No upcoming member birthdays.
@@ -688,7 +680,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                     birthdaysList.map((item, idx) => (
                       <div
                         key={idx}
-                        className={`flex items-center justify-between group p-2.5 rounded-2xl transition-all ${
+                        className={`flex items-center justify-between group py-1.5 px-2.5 rounded-2xl transition-all ${
                           item.isToday
                             ? "bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-amber-500/10 dark:from-pink-950/40 dark:via-purple-950/40 dark:to-amber-950/30 border border-pink-500/30 dark:border-pink-500/40 shadow-xs"
                             : ""
@@ -711,7 +703,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                             {item.isToday ? (
                               <div className="flex items-center gap-2 flex-wrap">
                                 <BirthdayCelebrationAnimation autoPlay durationMs={6000}>
-                                  <span className="text-sm sm:text-base animate-celebrant-today truncate block tracking-wide">
+                                  <span className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate block tracking-wide">
                                     {item.memberName}
                                   </span>
                                 </BirthdayCelebrationAnimation>

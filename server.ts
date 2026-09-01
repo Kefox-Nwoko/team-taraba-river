@@ -31,20 +31,30 @@ import {
 import { uploadIntermediateMedia, finalizeMedia, getMediaStatus, uploadVideoBufferToYouTube, base64ToBuffer } from "./server/mediaPipeline";
 import { isMemberCredentialMatch } from "./src/lib/authMatching";
 import { CSV_SEED_MEMBERS } from "./src/data/csvMembers";
+import { startBirthdayScheduler, triggerMonthlyDigest, triggerDailyEveAlert } from "./server/birthdayScheduler";
+import { getUpcomingNextMonthCelebrants, getTomorrowCelebrants, getWATDate } from "./server/birthdayService";
+import { buildMonthlyDigestEmailHtml, buildDailyEveAlertEmailHtml, buildTestEmailHtml } from "./server/emailTemplates";
+import { getEmailConfig, updateEmailConfig, sendEmail } from "./server/emailService";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: '200mb' }));
-app.use(express.urlencoded({ limit: '200mb', extended: true }));
+// Adaptive body-size limits — 50MB for media upload routes, 2MB for everything else
+const MEDIA_UPLOAD_PATHS = ['/api/media/upload', '/api/media/finalize', '/api/media/upload-video-to-youtube'];
+const smallJsonParser = express.json({ limit: '2mb' });
+const largeJsonParser = express.json({ limit: '50mb' });
+const smallUrlParser = express.urlencoded({ limit: '2mb', extended: true });
+const largeUrlParser = express.urlencoded({ limit: '50mb', extended: true });
 
 app.use((req: Request, res: Response, next: NextFunction) => {
-  if (req.headers['content-length'] && parseInt(req.headers['content-length']) > 200 * 1024 * 1024) {
-    return res.status(413).json({ error: 'Request body too large. Please reduce file sizes or upload fewer items at once.' });
-  }
-  next();
+  const isMedia = MEDIA_UPLOAD_PATHS.some(p => req.path === p);
+  (isMedia ? largeJsonParser : smallJsonParser)(req, res, next);
+});
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const isMedia = MEDIA_UPLOAD_PATHS.some(p => req.path === p);
+  (isMedia ? largeUrlParser : smallUrlParser)(req, res, next);
 });
 
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:3000,https://team-taraba-river.web.app").split(",").map((s) => s.trim()).filter(Boolean);
@@ -76,38 +86,113 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// --- Rate Limiting (In-Memory) for Auth Endpoints ---
-const rateLimitStore: Map<string, { count: number; resetTime: number }> = new Map();
-const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
-const RATE_LIMIT_MAX = 10; // 10 attempts per minute
+// --- Request Metrics (In-Memory) ---
+const requestMetrics = {
+  totalRequests: 0,
+  activeRequests: 0,
+  peakConcurrent: 0,
+  requestsPerMinute: 0,
+  endpointCounts: new Map<string, number>(),
+  errorCounts: new Map<string, number>(),
+  responseTimes: [] as number[],
+  _minuteWindow: { count: 0, resetAt: Date.now() + 60_000 },
+};
 
-function rateLimiter(req: Request, res: Response, next: NextFunction): void {
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const now = Date.now();
-  const entry = rateLimitStore.get(ip);
-
-  if (!entry || now > entry.resetTime) {
-    rateLimitStore.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW_MS });
-    next();
-    return;
-  }
-
-  if (entry.count >= RATE_LIMIT_MAX) {
-    res.status(429).json({ error: 'Too many requests. Please try again in a minute.' });
-    return;
-  }
-
-  entry.count++;
-  next();
+function getPercentile(arr: number[], p: number): number {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const idx = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, idx)];
 }
 
-// Periodically clean up expired rate limit entries
-setInterval(() => {
+app.use((req: Request, res: Response, next: NextFunction) => {
+  requestMetrics.totalRequests++;
+  requestMetrics.activeRequests++;
+  requestMetrics.peakConcurrent = Math.max(requestMetrics.peakConcurrent, requestMetrics.activeRequests);
+
   const now = Date.now();
-  for (const [key, val] of rateLimitStore.entries()) {
-    if (now > val.resetTime) rateLimitStore.delete(key);
+  if (now > requestMetrics._minuteWindow.resetAt) {
+    requestMetrics.requestsPerMinute = requestMetrics._minuteWindow.count;
+    requestMetrics._minuteWindow = { count: 1, resetAt: now + 60_000 };
+  } else {
+    requestMetrics._minuteWindow.count++;
   }
-}, 5 * 60_000);
+
+  const route = `${req.method} ${req.path}`;
+  requestMetrics.endpointCounts.set(route, (requestMetrics.endpointCounts.get(route) || 0) + 1);
+
+  const start = Date.now();
+  res.on('finish', () => {
+    requestMetrics.activeRequests--;
+    requestMetrics.responseTimes.push(Date.now() - start);
+    if (requestMetrics.responseTimes.length > 1000) {
+      requestMetrics.responseTimes = requestMetrics.responseTimes.slice(-1000);
+    }
+    if (res.statusCode >= 500) {
+      requestMetrics.errorCounts.set(route, (requestMetrics.errorCounts.get(route) || 0) + 1);
+    }
+  });
+  next();
+});
+
+// --- Memory Pressure Monitoring (every 30s) ---
+setInterval(() => {
+  const usage = process.memoryUsage();
+  const heapMB = Math.round(usage.heapUsed / 1024 / 1024);
+  const rssMB = Math.round(usage.rss / 1024 / 1024);
+  if (rssMB > 420) {
+    serverLogger.error(`🔴 CRITICAL MEMORY: RSS ${rssMB}MB, Heap ${heapMB}MB — OOM imminent on 512MB host!`);
+  } else if (rssMB > 300) {
+    serverLogger.warn(`🟡 MEMORY WARNING: RSS ${rssMB}MB, Heap ${heapMB}MB — approaching limit`);
+  }
+}, 30_000);
+
+// --- Rate Limiting (In-Memory, Factory-Based) ---
+function createRateLimiter(maxRequests: number, windowMs: number) {
+  const store: Map<string, { count: number; resetTime: number }> = new Map();
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, val] of store.entries()) {
+      if (now > val.resetTime) store.delete(key);
+    }
+  }, 5 * 60_000);
+
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const entry = store.get(ip);
+
+    if (!entry || now > entry.resetTime) {
+      store.set(ip, { count: 1, resetTime: now + windowMs });
+      next();
+      return;
+    }
+
+    if (entry.count >= maxRequests) {
+      res.status(429).json({ error: `Too many requests (limit: ${maxRequests}/min). Please slow down.` });
+      return;
+    }
+
+    entry.count++;
+    next();
+  };
+}
+
+// Global: 60 req/min per IP — protects all API routes
+const globalRateLimiter = createRateLimiter(60, 60_000);
+app.use('/api/', globalRateLimiter);
+
+// Heavy: 5 req/min per IP — expensive AI, media sync, and news endpoints
+const heavyRateLimiter = createRateLimiter(5, 60_000);
+app.use('/api/ai/', heavyRateLimiter);
+app.use('/api/ai-xplora', heavyRateLimiter);
+app.use('/api/media/cloud-sync-all', heavyRateLimiter);
+app.use('/api/media/upload-video-to-youtube', heavyRateLimiter);
+app.use('/api/usosa-news', heavyRateLimiter);
+
+// Auth-specific: 10 req/min per IP (used as route middleware on auth endpoints)
+const rateLimiter = createRateLimiter(10, 60_000);
 
 // --- Firestore Collection References ---
 const COLLECTIONS = {
@@ -219,11 +304,18 @@ function getGeminiClient(): GoogleGenAI | null {
 }
 
 // --- Data Access Functions (Firestore with in-memory fallback) ---
+// 30-second TTL caching — drastically reduces Firestore reads under concurrent load
+let _membersCache: { data: Member[]; ts: number } | null = null;
+let _eventsCache: { data: GroupEvent[]; ts: number } | null = null;
+const DATA_CACHE_TTL = 30_000; // 30 seconds
 
 async function getMembers(): Promise<Member[]> {
   if (!isFirestoreAvailable()) return fallbackMembers;
+  if (_membersCache && Date.now() - _membersCache.ts < DATA_CACHE_TTL) return _membersCache.data;
   const snapshot = await db.collection(COLLECTIONS.members).get();
-  return snapshot.docs.map(doc => doc.data() as Member);
+  const data = snapshot.docs.map(doc => doc.data() as Member);
+  _membersCache = { data, ts: Date.now() };
+  return data;
 }
 
 function parseDateFromTitle(title: string): string | null {
@@ -249,6 +341,9 @@ function parseDateFromTitle(title: string): string | null {
 }
 
 async function getEvents(): Promise<GroupEvent[]> {
+  if (isFirestoreAvailable() && _eventsCache && Date.now() - _eventsCache.ts < DATA_CACHE_TTL) {
+    return _eventsCache.data;
+  }
   let list: GroupEvent[] = [];
   if (!isFirestoreAvailable()) {
     list = [...fallbackEvents];
@@ -260,7 +355,7 @@ async function getEvents(): Promise<GroupEvent[]> {
       list = [...fallbackEvents];
     }
   }
-  return list
+  const data = list
     .filter((e) => !e.id.startsWith("evt_arch_"))
     .map((e) => {
       // Parse date of event from title if it's a synced event folder
@@ -280,6 +375,10 @@ async function getEvents(): Promise<GroupEvent[]> {
       }
       return e;
     });
+  if (isFirestoreAvailable()) {
+    _eventsCache = { data, ts: Date.now() };
+  }
+  return data;
 }
 
 async function getApprovals(): Promise<PhotoApprovalRequest[]> {
@@ -369,6 +468,55 @@ app.get("/api/health", async (req: Request, res: Response) => {
   }
 });
 
+// --- System Metrics Endpoint (admin-only operability dashboard) ---
+app.get("/api/system/metrics", conditionalAuth, conditionalRequireAdmin, (req: Request, res: Response) => {
+  const memUsage = process.memoryUsage();
+  const avgResponseTime = requestMetrics.responseTimes.length > 0
+    ? requestMetrics.responseTimes.reduce((a, b) => a + b, 0) / requestMetrics.responseTimes.length
+    : 0;
+
+  res.json({
+    uptime: Math.floor((Date.now() - serverStartTime) / 1000),
+    memory: {
+      heapUsedMB: Math.round(memUsage.heapUsed / 1024 / 1024),
+      heapTotalMB: Math.round(memUsage.heapTotal / 1024 / 1024),
+      rssMB: Math.round(memUsage.rss / 1024 / 1024),
+      externalMB: Math.round(memUsage.external / 1024 / 1024),
+    },
+    requests: {
+      total: requestMetrics.totalRequests,
+      active: requestMetrics.activeRequests,
+      peakConcurrent: requestMetrics.peakConcurrent,
+      requestsPerMinute: requestMetrics.requestsPerMinute,
+      avgResponseTimeMs: Math.round(avgResponseTime),
+      p95ResponseTimeMs: getPercentile(requestMetrics.responseTimes, 95),
+      p99ResponseTimeMs: getPercentile(requestMetrics.responseTimes, 99),
+    },
+    cache: {
+      membersCached: !!_membersCache,
+      membersCacheAgeMs: _membersCache ? Date.now() - _membersCache.ts : null,
+      eventsCached: !!_eventsCache,
+      eventsCacheAgeMs: _eventsCache ? Date.now() - _eventsCache.ts : null,
+      cacheTTLMs: DATA_CACHE_TTL,
+    },
+    rateLimits: {
+      global: '60 req/min per IP',
+      heavy: '5 req/min per IP (AI, media sync, news)',
+      auth: '10 req/min per IP',
+    },
+    bodyLimits: {
+      default: '2mb',
+      mediaUpload: '50mb',
+    },
+    topEndpoints: Object.fromEntries(
+      [...requestMetrics.endpointCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 15)
+    ),
+    errors: Object.fromEntries(requestMetrics.errorCounts),
+  });
+});
+
 async function incrementGlobalVisits(visitorName: string) {
   try {
     if (isFirestoreAvailable()) {
@@ -384,7 +532,7 @@ async function incrementGlobalVisits(visitorName: string) {
         });
       } else {
         await docRef.set({
-          totalVisits: 1429,
+          totalVisits: 1,
           lastVisitTimestamp: new Date().toISOString(),
           latestUniqueUser: visitorName
         });
@@ -2860,6 +3008,124 @@ app.get("/oauth2callback", async (req: Request, res: Response) => {
 
 
 // ===================================================================
+//  Birthday Email Reminder & Notification Endpoints
+// ===================================================================
+
+app.get("/api/admin/birthdays/preview", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const watDate = getWATDate();
+    const nextMonthInfo = await getUpcomingNextMonthCelebrants(watDate);
+    const tomorrowInfo = await getTomorrowCelebrants(watDate);
+    const config = await getEmailConfig();
+
+    const monthlyEmail = buildMonthlyDigestEmailHtml({
+      monthName: nextMonthInfo.nextMonthName,
+      year: nextMonthInfo.year,
+      celebrants: nextMonthInfo.celebrants,
+      adminRecipientEmail: config.recipientEmail,
+    });
+
+    const dailyEmail = buildDailyEveAlertEmailHtml({
+      tomorrowDate: tomorrowInfo.tomorrowDate,
+      celebrants: tomorrowInfo.celebrants,
+      adminRecipientEmail: config.recipientEmail,
+    });
+
+    res.json({
+      config: {
+        recipientEmail: config.recipientEmail,
+        hasResendKey: Boolean(config.resendApiKey),
+        senderEmail: config.senderEmail,
+        enabled: config.enabled,
+      },
+      nextMonth: {
+        month: nextMonthInfo.nextMonth,
+        monthName: nextMonthInfo.nextMonthName,
+        year: nextMonthInfo.year,
+        count: nextMonthInfo.celebrants.length,
+        celebrants: nextMonthInfo.celebrants,
+        subject: monthlyEmail.subject,
+        htmlPreview: monthlyEmail.html,
+      },
+      tomorrow: {
+        date: tomorrowInfo.tomorrowDate.toISOString().slice(0, 10),
+        count: tomorrowInfo.celebrants.length,
+        celebrants: tomorrowInfo.celebrants,
+        subject: dailyEmail.subject,
+        htmlPreview: dailyEmail.html,
+      },
+    });
+  } catch (error) {
+    serverLogger.error("Fetch birthday preview error", error);
+    res.status(500).json({ error: "Failed to generate birthday preview." });
+  }
+});
+
+app.post("/api/admin/birthdays/send-test", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const config = await getEmailConfig();
+    const recipient = (req.body.recipient || config.recipientEmail || "tarabateam@gmail.com").trim();
+    const testEmail = buildTestEmailHtml(recipient);
+
+    const result = await sendEmail({
+      to: recipient,
+      subject: testEmail.subject,
+      html: testEmail.html,
+      text: testEmail.text,
+    });
+
+    res.json(result);
+  } catch (error) {
+    serverLogger.error("Send test email error", error);
+    res.status(500).json({ error: "Failed to send test email." });
+  }
+});
+
+app.post("/api/admin/birthdays/send-digest", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const result = await triggerMonthlyDigest(true);
+    res.json(result);
+  } catch (error) {
+    serverLogger.error("Trigger monthly digest error", error);
+    res.status(500).json({ error: "Failed to send monthly digest." });
+  }
+});
+
+app.post("/api/admin/birthdays/send-daily-alert", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const result = await triggerDailyEveAlert(true);
+    res.json(result);
+  } catch (error) {
+    serverLogger.error("Trigger daily alert error", error);
+    res.status(500).json({ error: "Failed to send daily alert." });
+  }
+});
+
+app.post("/api/admin/birthdays/config", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const { recipientEmail, resendApiKey, senderEmail, enabled } = req.body;
+    const updated = await updateEmailConfig({
+      recipientEmail,
+      resendApiKey,
+      senderEmail,
+      enabled,
+    });
+    res.json({
+      success: true,
+      config: {
+        recipientEmail: updated.recipientEmail,
+        hasResendKey: Boolean(updated.resendApiKey),
+        senderEmail: updated.senderEmail,
+        enabled: updated.enabled,
+      },
+    });
+  } catch (error) {
+    serverLogger.error("Update email config error", error);
+    res.status(500).json({ error: "Failed to update email settings." });
+  }
+});
+
+// ===================================================================
 //  Global Error Handler
 // ===================================================================
 app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
@@ -2879,6 +3145,9 @@ async function startServer() {
 
   // Seed Firestore on startup (skipped if Firestore not available)
   await seedFirestoreIfNeeded();
+
+  // Start the background birthday email reminder scheduler (12:00 PM WAT daily checks)
+  startBirthdayScheduler();
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

@@ -56,28 +56,13 @@ const ModalFallback = () => (
   </div>
 );
 
-function isProfileComplete(user: Member | null): boolean {
-  if (!user) return false;
-  if (user.role === 'admin') return true;
-
-  const requiredFields: Array<keyof Member> = [
-    'fullName', 'email', 'phoneNumber', 'dateOfBirth', 'occupation',
-    'title', 'firstName', 'surname', 'whatsappNumber', 'gradYear',
-    'schoolName', 'jerseySize', 'estateName', 'area', 'streetName',
-    'closestNeighborName', 'closestNeighborPhone', 'nextOfKinName',
-    'nextOfKinPhone'
-  ];
-
-  for (const field of requiredFields) {
-    const val = user[field];
-    if (val === undefined || val === null) return false;
-    if (typeof val === 'string' && val.trim() === '') return false;
-  }
-  return true;
-}
+import { isMemberProfileComplete, getMissingMemberFields } from "./utils/memberValidation";
+import { usePWAInstall } from "./hooks/usePWAInstall";
+import { PWAInstallModal } from "./components/PWAInstallModal";
 
 export default function App() {
   const { notify } = useToast();
+  const pwa = usePWAInstall();
   const [currentUser, setCurrentUser] = useState<Member | null>(AppStateManager.getCurrentUser());
   const [activeTab, setActiveTab] = useState<
     "media" | "events" | "admin" | "architecture" | "upload" | "profile" | "manual"
@@ -87,6 +72,9 @@ export default function App() {
       const user = AppStateManager.getCurrentUser();
       if (user?.role === "admin") {
         if (savedTab === "admin" || !savedTab) return "admin";
+      }
+      if (user && user.role !== "admin" && !isMemberProfileComplete(user)) {
+        return "profile";
       }
       if (savedTab && ["media", "events", "admin", "architecture", "upload", "profile", "manual"].includes(savedTab)) {
         return savedTab as any;
@@ -101,8 +89,13 @@ export default function App() {
       try { localStorage.setItem("taraba_active_tab", "manual"); } catch {}
       return;
     }
-    if (currentUser && !isProfileComplete(currentUser)) {
-      notify("Action Required: Please complete all required profile fields before accessing other features.", "info");
+    if (currentUser && currentUser.role !== "admin" && !isMemberProfileComplete(currentUser)) {
+      const missing = getMissingMemberFields(currentUser);
+      const hasMissingJersey = missing.some((m) => m.key === "jerseySize");
+      notify(
+        `Action Required: Please complete your mandatory profile details${hasMissingJersey ? " (including T-shirt / Jersey size)" : ""} before accessing other features.`,
+        "info"
+      );
       setActiveTab("profile");
       try { localStorage.setItem("taraba_active_tab", "profile"); } catch {}
       return;
@@ -113,7 +106,7 @@ export default function App() {
 
   // Redirect to profile page if user profile is incomplete on load or login (never for admin)
   useEffect(() => {
-    if (currentUser && currentUser.role !== "admin" && !isProfileComplete(currentUser)) {
+    if (currentUser && currentUser.role !== "admin" && !isMemberProfileComplete(currentUser)) {
       setActiveTab("profile");
       try { localStorage.setItem("taraba_active_tab", "profile"); } catch {}
     }
@@ -428,9 +421,22 @@ export default function App() {
           onLoginSuccess={(loggedUser) => {
             AppStateManager.setCurrentUser(loggedUser);
             setCurrentUser(loggedUser);
-            const targetTab = loggedUser.role === "admin" ? "admin" : "events";
+            const isComplete = isMemberProfileComplete(loggedUser);
+            const targetTab = loggedUser.role === "admin"
+              ? "admin"
+              : (!isComplete ? "profile" : "events");
             setActiveTab(targetTab);
             try { localStorage.setItem("taraba_active_tab", targetTab); } catch {}
+
+            if (!isComplete && loggedUser.role !== "admin") {
+              const missing = getMissingMemberFields(loggedUser);
+              const hasMissingJersey = missing.some((m) => m.key === "jerseySize");
+              notify(
+                `👋 Welcome back! Action Required: Please complete your mandatory profile details${hasMissingJersey ? " (including your T-shirt / Jersey size)" : ""} to activate full portal access.`,
+                "warning"
+              );
+            }
+
             // Fetch updated visit metrics to reflect the new login
             fetchVisitMetrics().then(metrics => setTotalVisits(metrics.totalVisits)).catch((err) => logger.error("Failed to fetch visit metrics", err));
           }}
@@ -440,6 +446,15 @@ export default function App() {
           }}
           availableMembers={members}
           onOpenManual={() => setActiveTab("manual")}
+          onOpenInstallModal={pwa.openInstallModal}
+          isStandalone={pwa.isStandalone}
+        />
+        <PWAInstallModal
+          isOpen={pwa.isInstallModalOpen}
+          onClose={pwa.closeInstallModal}
+          platform={pwa.platform}
+          hasNativePrompt={pwa.hasNativePrompt}
+          onTriggerNativeInstall={pwa.triggerNativeInstall}
         />
         {registerModalOpen && (
           <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-16 overflow-y-auto flex items-start justify-center animate-fadeIn">
@@ -503,7 +518,7 @@ export default function App() {
 
         onSignOut={handleSignOut}
         onToggleAiAssistant={() => {
-          if (currentUser && !isProfileComplete(currentUser)) {
+          if (currentUser && !isMemberProfileComplete(currentUser)) {
             notify("Action Required: Please complete your member profile details first.", "info");
             return;
           }
@@ -515,6 +530,17 @@ export default function App() {
         isAiAssistantOpen={aiAssistantOpen}
         pendingApprovalsCount={pendingApprovalsCount}
         onCreateEvent={() => setCreateEventModalOpen(true)}
+        onOpenInstallModal={pwa.openInstallModal}
+        isStandalone={pwa.isStandalone}
+      />
+
+      {/* PWA Multi-Platform Install Modal */}
+      <PWAInstallModal
+        isOpen={pwa.isInstallModalOpen}
+        onClose={pwa.closeInstallModal}
+        platform={pwa.platform}
+        hasNativePrompt={pwa.hasNativePrompt}
+        onTriggerNativeInstall={pwa.triggerNativeInstall}
       />
 
       {/* Terms and Conditions Modal */}
@@ -687,6 +713,8 @@ export default function App() {
                 <MyProfileView
                   currentUser={currentUser}
                   onOpenTerms={() => setTermsModalOpen(true)}
+                  onOpenInstallModal={pwa.openInstallModal}
+                  isStandalone={pwa.isStandalone}
                   onUpdateSuccess={(updatedUser) => {
                     setCurrentUser(updatedUser);
                     AppStateManager.setCurrentUser(updatedUser);

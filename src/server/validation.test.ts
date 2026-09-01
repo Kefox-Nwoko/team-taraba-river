@@ -68,6 +68,19 @@ describe("MemberRegistrationSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts valid member data with Asian and US jersey sizes", () => {
+    const asianSize = { ...validMember, jerseySize: 'Asian XXL (US L / CH 46")' };
+    expect(validateBody(MemberRegistrationSchema, asianSize).success).toBe(true);
+
+    const usSize = { ...validMember, jerseySize: 'US 11XL (Asian 11XL / CH 64")' };
+    expect(validateBody(MemberRegistrationSchema, usSize).success).toBe(true);
+  });
+
+  it("rejects missing jerseySize", () => {
+    const invalid = { ...validMember, jerseySize: "" };
+    expect(validateBody(MemberRegistrationSchema, invalid).success).toBe(false);
+  });
+
   it("rejects invalid email", () => {
     const invalid = { ...validMember, email: "not-an-email" };
     const result = validateBody(MemberRegistrationSchema, invalid);

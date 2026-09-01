@@ -1107,25 +1107,27 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                           eventTitle={folder.title}
                           heightClass="h-full w-full"
                         />
-                        <div className="absolute top-2.5 right-2.5 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-lg text-white text-[11px] font-medium flex items-center gap-1 z-10">
-                          <FileImage className="w-3.5 h-3.5" />
-                          <span>{mediaCount} items</span>
-                        </div>
                       </div>
-                      <div>
-                        <h3 className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white group-hover:text-cyan-600 transition truncate">
-                          {folder.title}
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5" />
-                          <span>{formatDateLabel(folder.date)}</span>
+                      <div className="flex items-start justify-between gap-3 pt-0.5">
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <h3 className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white group-hover:text-cyan-600 transition truncate">
+                            {folder.title}
+                          </h3>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                            <span>{formatDateLabel(folder.date)}</span>
+                          </p>
                           {sanitizeUIField(folder.location) ? (
-                            <>
-                              <span>•</span>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5 truncate">
+                              <MapPin className="w-3.5 h-3.5 shrink-0 text-slate-400" />
                               <span className="truncate">{sanitizeUIField(folder.location)}</span>
-                            </>
+                            </p>
                           ) : null}
-                        </p>
+                        </div>
+                        <div className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-medium border border-slate-200/80 dark:border-slate-700/80 shadow-2xs mt-0.5">
+                          <FileImage className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
+                          <span>{mediaCount} item{mediaCount !== 1 ? "s" : ""}</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1155,7 +1157,13 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                       </div>
                       <div className="min-w-0">
                         <h4 className="font-medium text-sm text-slate-900 dark:text-white truncate">{folder.title}</h4>
-                        <p className="text-xs text-slate-500">{formatDateLabel(folder.date)} • {mediaCount} items</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{formatDateLabel(folder.date)} • {mediaCount} items</p>
+                        {sanitizeUIField(folder.location) ? (
+                          <p className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1 truncate mt-0.5">
+                            <MapPin className="w-3 h-3 shrink-0" />
+                            <span className="truncate">{sanitizeUIField(folder.location)}</span>
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                     <ChevronRight className="w-5 h-5 text-slate-400 shrink-0" />

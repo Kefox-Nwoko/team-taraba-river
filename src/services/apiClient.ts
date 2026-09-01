@@ -1740,3 +1740,102 @@ export async function uploadVideoToYouTubeBridge(
   });
 }
 
+// --- Birthday Reminder API Client Helpers ---
+
+export interface BirthdayPreviewData {
+  config: {
+    recipientEmail: string;
+    hasResendKey: boolean;
+    senderEmail?: string;
+    enabled: boolean;
+  };
+  nextMonth: {
+    month: number;
+    monthName: string;
+    year: number;
+    count: number;
+    celebrants: any[];
+    subject: string;
+    htmlPreview: string;
+  };
+  tomorrow: {
+    date: string;
+    count: number;
+    celebrants: any[];
+    subject: string;
+    htmlPreview: string;
+  };
+}
+
+export async function getBirthdayReminderPreview(): Promise<BirthdayPreviewData> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/admin/birthdays/preview"), { headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Failed to fetch birthday preview (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function sendTestBirthdayEmail(recipient?: string): Promise<{ success: boolean; messageId?: string; provider: string; error?: string }> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/admin/birthdays/send-test"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ recipient }),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || `Failed to send test email (${res.status})`);
+  }
+  return data;
+}
+
+export async function triggerMonthlyBirthdayDigest(): Promise<{ success: boolean; celebrantsCount: number; provider: string }> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/admin/birthdays/send-digest"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || `Failed to trigger monthly digest (${res.status})`);
+  }
+  return data;
+}
+
+export async function triggerDailyBirthdayAlert(): Promise<{ success: boolean; celebrantsCount: number; provider: string }> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/admin/birthdays/send-daily-alert"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || `Failed to trigger daily alert (${res.status})`);
+  }
+  return data;
+}
+
+export async function updateBirthdayEmailConfig(updates: {
+  recipientEmail?: string;
+  resendApiKey?: string;
+  senderEmail?: string;
+  enabled?: boolean;
+}): Promise<any> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/admin/birthdays/config"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify(updates),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || `Failed to update email config (${res.status})`);
+  }
+  return data;
+}
+
+

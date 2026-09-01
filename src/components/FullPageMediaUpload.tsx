@@ -25,6 +25,8 @@ import {
   Bot,
   Sparkles,
   Clock,
+  StopCircle,
+  XCircle,
 } from "lucide-react";
 import { uploadVideoDirectToYouTube, deleteYouTubeVideo } from "../services/youtubeDirectUpload";
 import { uploadImageDirectToDrive } from "../services/googleDriveDirectUpload";
@@ -88,9 +90,12 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadProgressText, setUploadProgressText] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Duplicate Resolution State
   const [duplicateQueue, setDuplicateQueue] = useState<DuplicateCandidate[]>([]);
@@ -109,7 +114,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
   const [completedUploadsCount, setCompletedUploadsCount] = useState<number>(0);
   const [completedUploadsList, setCompletedUploadsList] = useState<
-    Array<{ name: string; type: "photo" | "video"; status: "success" | "failed"; reason?: string }>
+    Array<{ name: string; type: "photo" | "video"; status: "success" | "failed" | "stopped"; reason?: string }>
   >([]);
 
   // Manual Rename Modal State
@@ -218,13 +223,20 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     eventId: string,
     folderName: string,
     index: number,
-    onFileProgress: (percent: number) => void
+    onFileProgress: (percent: number) => void,
+    signal?: AbortSignal
   ): Promise<string> => {
+    if (signal?.aborted) {
+      const err = new Error("Upload aborted by user.");
+      err.name = "AbortError";
+      throw err;
+    }
+
     const isVideo = item.type === "video";
 
     // 1. For Videos: Stream directly to YouTube Channel with real-time resumable chunks
     if (isVideo) {
-      const ytUrl = await uploadVideoDirectToYouTube(item.file, folderName, onFileProgress);
+      const ytUrl = await uploadVideoDirectToYouTube(item.file, folderName, onFileProgress, signal);
       return ytUrl;
     }
 
@@ -242,6 +254,12 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       ext = item.file.name.split(".").pop() || "jpg";
     }
 
+    if (signal?.aborted) {
+      const err = new Error("Upload aborted by user.");
+      err.name = "AbortError";
+      throw err;
+    }
+
     const cleanName = (item.file.name.replace(/\.[^/.]+$/, "") || `media_${index + 1}`).replace(/[^a-zA-Z0-9._-]/g, "_") + `.${ext}`;
 
     // Tier 1: Stream directly to Google Drive folder
@@ -250,11 +268,21 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         uploadPayload,
         cleanName,
         folderName,
-        onFileProgress
+        onFileProgress,
+        signal
       );
       return driveUrl;
-    } catch (driveErr) {
+    } catch (driveErr: any) {
+      if (driveErr?.name === "AbortError" || signal?.aborted) {
+        throw driveErr;
+      }
       logger.warn("[MediaUpload] Google Drive direct upload notice, engaging secondary cloud storage:", driveErr);
+    }
+
+    if (signal?.aborted) {
+      const err = new Error("Upload aborted by user.");
+      err.name = "AbortError";
+      throw err;
     }
 
     // Tier 2: Try Firebase Cloud Storage
@@ -263,11 +291,32 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       const storageRef = ref(storage, `events/${eventId}/${folderPath}/${Date.now()}_${index + 1}_${cleanName}`);
 
       const downloadUrl = await new Promise<string>((resolve, reject) => {
+        if (signal?.aborted) {
+          const err = new Error("Upload aborted by user.");
+          err.name = "AbortError";
+          reject(err);
+          return;
+        }
+
         const uploadTask = uploadBytesResumable(storageRef, uploadPayload, {
           contentType,
         });
 
+        const handleAbort = () => {
+          try {
+            uploadTask.cancel();
+          } catch {}
+          const err = new Error("Upload aborted by user.");
+          err.name = "AbortError";
+          reject(err);
+        };
+
+        if (signal) {
+          signal.addEventListener("abort", handleAbort, { once: true });
+        }
+
         const uploadTimeout = setTimeout(() => {
+          if (signal) signal.removeEventListener("abort", handleAbort);
           try {
             uploadTask.cancel();
           } catch {}
@@ -284,10 +333,18 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           },
           (error) => {
             clearTimeout(uploadTimeout);
-            reject(error);
+            if (signal) signal.removeEventListener("abort", handleAbort);
+            if (signal?.aborted) {
+              const err = new Error("Upload aborted by user.");
+              err.name = "AbortError";
+              reject(err);
+            } else {
+              reject(error);
+            }
           },
           async () => {
             clearTimeout(uploadTimeout);
+            if (signal) signal.removeEventListener("abort", handleAbort);
             try {
               onFileProgress(98);
               const url = await getDownloadURL(uploadTask.snapshot.ref);
@@ -301,7 +358,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
       onFileProgress(100);
       return downloadUrl;
-    } catch (storageErr) {
+    } catch (storageErr: any) {
+      if (storageErr?.name === "AbortError" || signal?.aborted) {
+        throw storageErr;
+      }
       logger.info("[MediaUpload] Secondary storage bypassed, using high-efficiency WebP payload:", storageErr);
       // Tier 3: Instant High-Efficiency WebP Data URL fallback (Zero failure, ultra-fast)
       onFileProgress(80);
@@ -627,6 +687,15 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     (folderMode === "existing" ? !!selectedFolderId : !!newFolderTitle.trim() && !!newDate) &&
     mediaItems.length > 0;
 
+  const handleStopUpload = () => {
+    if (abortControllerRef.current) {
+      setIsCancelling(true);
+      setUploadProgressText("Stopping upload & cleaning up in-flight streams...");
+      abortControllerRef.current.abort();
+      notify("🛑 Stopping media upload...", "warning");
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mediaItems.length === 0) {
@@ -648,7 +717,11 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       return;
     }
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsUploading(true);
+    setIsCancelling(false);
     setUploadProgress(5);
     setActiveFileProgress(0);
     setActiveFileMBTransferred(0);
@@ -660,7 +733,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     const folderNameTitle = folderMode === "new"
       ? newFolderTitle.trim()
       : (events.find((e) => e.id === selectedFolderId)?.title || "Event Gallery");
-    const eventId = folderMode === "new" ? `evt_${Date.now()}` : selectedFolderId;
+    const eventId = folderMode === "new" ? `folder_${Date.now()}` : selectedFolderId;
     const folderEventDate = folderMode === "new" ? newDate : (events.find((e) => e.id === selectedFolderId)?.date || newDate);
     const folderLocation = folderMode === "new" ? newLocation.trim() : (events.find((e) => e.id === selectedFolderId)?.location || "");
     const folderCategory = folderMode === "new" ? newCategory : (events.find((e) => e.id === selectedFolderId)?.category || "cleanup");
@@ -677,6 +750,16 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     const totalFiles = mediaItems.length;
 
     for (let i = 0; i < totalFiles; i++) {
+      if (controller.signal.aborted) {
+        for (let j = i; j < totalFiles; j++) {
+          setCompletedUploadsList((prev) => [
+            ...prev,
+            { name: mediaItems[j].file.name, type: mediaItems[j].type, status: "stopped", reason: "Stopped by user" },
+          ]);
+        }
+        break;
+      }
+
       const item = mediaItems[i];
       const isVideo = item.type === "video";
       setActiveFileIndex(i);
@@ -702,7 +785,8 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             setActiveFileMBTransferred(mbDone);
             const overallPct = Math.round(((i + pct / 100) / totalFiles) * 85);
             setUploadProgress(Math.max(5, overallPct));
-          }
+          },
+          controller.signal
         );
 
         if (finalUrl) {
@@ -752,6 +836,19 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           ]);
         }
       } catch (err: any) {
+        if (err?.name === "AbortError" || controller.signal.aborted) {
+          setCompletedUploadsList((prev) => [
+            ...prev,
+            { name: item.file.name, type: item.type, status: "stopped", reason: "Stopped by user" },
+          ]);
+          for (let j = i + 1; j < totalFiles; j++) {
+            setCompletedUploadsList((prev) => [
+              ...prev,
+              { name: mediaItems[j].file.name, type: mediaItems[j].type, status: "stopped", reason: "Stopped by user" },
+            ]);
+          }
+          break;
+        }
         const errorReason = err?.message || "Upload encountered an issue";
         failedFiles.push({ name: item.file.name, reason: errorReason });
         setCompletedUploadsList((prev) => [
@@ -763,63 +860,70 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // PERFORM CLOUD PURGE OF REPLACED ASSETS
+    // PERFORM CLOUD PURGE OF REPLACED ASSETS (Admin only)
     // ──────────────────────────────────────────────────────────────────
-    for (const repl of replacementsToExecute) {
-      if (repl.type === "video" && repl.replaceUrl) {
-        deleteYouTubeVideo(repl.replaceUrl).catch(() => {});
-      } else if (repl.type === "photo" && repl.replaceUrl && repl.replaceUrl.includes("firebasestorage.googleapis.com")) {
-        try {
-          const fileRef = ref(storage, repl.replaceUrl);
-          deleteObject(fileRef).catch(() => {});
-        } catch (e) {}
+    if (isAdmin) {
+      for (const repl of replacementsToExecute) {
+        if (repl.type === "video" && repl.replaceUrl) {
+          deleteYouTubeVideo(repl.replaceUrl).catch(() => {});
+        } else if (repl.type === "photo" && repl.replaceUrl && repl.replaceUrl.includes("firebasestorage.googleapis.com")) {
+          try {
+            const fileRef = ref(storage, repl.replaceUrl);
+            deleteObject(fileRef).catch(() => {});
+          } catch (e) {}
+        }
       }
+    }
+
+    const wasAborted = controller.signal.aborted;
+    const totalSucceeded = photoFinalUrls.length + videoFinalUrls.length;
+
+    if (wasAborted && totalSucceeded === 0) {
+      setUploadProgress(0);
+      setIsUploading(false);
+      setIsCancelling(false);
+      abortControllerRef.current = null;
+      notify("🛑 Upload cancelled. No files were uploaded.", "info");
+      return;
     }
 
     // ──────────────────────────────────────────────────────────────────
     // SAVE EVENT: Register all successful uploads in Event Gallery
     // ──────────────────────────────────────────────────────────────────
-    const totalSucceeded = photoFinalUrls.length + videoFinalUrls.length;
-
     if (totalSucceeded > 0) {
-      setUploadProgressText("Registering media in Event Gallery...");
+      setUploadProgressText(wasAborted ? "Finalizing completed uploads before stop..." : "Registering media in Event Gallery...");
       setUploadProgress(95);
 
       try {
-        let targetEvent: GroupEvent;
+        let targetEvent: GroupEvent | undefined;
         if (folderMode === "existing") {
           const existingEvent = events.find((e) => e.id === selectedFolderId);
           if (!existingEvent) throw new Error("Selected existing event folder not found.");
 
-          let existingYtList = ((existingEvent.youtubeVideoUrls || (existingEvent.youtubeVideoUrl ? [existingEvent.youtubeVideoUrl] : [])) as string[]).filter(Boolean);
-          let existingPhotos = existingEvent.driveImageUrls || [];
-
-          // Apply in-place replacements
-          replacementsToExecute.forEach((repl) => {
-            if (repl.type === "video") {
-              existingYtList = existingYtList.filter((u) => u !== repl.replaceUrl);
-            } else {
-              existingPhotos = existingPhotos.filter((u) => u !== repl.replaceUrl);
-            }
-          });
-
-          const updatedYtList = isAdmin
-            ? Array.from(new Set([...existingYtList, ...videoFinalUrls]))
-            : existingYtList;
-
-          const updatedPhotoList = isAdmin
-            ? Array.from(new Set([...existingPhotos, ...photoFinalUrls]))
-            : existingPhotos;
-
-          targetEvent = {
-            ...existingEvent,
-            driveImageUrls: updatedPhotoList,
-            driveFolderId: existingEvent.driveFolderId || `drive_folder_${Date.now()}`,
-            youtubeVideoUrls: updatedYtList,
-            youtubeVideoUrl: updatedYtList[0] || "",
-          };
-
           if (isAdmin) {
+            let existingYtList = ((existingEvent.youtubeVideoUrls || (existingEvent.youtubeVideoUrl ? [existingEvent.youtubeVideoUrl] : [])) as string[]).filter(Boolean);
+            let existingPhotos = existingEvent.driveImageUrls || [];
+
+            // Apply in-place replacements for admin
+            replacementsToExecute.forEach((repl) => {
+              if (repl.type === "video") {
+                existingYtList = existingYtList.filter((u) => u !== repl.replaceUrl);
+              } else {
+                existingPhotos = existingPhotos.filter((u) => u !== repl.replaceUrl);
+              }
+            });
+
+            const updatedYtList = Array.from(new Set([...existingYtList, ...videoFinalUrls]));
+            const updatedPhotoList = Array.from(new Set([...existingPhotos, ...photoFinalUrls]));
+
+            targetEvent = {
+              ...existingEvent,
+              driveImageUrls: updatedPhotoList,
+              driveFolderId: existingEvent.driveFolderId || `drive_folder_${Date.now()}`,
+              youtubeVideoUrls: updatedYtList,
+              youtubeVideoUrl: updatedYtList[0] || "",
+            };
+
             await FirebaseSyncManager.saveEvent(targetEvent);
             const currentEvents = AppStateManager.getEvents();
             const existingIndex = currentEvents.findIndex((e) => e.id === targetEvent.id);
@@ -829,50 +933,67 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
               currentEvents.unshift(targetEvent);
             }
             AppStateManager.saveEvents(currentEvents);
+          } else {
+            // For non-admin, targetEvent is preserved without new uploads (not visible in folder until approved)
+            targetEvent = existingEvent;
           }
         } else {
-          targetEvent = {
-            id: eventId,
-            title: folderNameTitle,
-            date: newDate,
-            time: "09:00",
-            location: newLocation.trim(),
-            category: newCategory,
-            description: newDescription.trim() || `Archival media collection for ${folderNameTitle}.`,
-            driveImageUrls: isAdmin ? photoFinalUrls : [],
-            driveFolderId: `drive_folder_${Date.now()}`,
-            youtubeVideoUrl: isAdmin ? (videoFinalUrls[0] || "") : "",
-            youtubeVideoUrls: isAdmin ? videoFinalUrls : [],
-            createdBy: currentUser?.fullName || "Community Member",
-            createdById: currentUser?.id || "mem_guest",
-            attendeeIds: currentUser ? [currentUser.id] : [],
-            maxCapacity: 100,
-            createdAt: new Date().toISOString(),
-          } as any;
-
           if (isAdmin) {
+            targetEvent = {
+              id: eventId,
+              title: folderNameTitle,
+              date: newDate,
+              time: "09:00",
+              location: newLocation.trim(),
+              category: newCategory,
+              description: newDescription.trim() || `Archival media collection for ${folderNameTitle}.`,
+              driveImageUrls: photoFinalUrls,
+              driveFolderId: `drive_folder_${Date.now()}`,
+              youtubeVideoUrl: videoFinalUrls[0] || "",
+              youtubeVideoUrls: videoFinalUrls,
+              createdBy: currentUser?.fullName || "Community Member",
+              createdById: currentUser?.id || "mem_guest",
+              attendeeIds: currentUser ? [currentUser.id] : [],
+              maxCapacity: 100,
+              createdAt: new Date().toISOString(),
+            } as any;
+
             await FirebaseSyncManager.saveEvent(targetEvent);
             const currentEvents = AppStateManager.getEvents();
             currentEvents.unshift(targetEvent);
             AppStateManager.saveEvents(currentEvents);
+          } else {
+            targetEvent = undefined;
           }
         }
 
         setUploadProgress(100);
         setIsUploading(false);
+        setIsCancelling(false);
+        abortControllerRef.current = null;
 
-        if (failedFiles.length === 0) {
+        if (wasAborted) {
+          notify(
+            `🛑 Upload stopped. ${totalSucceeded} of ${totalFiles} item${totalSucceeded > 1 ? "s were" : " was"} uploaded before cancellation.`,
+            "info",
+            { persistent: true }
+          );
+        } else if (failedFiles.length === 0) {
           notify(
             isAdmin
               ? `✅ ${totalSucceeded} media item${totalSucceeded !== 1 ? "s" : ""} published to the Event Gallery.`
-              : `✅ ${totalSucceeded} media item${totalSucceeded !== 1 ? "s" : ""} submitted for Admin review.`,
-            "success"
+              : folderMode === "existing"
+              ? `✅ ${totalSucceeded} media item${totalSucceeded !== 1 ? "s" : ""} submitted for Admin review. Uploads will appear in this folder once approved from the Admin Dashboard.`
+              : `✅ ${totalSucceeded} media item${totalSucceeded !== 1 ? "s" : ""} submitted for Admin review. The new folder will appear once approved by an administrator.`,
+            "success",
+            { persistent: true }
           );
         } else {
           const failReasons = failedFiles.map((f) => `"${f.name}"`).join(", ");
           notify(
             `⚠️ ${totalSucceeded} of ${mediaItems.length} uploaded successfully. Failed: ${failReasons}. ${failedFiles[0].reason}`,
-            "info"
+            "info",
+            { persistent: true }
           );
         }
 
@@ -891,19 +1012,23 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         setUploadProgress(0);
         setErrorMessage(null);
 
-        onSuccess(targetEvent);
+        onSuccess(isAdmin ? targetEvent : undefined);
       } catch (saveErr) {
         logger.error("Event save error after uploads:", saveErr);
         const msg = saveErr instanceof Error ? saveErr.message : "Failed to register media in event gallery.";
         setErrorMessage(`Uploads completed but event save failed: ${msg}`);
         setUploadProgress(0);
         setIsUploading(false);
+        setIsCancelling(false);
+        abortControllerRef.current = null;
       }
     } else {
       const allReasons = failedFiles.map((f) => `"${f.name}": ${f.reason}`).join(" | ");
       setErrorMessage(`❌ All ${mediaItems.length} upload${mediaItems.length !== 1 ? "s" : ""} failed. ${allReasons}`);
       setUploadProgress(0);
       setIsUploading(false);
+      setIsCancelling(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -1192,9 +1317,21 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                   <Loader2 className="w-4 h-4 animate-spin text-cyan-600 dark:text-cyan-400 shrink-0" />
                   <span className="truncate">{uploadProgressText}</span>
                 </span>
-                <span className="font-mono font-bold text-cyan-700 dark:text-cyan-300 text-sm shrink-0">
-                  {activeFileProgress}%
-                </span>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="font-mono font-bold text-cyan-700 dark:text-cyan-300 text-sm">
+                    {activeFileProgress}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleStopUpload}
+                    disabled={isCancelling}
+                    title="Stop active upload"
+                    className="px-3 py-1 text-xs font-semibold rounded-xl bg-red-500/15 hover:bg-red-500/25 active:scale-95 text-red-600 dark:text-red-400 border border-red-500/30 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
+                  >
+                    <StopCircle className="w-3.5 h-3.5" />
+                    <span>{isCancelling ? "Stopping..." : "Stop Upload"}</span>
+                  </button>
+                </div>
               </div>
 
               {/* Tier 1: Current File Progress Bar */}
@@ -1259,10 +1396,12 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                         className={`px-2 py-0.5 rounded-md text-[10px] font-medium flex items-center gap-1 ${
                           st.status === "success"
                             ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20"
+                            : st.status === "stopped"
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/20"
                             : "bg-red-500/15 text-red-700 dark:text-red-300 border border-red-500/20"
                         }`}
                       >
-                        {st.status === "success" ? "✓" : "✗"} {st.name} ({st.type})
+                        {st.status === "success" ? "✓" : st.status === "stopped" ? "⏸" : "✗"} {st.name} ({st.type})
                       </span>
                     ))}
                   </div>
@@ -1271,7 +1410,18 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             </div>
           )}
 
-          <div className="flex flex-row items-center justify-end gap-4 pt-4 pb-20 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex flex-row items-center justify-end gap-3 pt-4 pb-20 border-t border-slate-200 dark:border-slate-800">
+            {isUploading && (
+              <button
+                type="button"
+                onClick={handleStopUpload}
+                disabled={isCancelling}
+                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-red-500/10 hover:bg-red-500/20 active:scale-95 text-red-600 dark:text-red-400 border border-red-500/30 font-semibold text-sm transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50 shadow-xs"
+              >
+                <StopCircle className="w-4 h-4 text-red-500" />
+                <span>{isCancelling ? "Stopping Upload..." : "Stop Upload"}</span>
+              </button>
+            )}
             <button
               type="submit"
               disabled={!isFormValid || isUploading}
@@ -1281,7 +1431,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
               {isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 text-white animate-spin" />
-                  <span>Uploading & Processing...</span>
+                  <span>{isCancelling ? "Cancelling..." : "Uploading & Processing..."}</span>
                 </>
               ) : (
                 <>

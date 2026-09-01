@@ -1,5 +1,22 @@
 import React from "react";
-import { X, Shield, CheckCircle2, BookOpen, Star, Users, Heart, Scale, Gavel, Lock, FileText, AlertTriangle, ExternalLink } from "lucide-react";
+import {
+  X,
+  Shield,
+  CheckCircle2,
+  BookOpen,
+  Star,
+  Users,
+  Heart,
+  Scale,
+  Gavel,
+  Lock,
+  FileText,
+  AlertTriangle,
+  ExternalLink,
+  Sparkles,
+  Cake,
+  HardDrive,
+} from "lucide-react";
 
 interface TermsAndConditionsModalProps {
   isOpen: boolean;
@@ -34,7 +51,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                 Terms and Conditions
               </h2>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Team Taraba River · Master Member Agreement · v2.0 (August 2026)
+                Team Taraba River · Master Member Agreement &amp; Privacy Policy · v2.1 (August 2026)
               </p>
             </div>
           </div>
@@ -50,36 +67,46 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
         <div className="flex-1 overflow-y-auto p-6 sm:p-8">
           <div className="max-w-none text-slate-600 dark:text-slate-300 space-y-7">
 
-            {/* [AMENDED] Preamble */}
+            {/* Preamble */}
             <section className="bg-gradient-to-br from-teal-50 to-slate-50 dark:from-teal-950/20 dark:to-slate-800/30 p-6 rounded-2xl border border-teal-100 dark:border-teal-900/40">
               <div className="flex items-start gap-3">
                 <BookOpen className="w-5 h-5 text-teal-600 dark:text-teal-400 mt-0.5 shrink-0" />
                 <div className="space-y-3 text-sm leading-relaxed">
                   <p>
-                    Welcome to the <strong className="text-slate-800 dark:text-white">Team Taraba River Portal</strong> — the official digital community platform of <strong className="text-slate-800 dark:text-white">Team Taraba River</strong>, a group under the umbrella of <strong className="text-slate-800 dark:text-white">URIP (Usosans Resident in Port Harcourt)</strong>, which is itself a chapter of the <strong className="text-slate-800 dark:text-white">Unity Schools Old Students Association (USOSA)</strong>.
+                    Welcome to the <strong className="text-slate-800 dark:text-white">Team Taraba River Portal</strong> — the official digital community platform of <strong className="text-slate-800 dark:text-white">Team Taraba River</strong>, a fellowship group under the umbrella of <strong className="text-slate-800 dark:text-white">URIP (Usosans Resident in Port Harcourt)</strong>, a recognized chapter of the <strong className="text-slate-800 dark:text-white">Unity Schools Old Students Association (USOSA)</strong>.
                   </p>
                   <p>
-                    USOSA is the umbrella alumni body for all 115 Federal Unity Colleges across Nigeria — institutions founded to foster national unity, academic excellence, and detribalized Nigerian citizenship. Team Taraba River, operating within that proud tradition, is a Port Harcourt-based fellowship group that brings its members together for fun, community support, professional networking, and the celebration of life as old students.
+                    USOSA is the umbrella alumni body for all 115 Federal Unity Colleges across Nigeria — institutions founded to foster national integration, moral and academic excellence, and detribalized citizenship. Operating within this proud tradition, Team Taraba River unites members for community fellowship, professional networking, social outings, mutual support, and civic impact in Rivers State and across the diaspora.
                   </p>
                   <p>
-                    This portal is <strong className="text-slate-800 dark:text-white">owned and managed exclusively by Team Taraba River</strong>. By registering as a member, or by accessing or using this portal in any capacity, you agree to be bound by these Terms and Conditions, which encompass our Privacy Policy, Code of Conduct, and Event &amp; Community Rules.
+                    This platform is <strong className="text-slate-800 dark:text-white">owned and managed exclusively by Team Taraba River</strong>. By registering, signing in, or accessing this portal in any capacity, you enter into a legally binding agreement under the <strong>Nigeria Data Protection Act (NDPA) 2023</strong>, the <strong>Cybercrimes (Prohibition, Prevention, etc.) Act 2015 (as amended 2024)</strong>, and applicable international data governance standards.
                   </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 italic">
-                    {/* [NEW] Explicit acceptance clause */}
-                    Your registration, continued access, or use of this portal constitutes unconditional acceptance of these Terms. If you do not agree with any part of these terms, you must not use this portal.
-                  </p>
+                  <div className="p-3.5 rounded-xl bg-teal-100/60 dark:bg-teal-900/40 border border-teal-200 dark:border-teal-800 text-xs text-teal-900 dark:text-teal-200 font-medium">
+                    💡 <strong>Plain English Summary:</strong> This portal is an exclusive, secure space for verified members of Team Taraba River. By using it, you agree to treat fellow members with dignity, safeguard community privacy, uphold our shared values of unity and integrity, and comply with Nigerian law.
+                  </div>
                 </div>
               </div>
             </section>
 
-            {/* [NEW] Changelog */}
+            {/* Document Changelog */}
             <section className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 p-5 rounded-2xl">
               <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2 mb-3">
                 <AlertTriangle className="w-4 h-4" />
                 Document Revision History &amp; Modifications
               </h3>
-              <div className="text-xs text-amber-900 dark:text-amber-200 space-y-1.5 leading-relaxed">
-                <p><strong>v2.0 — August 2026:</strong> Comprehensive review and update. Added: Prohibited Activities; Content, Media &amp; Intellectual Property rights; Account Security; Termination, Suspension &amp; Deactivation; Limitation of Liability; Dispute Resolution &amp; Governing Law (Nigeria); Third-Party Services disclaimer; General Provisions (severability, force majeure); Official Communications channel; explicit acceptance clause; Nigerian Data Protection Act alignment; appeal process for administrative actions; media approval timeline; data breach notification; right to data export/deletion; event safety acknowledgment; points revocation policy; and contact/notification methods. All additions are marked with <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">[NEW]</code> or <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">[AMENDED]</code> inline.</p>
+              <div className="text-xs text-amber-900 dark:text-amber-200 space-y-2 leading-relaxed">
+                <p>
+                  <strong>v2.1 — August 2026 (Current):</strong> Comprehensive technical &amp; legal update. Added explicit disclosures for:
+                  (1) Automated Birthday Reminders &amp; Backend Scheduler Engine;
+                  (2) Cloud Media Pipeline with YouTube Transcoding &amp; Google Drive Synchronization;
+                  (3) AI Knowledge Assistant (AI Xplora) Terms &amp; Advisory Disclaimers;
+                  (4) Privacy-First 30-Minute Deduplication Analytics;
+                  (5) Nigeria Data Protection Act (NDPA) 2023 Statutory Rights &amp; Cross-Border Cloud Processing Guarantees; and
+                  (6) Binding Dispute Resolution seated in Port Harcourt, Rivers State under the Arbitration and Mediation Act 2023.
+                </p>
+                <p className="text-slate-500 dark:text-slate-400">
+                  <em>v2.0 — August 2026:</em> Initial comprehensive Master Member Agreement review.
+                </p>
               </div>
             </section>
 
@@ -87,15 +114,14 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
             <section className="space-y-3">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
-                1. Membership Eligibility &amp; Requirements
+                1. Membership Eligibility, Registration &amp; Verification
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                <li>Membership on this portal is open to all verified members of <strong className="text-slate-700 dark:text-slate-200">Team Taraba River</strong> — comprising USOSA alumni who are members resident in Port Harcourt (URIP) and are part of a group of Alumni in a team (Team Taraba River).</li>
-                <li>Members must provide accurate and truthful personal information at the point of registration, including a valid phone number and email address. This information must be kept up-to-date at all times.</li>
-                {/* [AMENDED] Added explicit age requirement */}
-                <li>You must be at least <strong className="text-slate-700 dark:text-slate-200">18 years of age</strong> to register for and use this portal. By registering, you represent and warrant that you meet this age requirement.</li>
-                <li>Profile photos are subject to mandatory review and approval by Team Taraba River administrators before being publicly displayed. Photos deemed inappropriate will be rejected without prior notice.</li>
-                <li>By registering, you affirm that you are a person of good character and that you uphold the values of integrity, unity, and respectful conduct expected of every member of Team Taraba River.</li>
+                <li>Membership on this portal is restricted to verified alumni of Federal Unity Colleges resident in Port Harcourt (URIP) and accredited members of Team Taraba River.</li>
+                <li>Members must provide accurate and truthful personal information during registration (including Full Legal Name, School, Graduation Year, Contact Telephone, Valid Email, and Next of Kin). Willful falsification of identity violates these Terms and the Cybercrimes Act 2015.</li>
+                <li>You must be at least <strong className="text-slate-700 dark:text-slate-200">18 years of age</strong> to register an account. By registering, you warrant that you meet this age requirement under Nigerian law.</li>
+                <li>Profile photos and media assets undergo administrative moderation to ensure decency before public display. Photographs deemed vulgar, offensive, or misleading will be rejected without prior notice.</li>
+                <li>By registering, you affirm that you are a person of good character and commit to upholding the values of unity, integrity, and fraternity.</li>
               </ul>
             </section>
 
@@ -106,42 +132,37 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                 2. Code of Conduct &amp; USOSA Values
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                <li>All members are expected to embody the values of <strong className="text-slate-700 dark:text-slate-200">Team Taraba River</strong>: unity, integrity, respect for all backgrounds, community service, and joyful fellowship. These are non-negotiable pillars of membership.</li>
-                <li>Treat every member with respect regardless of their ethnic background, religious belief, gender, or professional standing. Discrimination or tribalism of any form is strictly prohibited.</li>
-                <li>All content shared on this portal (photos, event posts, media) must be decent, constructive, and free from defamatory, inflammatory, or offensive material.</li>
-                {/* [AMENDED] Added specific prohibited activities */}
-                <li>Any conduct that brings Team Taraba River or USOSA into disrepute — whether online or at in-person events — may result in suspension or removal from the platform at the sole discretion of Team Taraba River administrators.</li>
-                <li>Members are encouraged to support the local communities of Port Harcourt and Rivers State through volunteering, mentorship, and social initiatives, consistent with the group's spirit of giving back.</li>
+                <li>All members must embody the core values of USOSA and Team Taraba River: mutual respect, detribalized brotherhood, zero discrimination (ethnic, religious, gender, or social), and active community support.</li>
+                <li>All content shared on the platform (comments, photos, announcements) must be constructive, decent, and free from inflammatory, defamatory, or offensive rhetoric.</li>
+                <li>Any conduct that brings Team Taraba River, URIP, or USOSA into disrepute — online or at in-person events — may result in administrative sanction or removal.</li>
               </ul>
 
-              {/* [NEW] Prohibited Activities Subsection */}
+              {/* 2.1 Prohibited Activities */}
               <div className="mt-4 p-4 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 rounded-xl">
                 <h4 className="text-sm font-semibold text-red-800 dark:text-red-300 flex items-center gap-2 mb-2">
                   <AlertTriangle className="w-4 h-4" />
-                  2.1 Prohibited Activities
+                  2.1 Strictly Prohibited Activities
                 </h4>
-                <p className="text-xs text-red-900 dark:text-red-200 mb-2">The following activities are strictly prohibited on this portal and may result in immediate suspension, account termination, or referral to appropriate authorities:</p>
+                <p className="text-xs text-red-900 dark:text-red-200 mb-2">The following actions are strictly prohibited and result in immediate account suspension, point forfeiture, and possible legal referral:</p>
                 <ul className="list-disc pl-5 space-y-1 text-xs text-red-800 dark:text-red-200 marker:text-red-500">
-                  <li>Harassment, intimidation, bullying, or threatening behavior toward any member.</li>
-                  <li>Posting defamatory, obscene, pornographic, or hate speech content.</li>
-                  <li>Impersonating another person, entity, or Team Taraba River administrator.</li>
-                  <li>Unauthorized scraping, data mining, or bulk extraction of member data.</li>
-                  <li>Spamming, phishing, or distributing malicious software or links.</li>
-                  <li>Using the portal to organize or promote unauthorized commercial activities, scams, or fraudulent schemes.</li>
-                  <li>Sharing or attempting to share another member's private information (doxing).</li>
-                  <li>Interfering with or disrupting the integrity or performance of the portal.</li>
+                  <li>Harassment, cyberbullying, intimidation, or threatening behavior toward any member.</li>
+                  <li>Dissemination of defamatory, obscene, sexually explicit, or politically inciting material.</li>
+                  <li>Impersonating another person, chapter official, or portal administrator.</li>
+                  <li>Unauthorized web scraping, automated bot data extraction, or harvesting member contact directories.</li>
+                  <li>Commercial spamming, unsolicited financial solicitations, pyramid schemes, or fraudulent activities.</li>
+                  <li>Doxing or unauthorized sharing of another member's confidential residential or personal information.</li>
+                  <li>Interfering with, hacking, or attempting to breach the security tokens or infrastructure of the portal.</li>
                 </ul>
               </div>
 
-              {/* [NEW] Appeals Process */}
+              {/* 2.2 Appeals Process */}
               <div className="mt-3 p-4 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl">
                 <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-2">
                   <Scale className="w-4 h-4 text-teal-600" />
-                  2.2 Administrative Actions &amp; Appeals
+                  2.2 Administrative Actions &amp; Appeals Process
                 </h4>
                 <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                  {/* [NEW] */}
-                  Administrative actions (warnings, content removal, suspension, or termination) may be appealed by submitting a written request to the Team Taraba River lead within <strong>14 days</strong> of the action. Appeals will be reviewed by a panel of at least two administrators not involved in the original decision. The decision of the appeal panel is final. Members will be notified of the outcome within <strong>7 business days</strong>.
+                  Administrative sanctions (warnings, feature restrictions, content removal, or account suspension) may be appealed by submitting a written request to the Team Lead within <strong>14 calendar days</strong> of the action. Appeals are reviewed by an independent panel of at least two administrators not involved in the original determination. A final, binding written decision will be delivered within <strong>7 business days</strong>.
                 </p>
               </div>
             </section>
@@ -150,248 +171,217 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
             <section className="space-y-3">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <Users className="w-4 h-4 text-teal-600 shrink-0" />
-                3. Event Participation &amp; Community Rules
+                3. Event Participation, Safety &amp; Community Rules
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                <li>Team Taraba River gatherings are a time for fellowship, fun, celebration, and constructive engagement. Members are encouraged to attend events regularly and in good spirit.</li>
-                {/* [AMENDED] Added specific no-show notification requirement */}
-                <li>When you RSVP to an event, you are making a commitment to attend. Excessive no-shows without <strong className="text-slate-700 dark:text-slate-200">prior notification</strong> to the event organizer reflect poorly on the group and may affect your standing and activity points.</li>
-                <li>Events may include social outings, sports activities, educational forums, community service initiatives, and celebratory gatherings — all organized in the spirit of fun, unity, and fellowship.</li>
-                <li>Members wishing to share event photos or videos may submit high-resolution media albums or videos. Submissions are reviewed by Team Taraba River administrators before featured placement.</li>
-                {/* [AMENDED] Added safety and emergency provisions */}
-                <li>Members are expected to uphold decency and safety at all physical events. Behavior that endangers others, causes disruption, or embarrasses the group will not be tolerated.</li>
+                <li>Team Taraba River gatherings are organized for fellowship, recreational sports, professional development, and community impact. Members are encouraged to attend regularly and in good spirit.</li>
+                <li><strong>RSVP Commitment:</strong> An event RSVP represents a binding logistical commitment. Excessive no-shows without timely prior notification disrupt planning and may result in activity point deductions.</li>
+                <li>Members are expected to uphold standards of safety and decency at all physical events. Endangering others or causing disruption will result in immediate event ejection.</li>
               </ul>
 
-              {/* [NEW] Event Safety & Emergency */}
+              {/* 3.1 Event Safety & Media Consent */}
               <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl">
                 <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-2">
                   <Heart className="w-4 h-4 text-teal-600" />
-                  3.1 Safety, Emergencies &amp; Media Consent
+                  3.1 Safety, Emergency Care &amp; General Media Consent
                 </h4>
                 <ul className="list-disc pl-5 space-y-1.5 text-xs text-slate-700 dark:text-slate-300 marker:text-slate-400">
-                  {/* [NEW] */}
-                  <li>By attending any Team Taraba River physical event, you acknowledge that participation in certain activities may carry inherent risks. You agree to follow all safety instructions provided by event organizers and to report any injuries or hazards immediately.</li>
-                  {/* [NEW] */}
-                  <li>Emergency contact information provided during registration may be used by organizers solely in case of medical or safety emergencies during official events.</li>
-                  {/* [NEW] */}
-                  <li>By attending an event, you grant Team Taraba River permission to photograph, video record, and publish images or footage from the event for community archival and promotional purposes, unless you have explicitly notified administrators in writing of your objection prior to the event.</li>
+                  <li>By attending physical events, members acknowledge inherent physical risks associated with sports or outdoor activities and agree to abide by safety directives.</li>
+                  <li>Next-of-Kin information provided during registration is encrypted and accessed exclusively during on-site health or safety emergencies.</li>
+                  <li>Attendance at official events constitutes permission for official photographers to capture images and video footage for community archives and recaps, unless a member submits a prior written objection.</li>
                 </ul>
               </div>
 
-              {/* [NEW] Media Approval Timeline */}
+              {/* 3.2 Media Review Timeline */}
               <div className="mt-3 p-4 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl">
                 <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-2">
                   <FileText className="w-4 h-4 text-teal-600" />
-                  3.2 Media Submission &amp; Approval Timeline
+                  3.2 Media Submission &amp; Moderation Timeline
                 </h4>
                 <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                  {/* [NEW] */}
-                  Submitted media (photos and videos) is reviewed within <strong>5 business days</strong>. If your submission is rejected, you will receive a brief explanation. If no response is received within 5 business days, you may follow up via the official portal communication channel. Expedited review may be requested for time-sensitive content.
+                  Member-submitted media albums and video clips undergo administrative review within <strong>5 business days</strong>. If rejected, a brief constructive rationale is provided. Approved media is published to official event galleries.
                 </p>
               </div>
             </section>
 
-            {/* [NEW] Section: Content, Media & Intellectual Property */}
+            {/* Section 4 */}
             <section className="space-y-3">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <Star className="w-4 h-4 text-teal-600 shrink-0" />
-                4. Content, Media &amp; Intellectual Property
+                <HardDrive className="w-4 h-4 text-teal-600 shrink-0" />
+                4. Content, Media Pipeline &amp; YouTube Integration
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                {/* [NEW] */}
-                <li>You retain ownership of content you upload to this portal. However, by uploading content, you grant Team Taraba River a <strong className="text-slate-700 dark:text-slate-200">non-exclusive, royalty-free, worldwide license</strong> to use, reproduce, display, and distribute such content solely for the purpose of operating and promoting the portal and Team Taraba River activities.</li>
-                {/* [NEW] */}
-                <li>You are solely responsible for the content you upload. You warrant that you have all necessary rights, consents, and permissions to share the content and that it does not infringe on any third-party intellectual property rights, privacy rights, or other legal rights.</li>
-                {/* [NEW] */}
-                <li>Team Taraba River reserves the right to remove or restrict access to any content that violates these Terms, is subject to a valid DMCA or Nigerian copyright complaint, or is otherwise deemed harmful or inappropriate, without prior notice.</li>
-                {/* [NEW] */}
-                <li>If you believe content on the portal infringes your copyright, you may submit a takedown notice to the administrators with: (a) identification of the copyrighted work; (b) identification of the allegedly infringing material; (c) your contact information; (d) a statement of good faith belief; and (e) your physical or electronic signature.</li>
+                <li><strong>Ownership:</strong> Members retain full copyright and ownership in original photographs and video clips they upload to the portal.</li>
+                <li><strong>Community Media License:</strong> By uploading media to event albums or video repositories, you grant Team Taraba River a <strong className="text-slate-700 dark:text-slate-200">non-exclusive, royalty-free, worldwide, transferable license</strong> to host, transcode, display, and publish the media for community archives, event recaps, and video streaming on official YouTube and Google Drive repositories.</li>
+                <li><strong>Content Representations:</strong> You warrant that all media you submit is your original creation or that you possess all necessary releases and permissions, and that the content does not infringe on third-party intellectual property or privacy rights.</li>
+                <li><strong>Takedown Procedure (Copyright Compliance):</strong> Any party asserting copyright infringement may submit a formal takedown request containing: (a) proof of copyrighted ownership, (b) specific link/URL to the infringing material, and (c) full contact information. Valid takedown notices are processed within <strong>48 hours</strong>.</li>
               </ul>
             </section>
 
-            {/* Section 5 (was 4) */}
+            {/* Section 5 */}
             <section className="space-y-3">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <Shield className="w-4 h-4 text-teal-600 shrink-0" />
-                5. Privacy Policy &amp; Data Usage
+                5. Privacy Policy &amp; Nigeria Data Protection Act (NDPA) 2023 Compliance
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                <li>We collect Personally Identifiable Information (PII) including your Full Name, Phone Number, Email, Residential Address, Birthday (Day &amp; Month only), Next of Kin, and Occupation.</li>
-                <li>By registering, you consent to your <strong className="text-slate-700 dark:text-slate-200">public profile</strong> (Name, Occupation, Skills, and Photo) being listed in the Member Directory, visible only to other verified and authenticated members of Team Taraba River on this portal.</li>
-                <li>Your birthday (Day and Month) will be highlighted on the Group Calendar to enable celebratory shout-outs during your birth month. Your birth year is deliberately not collected or displayed.</li>
-                <li>Your personal data will <strong className="text-slate-700 dark:text-slate-200">never</strong> be sold, rented, or disclosed to any third party outside of Team Taraba River's administrative purposes.</li>
-                <li>Administrative staff of Team Taraba River may access full member records solely for the purposes of managing membership, approving profiles, and coordinating group activities.</li>
+                <li><strong>Data Controller:</strong> Team Taraba River acts as the Data Controller under the <strong>Nigeria Data Protection Act (NDPA) 2023</strong>.</li>
+                <li><strong>Public Member Directory:</strong> Only authenticated, verified members of Team Taraba River can view directory profiles (Full Name, Unity School, Graduation Year, Occupation, Skills, and Photo).</li>
+                <li><strong>Protected Administrative Data:</strong> Sensitive records (Phone Number, Email, Residential Address, Next of Kin, and Birth Dates) are encrypted and restricted strictly to authorized administrative workflows.</li>
+                <li><strong>Zero-Sale Guarantee:</strong> Member data is <strong className="text-slate-700 dark:text-slate-200">never sold, leased, rented, or commercialized</strong> to third-party advertisers, data brokers, or political organizations.</li>
               </ul>
 
-              {/* [NEW] Data Protection & Rights */}
-              <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl">
+              {/* 5.1 Automated Birthday Reminder Processing */}
+              <div className="mt-4 p-4 bg-teal-50 dark:bg-teal-950/20 border border-teal-200 dark:border-teal-900/40 rounded-xl">
+                <h4 className="text-sm font-semibold text-teal-800 dark:text-teal-300 flex items-center gap-2 mb-2">
+                  <Cake className="w-4 h-4 text-teal-600" />
+                  5.1 Automated Birthday Reminder Processing
+                </h4>
+                <p className="text-xs text-teal-900 dark:text-teal-200 leading-relaxed">
+                  The portal operates an automated background scheduling engine that runs daily at <strong>12:00 PM WAT</strong>. The engine processes member birth dates (<strong>Day and Month only — birth year is never collected, stored, or displayed</strong>) to generate monthly advance planning digests and daily 24-hour eve reminders. Notifications are dispatched securely via transactional email (Resend) to official team administrators (<code>tarabateam@gmail.com</code>) strictly for community felicitations and WhatsApp announcements.
+                </p>
+              </div>
+
+              {/* 5.2 NDPA 2023 Statutory Rights & Breach SLA */}
+              <div className="mt-3 p-4 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl">
                 <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-2">
                   <Lock className="w-4 h-4 text-teal-600" />
-                  5.1 Data Protection, Breach Notification &amp; Your Rights
+                  5.2 Statutory Rights, Cross-Border Transfers &amp; Breach SLA
                 </h4>
                 <ul className="list-disc pl-5 space-y-1.5 text-xs text-slate-700 dark:text-slate-300 marker:text-slate-400">
-                  {/* [NEW] */}
-                  <li>We are committed to protecting your personal data in accordance with the <strong>Nigerian Data Protection Act (NDPA) 2023</strong> and applicable data protection regulations. We implement appropriate technical and organizational measures to safeguard your data.</li>
-                  {/* [NEW] */}
-                  <li>In the unlikely event of a data breach that may affect your rights or freedoms, we will notify you and the relevant Nigerian Data Protection Commission within <strong>72 hours</strong> of becoming aware of the breach, where required by law.</li>
-                  {/* [NEW] */}
-                  <li>You have the right to request access to, correction of, or deletion of your personal data. You may also request a copy of your data in a portable format. Such requests should be submitted via the official portal communication channel and will be addressed within <strong>30 days</strong>.</li>
-                  {/* [NEW] */}
-                  <li>Your data will be retained only for as long as necessary to fulfill the purposes outlined in these Terms, unless a longer retention period is required or permitted by law.</li>
+                  <li><strong>Cross-Border Cloud Infrastructure:</strong> In compliance with Sections 41–43 of the NDPA 2023, data stored on Google Cloud Firebase and associated infrastructure is protected by enterprise AES-256 encryption at rest and TLS 1.3 in transit within ISO 27001 certified data centers.</li>
+                  <li><strong>Member Statutory Rights:</strong> Members have the right to request access to their data, immediate correction of inaccurate details, data portability, and permanent account deletion (&quot;Right to Erasure&quot;), executed within <strong>30 calendar days</strong>.</li>
+                  <li><strong>Breach Notification SLA:</strong> In the unlikely event of a verified data breach affecting personal records, Team Taraba River will notify affected members and the <strong>Nigeria Data Protection Commission (NDPC)</strong> within <strong>72 hours</strong> of formal confirmation.</li>
                 </ul>
               </div>
             </section>
 
-            {/* [NEW] Section: Account Security */}
-            <section className="space-y-3">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <Lock className="w-4 h-4 text-teal-600 shrink-0" />
-                6. Account Security
-              </h3>
-              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                {/* [NEW] */}
-                <li>You are responsible for maintaining the confidentiality of your account credentials (username, password, PIN, or any other authentication method). You must not share your account with any other person.</li>
-                {/* [NEW] */}
-                <li>You must immediately notify Team Taraba River administrators of any unauthorized use of your account or any other breach of security known to you.</li>
-                {/* [NEW] */}
-                <li>Team Taraba River will not be liable for any loss or damage arising from your failure to comply with this section, or from any unauthorized access to your account resulting from your negligence.</li>
-              </ul>
-            </section>
-
-            {/* Section 7 (was 5) */}
-            <section className="space-y-3">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <Heart className="w-4 h-4 text-teal-600 shrink-0" />
-                7. Activity Points &amp; Community Recognition
-              </h3>
-              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                <li>The portal operates an Activity Points and Community Recognition system designed to celebrate active engagement and mutual connection. Points and contributor standing are principally earned for: <strong>Visiting the Portal &amp; App Exploration (+30 pts)</strong>, <strong>Using AI Xplora Research (+25 pts)</strong>, <strong>Searching Member Occupational Affiliations &amp; Skills (+25 pts)</strong>, Media Uploads &amp; Event RSVPs (+20 pts), Profile Completeness &amp; Verification (+15 pts), and Reading USOSA News Headlines (+10 pts).</li>
-                <li>Points serve as <strong className="text-slate-700 dark:text-slate-200">non-monetary community incentives</strong>, and qualify members for official recognition, chapter awards, or celebration gifts during Team Taraba River gatherings.</li>
-                <li>Points cannot be exchanged for cash, transferred between members, or fraudulently inflated. Any attempt to manipulate the points system will result in account review by Team Taraba River administrators.</li>
-                {/* [NEW] Points revocation */}
-                <li>Points have <strong>no monetary value</strong> and do not constitute property. Team Taraba River reserves the right to revoke points obtained through fraudulent means, system errors, or violations of these Terms, without liability.</li>
-              </ul>
-            </section>
-
-            {/* [NEW] Section: Termination, Suspension & Deactivation */}
-            <section className="space-y-3">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <X className="w-4 h-4 text-teal-600 shrink-0" />
-                8. Termination, Suspension &amp; Account Deactivation
-              </h3>
-              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                {/* [NEW] */}
-                <li>Team Taraba River may suspend or terminate your account at any time, with or without notice, for conduct that we believe violates these Terms, harms other members, or harms the reputation or interests of Team Taraba River or USOSA.</li>
-                {/* [NEW] */}
-                <li>You may request account deactivation at any time by contacting an administrator via the official portal communication channel. Upon deactivation, your profile will be hidden from public view within <strong>7 business days</strong>.</li>
-                {/* [NEW] */}
-                <li>Upon termination or deactivation, your right to use the portal will cease immediately. Certain data may be retained as required by law or for legitimate business purposes (e.g., archival event records, financial compliance). Personal data not required for such purposes will be deleted within <strong>90 days</strong> unless a longer retention period is required by applicable Nigerian law.</li>
-                {/* [NEW] */}
-                <li>Sections of these Terms that by their nature should survive termination (including intellectual property licenses, limitation of liability, and dispute resolution provisions) shall survive.</li>
-              </ul>
-            </section>
-
-            {/* Section 9 (was 6) */}
-            <section className="space-y-3">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
-                9. Amendment of Terms
-              </h3>
-              <p className="text-sm leading-relaxed pl-6">
-                Team Taraba River reserves the right to amend these Terms and Conditions at any time, in line with evolving community needs or directives from the wider URIP/USOSA network. Significant changes will be communicated via the portal. Your continued use of the platform after any such changes constitutes your acceptance of the revised terms.
-              </p>
-              {/* [NEW] Notice method */}
-              <p className="text-xs text-slate-500 dark:text-slate-400 pl-6 mt-1">
-                {/* [NEW] */}
-                <strong>Notice Method:</strong> Material amendments will be posted on the portal's Terms page and announced via the primary notification channel (e.g., portal banner or registered email). It is your responsibility to review the Terms periodically.
-              </p>
-            </section>
-
-            {/* [NEW] Section: Limitation of Liability */}
-            <section className="space-y-3">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <Shield className="w-4 h-4 text-teal-600 shrink-0" />
-                10. Limitation of Liability &amp; Disclaimer
-              </h3>
-              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                {/* [NEW] */}
-                <li>This portal is provided on an <strong>"as is"</strong> and <strong>"as available"</strong> basis. Team Taraba River makes no warranties, express or implied, regarding the operation of the portal or the information, content, or materials included on the portal.</li>
-                {/* [NEW] */}
-                <li>To the fullest extent permitted by applicable law, Team Taraba River, USOSA, URIP, and their respective officers, directors, employees, and agents shall not be liable for any indirect, incidental, special, consequential, or punitive damages, including but not limited to loss of profits, data, use, or goodwill, arising out of or in connection with your use of the portal.</li>
-                {/* [NEW] */}
-                <li>Team Taraba River does not warrant that the portal will be uninterrupted, secure, or error-free. We do not warrant that defects will be corrected, or that the portal or the servers that make it available are free of viruses or other harmful components.</li>
-                {/* [NEW] */}
-                <li>In no event shall our total liability to you for all claims arising out of or relating to the use of the portal exceed the amount paid by you, if any, for accessing the portal during the <strong>twelve (12) months</strong> prior to the claim.</li>
-              </ul>
-            </section>
-
-            {/* [NEW] Section: Third-Party Services */}
-            <section className="space-y-3">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <ExternalLink className="w-4 h-4 text-teal-600 shrink-0" />
-                11. Third-Party Services &amp; External Links
-              </h3>
-              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                {/* [NEW] */}
-                <li>The portal may link to or integrate with third-party services, including cloud media storage, database backends, and email providers. These services are not owned or controlled by Team Taraba River.</li>
-                {/* [NEW] */}
-                <li>We are not responsible for the availability, accuracy, legality, or content of any third-party services. Your use of third-party services is governed by their respective terms of service and privacy policies.</li>
-                {/* [NEW] */}
-                <li>We do not endorse, warrant, or guarantee any products or services offered by third parties. We are not a party to any transactions between you and third-party providers.</li>
-              </ul>
-            </section>
-
-            {/* [NEW] Section: Dispute Resolution & Governing Law */}
-            <section className="space-y-3">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <Gavel className="w-4 h-4 text-teal-600 shrink-0" />
-                12. Dispute Resolution &amp; Governing Law
-              </h3>
-              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                {/* [NEW] */}
-                <li>These Terms shall be governed by and construed in accordance with the <strong>laws of the Federal Republic of Nigeria</strong>, without regard to its conflict of law provisions.</li>
-                {/* [NEW] */}
-                <li>Any dispute arising out of or in connection with these Terms, or your use of the portal, shall first be attempted to be resolved through good-faith negotiation with the Team Taraba River lead within <strong>30 days</strong> of written notice.</li>
-                {/* [NEW] */}
-                <li>If negotiation fails, the dispute shall be referred to and finally resolved by arbitration under the Arbitration and Mediation Act 2023 (Nigeria) or its successor legislation, by a sole arbitrator seated in Port Harcourt, Rivers State. The language of arbitration shall be English.</li>
-                {/* [NEW] */}
-                <li>Nothing in this section shall prevent either party from seeking urgent interim or injunctive relief from a court of competent jurisdiction in Port Harcourt, Rivers State, Nigeria.</li>
-              </ul>
-            </section>
-
-            {/* [NEW] Section: General Provisions */}
+            {/* Section 6 */}
             <section className="space-y-3">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <FileText className="w-4 h-4 text-teal-600 shrink-0" />
-                13. General Provisions
+                6. Local Storage, Cookies &amp; Analytics Transparency
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                {/* [NEW] */}
-                <li><strong>Entire Agreement:</strong> These Terms, together with any policies referenced herein, constitute the entire agreement between you and Team Taraba River regarding the use of the portal and supersede any prior agreements.</li>
-                {/* [NEW] */}
-                <li><strong>Severability:</strong> If any provision of these Terms is held to be invalid, illegal, or unenforceable by a court of competent jurisdiction, the remaining provisions shall remain in full force and effect.</li>
-                {/* [NEW] */}
-                <li><strong>No Waiver:</strong> The failure of Team Taraba River to enforce any right or provision of these Terms shall not constitute a waiver of such right or provision.</li>
-                {/* [NEW] */}
-                <li><strong>Assignment:</strong> You may not assign or transfer these Terms or your rights hereunder without prior written consent from Team Taraba River. Team Taraba River may assign these Terms to any affiliated entity or successor without your consent.</li>
-                {/* [NEW] */}
-                <li><strong>Force Majeure:</strong> Team Taraba River shall not be liable for any failure or delay in performance due to circumstances beyond its reasonable control, including but not limited to acts of God, natural disasters, war, terrorism, riots, embargoes, acts of civil or military authorities, fire, floods, accidents, strikes, or shortages of transportation, facilities, fuel, energy, labor, or materials.</li>
+                <li><strong>No Third-Party Tracking:</strong> The portal does not employ third-party tracking pixels, advertising beacons, or invasive biometric profiling cookies.</li>
+                <li><strong>Local Storage Utilization:</strong> Standard browser <code>localStorage</code> and <code>sessionStorage</code> are used exclusively for:
+                  (a) maintaining secure authenticated member sessions,
+                  (b) storing Light/Dark theme preferences,
+                  (c) local directory caching for low-bandwidth resilience, and
+                  (d) executing the 30-minute anti-spam deduplication gate for authentic community metrics (as documented in our Analytics Methodology).</li>
               </ul>
             </section>
 
-            {/* [NEW] Section: Official Communications & Contact */}
+            {/* Section 7 */}
+            <section className="space-y-3">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-teal-600 shrink-0" />
+                7. AI Knowledge Assistant (AI Xplora)
+              </h3>
+              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
+                <li><strong>Informational &amp; Search Purpose:</strong> The AI Xplora assistant processes public community archives, USOSA school histories, and member professional skills to facilitate search, knowledge retrieval, and alumni discovery.</li>
+                <li><strong>Disclaimer of Professional Warranty:</strong> AI-generated suggestions, summaries, and search matches are advisory. Members are responsible for conducting independent due diligence before entering into professional or commercial agreements.</li>
+              </ul>
+            </section>
+
+            {/* Section 8 */}
+            <section className="space-y-3">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <Heart className="w-4 h-4 text-teal-600 shrink-0" />
+                8. Activity Points &amp; Community Recognition
+              </h3>
+              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
+                <li><strong>Fellowship Currency:</strong> Activity points (earned for portal exploration, AI research, skill searches, media uploads, verification, and event RSVPs) serve solely as non-monetary community incentives.</li>
+                <li><strong>No Cash Value:</strong> Points carry <strong className="text-slate-700 dark:text-slate-200">zero monetary cash value</strong>, cannot be traded, sold, or transferred, and do not constitute personal property.</li>
+                <li><strong>Audit &amp; Revocation:</strong> Team Taraba River reserves the right to audit, adjust, or revoke points obtained through bot scripts, exploits, or violations of these Terms without liability.</li>
+              </ul>
+            </section>
+
+            {/* Section 9 */}
+            <section className="space-y-3">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <Lock className="w-4 h-4 text-teal-600 shrink-0" />
+                9. Account Security &amp; Member Responsibility
+              </h3>
+              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
+                <li>Members are responsible for maintaining the confidentiality of their login credentials and devices. You must not share your account access with third parties.</li>
+                <li>You agree to immediately report any suspected unauthorized access or security breach to administrators. Team Taraba River is not liable for losses resulting from member credential negligence.</li>
+              </ul>
+            </section>
+
+            {/* Section 10 */}
+            <section className="space-y-3">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <X className="w-4 h-4 text-teal-600 shrink-0" />
+                10. Termination, Suspension &amp; Account Deactivation
+              </h3>
+              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
+                <li>Team Taraba River reserves the right to suspend or terminate accounts for violations of these Terms, community disruption, or legal non-compliance.</li>
+                <li>Members may request voluntary account deactivation at any time. Upon deactivation, public profile visibility is revoked within <strong>7 business days</strong>, and non-archival PII is permanently purged within <strong>90 days</strong> in line with NDPA guidelines.</li>
+              </ul>
+            </section>
+
+            {/* Section 11 */}
+            <section className="space-y-3">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <Shield className="w-4 h-4 text-teal-600 shrink-0" />
+                11. Limitation of Liability &amp; Disclaimers
+              </h3>
+              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
+                <li>This portal is provided on an <strong>&quot;As Is&quot;</strong> and <strong>&quot;As Available&quot;</strong> basis without express or implied warranties of continuous uptime.</li>
+                <li>To the fullest extent permitted under Nigerian law, Team Taraba River, USOSA, URIP, and their respective officers and volunteer administrators shall not be liable for any indirect, incidental, special, or consequential damages resulting from portal downtime or member interactions.</li>
+                <li>Our total aggregate liability for any claim arising from portal usage shall not exceed the amount paid by the member, if any, for portal services during the preceding twelve (12) months.</li>
+              </ul>
+            </section>
+
+            {/* Section 12 */}
+            <section className="space-y-3">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <ExternalLink className="w-4 h-4 text-teal-600 shrink-0" />
+                12. Third-Party Services
+              </h3>
+              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
+                <li>The platform integrates with secure third-party infrastructure providers, including Google Cloud Firebase, YouTube APIs, Google Drive, and Resend email services.</li>
+                <li>These services are governed by their respective enterprise terms of service and privacy policies. Team Taraba River is not responsible for the independent operation or third-party outages of external providers.</li>
+              </ul>
+            </section>
+
+            {/* Section 13 */}
+            <section className="space-y-3">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <Gavel className="w-4 h-4 text-teal-600 shrink-0" />
+                13. Dispute Resolution &amp; Governing Law
+              </h3>
+              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
+                <li>These Terms are governed exclusively by the <strong>laws of the Federal Republic of Nigeria</strong>.</li>
+                <li>Any dispute arising from these Terms shall first be submitted to good-faith informal mediation with the Team Taraba River Executive Council within <strong>30 calendar days</strong>.</li>
+                <li>Unresolved disputes shall be referred to and finally resolved by arbitration under the <strong>Arbitration and Mediation Act 2023 (Nigeria)</strong> by a sole arbitrator seated in <strong>Port Harcourt, Rivers State, Nigeria</strong>. The language of arbitration shall be English.</li>
+                <li>Nothing in this section restricts either party from seeking urgent injunctive relief from a competent court in Port Harcourt, Rivers State.</li>
+              </ul>
+            </section>
+
+            {/* Section 14 */}
+            <section className="space-y-3">
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                <FileText className="w-4 h-4 text-teal-600 shrink-0" />
+                14. General Provisions
+              </h3>
+              <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
+                <li><strong>Entire Agreement:</strong> These Terms constitute the complete understanding between the member and Team Taraba River regarding portal usage.</li>
+                <li><strong>Severability:</strong> If any provision is deemed unenforceable by a court of competent jurisdiction, the remaining provisions remain in full force and effect.</li>
+                <li><strong>Force Majeure:</strong> Team Taraba River is not liable for failure to perform resulting from causes beyond reasonable control (natural disasters, network disruptions, civil unrest, or statutory embargoes).</li>
+              </ul>
+            </section>
+
+            {/* Section 15 */}
             <section className="space-y-3">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <Users className="w-4 h-4 text-teal-600 shrink-0" />
-                14. Official Communications &amp; Contact
+                15. Amendments, Communications &amp; Official Contact
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                {/* [NEW] */}
-                <li>Official communications from Team Taraba River to members may be delivered via portal notifications, registered email, or SMS. It is your responsibility to ensure your contact information is current and that you review official communications promptly.</li>
-                {/* [NEW] */}
-                <li>Members wishing to contact administrators, report issues, or submit requests should use the official portal communication channel or contact the Team Taraba River lead directly at the contact details published on the portal.</li>
-                {/* [NEW] */}
-                <li>Team Taraba River shall not be responsible for communications sent to personal social media accounts, unofficial email addresses, or third-party platforms unless explicitly designated as official channels.</li>
+                <li>Team Taraba River reserves the right to amend these Terms to reflect community developments or statutory updates. Material changes are published on the portal. Continued access constitutes acceptance.</li>
+                <li>Official inquiries, data subject access requests, or privacy concerns should be directed to the official administration email: <code className="text-teal-700 dark:text-teal-300 font-medium">tarabateam@gmail.com</code>.</li>
               </ul>
             </section>
 
@@ -399,7 +389,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
             <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-700/50">
               <div className="flex flex-col sm:flex-row items-start sm:items-end justify-between gap-4">
                 <div className="text-sm text-slate-500 dark:text-slate-400 space-y-1">
-                  <p className="font-medium text-slate-700 dark:text-slate-300">Team Taraba River Portal</p>
+                  <p className="font-medium text-slate-700 dark:text-slate-300">Team Taraba River Community Portal</p>
                   <p>Under URIP — Usosans Resident in Port Harcourt</p>
                   <p>Unity Schools Old Students Association (USOSA)</p>
                   <p className="text-xs italic">Port Harcourt, Rivers State, Nigeria</p>
@@ -418,11 +408,10 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                     Lead, Team Taraba River
                   </p>
                   <p className="text-xs font-medium text-teal-700 dark:text-teal-400 mt-1">
-                    {/* [AMENDED] Added original signing date and amendment reference */}
                     11 August 2026 (Original)
                   </p>
                   <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                    Updated: August 2026 (Comprehensive Review)
+                    Updated: August 2026 (Version 2.1 Technical &amp; Legal Review)
                   </p>
                 </div>
               </div>
@@ -432,7 +421,10 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
         </div>
 
         {/* Footer Actions */}
-        <div className="shrink-0 p-4 sm:p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex justify-end">
+        <div className="shrink-0 p-4 sm:p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between gap-3">
+          <span className="text-xs text-slate-500 dark:text-slate-400">
+            Protected under NDPA 2023 &amp; USOSA Code of Conduct
+          </span>
           <button
             onClick={onClose}
             className="px-6 py-2.5 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-medium text-sm transition-colors shadow-sm cursor-pointer"

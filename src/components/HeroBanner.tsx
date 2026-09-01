@@ -15,6 +15,7 @@ import {
 
 import { AppStateManager } from "../services/storage";
 import { stripTitlePrefixes } from "../utils/nameUtils";
+import { isOfficialFutureEvent } from "../utils/eventUtils";
 
 interface HeroBannerProps {
   currentUser: Member | null;
@@ -40,14 +41,15 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   onOpenRegister,
 }) => {
   const memberCount = members.length;
-  const currentDateStr = new Date().toISOString().split("T")[0];
-  const activeEvents = events.filter(
-    (e) => e.date >= currentDateStr && !e.id.startsWith("gdrive_") && !e.id.startsWith("evt_arch_") && e.id !== "evt_taraba_gdrive"
-  );
+  // STRICT RULE: Only official future chapter events (excludes past events and media gallery folders)
+  const activeEvents = events.filter(isOfficialFutureEvent);
   const eventCount = activeEvents.length;
+
+  const isAdmin = currentUser?.role === "admin";
 
   const getUserDisplayName = (user?: Member | null): string => {
     if (!user) return "Guest";
+    if (user.role === "admin") return "Admin";
     const cleanName = stripTitlePrefixes(user.firstName || user.fullName || "");
     const parts = cleanName.split(/\s+/).filter(Boolean);
     const first = parts[0] || "Guest";
@@ -56,11 +58,11 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
   };
 
   const userName = getUserDisplayName(currentUser);
-  const roleTitle = currentUser?.role === "admin" ? "Admin" : "User";
+  const roleTitle = isAdmin ? "Admin" : "User";
 
-  // Determine if it's user's first visit vs returning visit
+  // Determine if it's user's first visit vs returning visit (Admin always receives "Welcome back, Admin.")
   const userVisitCount = currentUser ? AppStateManager.getUserVisitCount(currentUser.id) : 1;
-  const isFirstVisit = userVisitCount <= 1;
+  const isFirstVisit = !isAdmin && userVisitCount <= 1;
 
   return (
     <div className="space-y-6 py-2 w-full font-normal">
@@ -85,7 +87,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
           ) : (
             <>
               <h1 className="text-xl sm:text-2xl font-normal tracking-tight text-slate-900 dark:text-white leading-tight">
-                Welcome, back{" "}
+                Welcome back,{" "}
                 <span className="text-teal-700 dark:text-teal-400 font-normal">
                   {userName}
                 </span>

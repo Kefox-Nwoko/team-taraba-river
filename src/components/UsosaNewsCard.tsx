@@ -54,7 +54,7 @@ interface ChatMessage {
   timestamp: string;
 }
 
-const TABS = ["Headlines", "AI Xplora", "Contact Search"] as const;
+const TABS = ["Headlines", "AI Xplora", "Networking"] as const;
 type Tab = (typeof TABS)[number];
 
 export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => {
@@ -379,7 +379,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                   Latest 15 Stories · Updated {formatFetchedAt(fetchedAt)}
                 </p>
               )}
-              {activeTab === "Contact Search" && (
+              {activeTab === "Networking" && (
                 <p className="text-xs sm:text-sm font-normal text-teal-600 dark:text-teal-400 mt-0.5 truncate">
                   Member Database Scoped AI Search · Occupations, Skills & Contacts
                 </p>
@@ -418,9 +418,9 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
           </div>
         </div>
 
-        {/* Tabs — Always exposed & visible on both mobile and desktop */}
-        <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 mx-4 sm:mx-6 mt-3 overflow-x-auto scrollbar-none">
-          <div className="flex space-x-1 sm:space-x-2">
+        {/* Tabs — Showing all 3 tabs simultaneously on mobile and desktop */}
+        <div className="border-b border-slate-200 dark:border-slate-800 mx-3 sm:mx-6 mt-3">
+          <div className="grid grid-cols-3 w-full">
             {TABS.map((tab) => (
               <button
                 key={tab}
@@ -430,47 +430,31 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                     setIsCollapsedOnMobile(false);
                   }
                 }}
-                className={`flex items-center gap-1.5 sm:gap-2 pb-2.5 px-2.5 sm:px-3 text-xs sm:text-sm md:text-base font-medium border-b-2 transition-colors cursor-pointer whitespace-nowrap ${
+                className={`flex items-center justify-center gap-1 sm:gap-2 pb-2.5 px-1 sm:px-3 text-xs sm:text-sm md:text-base font-medium border-b-2 transition-colors cursor-pointer text-center ${
                   activeTab === tab
-                    ? tab === "Contact Search"
+                    ? tab === "Networking"
                       ? "border-teal-600 text-teal-700 dark:text-teal-400 font-bold"
                       : "border-amber-500 text-amber-600 dark:text-amber-400 font-bold"
                     : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                 }`}
               >
                 {tab === "Headlines" ? (
-                  <Globe className="w-4 h-4" />
+                  <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                 ) : tab === "AI Xplora" ? (
-                  <Sparkles className="w-4 h-4" />
+                  <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                 ) : (
-                  <Users className="w-4 h-4" />
+                  <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                 )}
-                <span>{tab}</span>
-                {tab === "Contact Search" && (
-                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 border border-teal-300 dark:border-teal-800">
-                    AI Scoped
-                  </span>
-                )}
+                <span className="truncate">{tab}</span>
               </button>
             ))}
           </div>
-
-          {/* Capabilities Info Pill Toggle */}
-          {(activeTab === "AI Xplora" || activeTab === "Contact Search") && (
-            <button
-              onClick={() => setShowCapabilitiesBanner((prev) => !prev)}
-              className="text-[11px] font-medium text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 pb-2 cursor-pointer shrink-0 ml-2"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Special AI Capabilities</span>
-            </button>
-          )}
         </div>
 
         {/* Collapsible Content Area on Mobile */}
         <div className={`${isCollapsedOnMobile ? "hidden sm:block" : "block"} transition-all duration-300`}>
           {/* Special AI Capabilities Banner (Expandable) */}
-          {showCapabilitiesBanner && (activeTab === "AI Xplora" || activeTab === "Contact Search") && (
+          {showCapabilitiesBanner && (activeTab === "AI Xplora" || activeTab === "Networking") && (
             <div className="mx-4 sm:mx-6 mt-3 p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-teal-500/10 to-blue-500/10 border border-amber-300/40 dark:border-amber-700/40 text-xs space-y-2 animate-fadeIn">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -493,7 +477,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                 </div>
                 <div className="p-2 rounded-xl bg-white/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800">
                   <span className="font-bold text-teal-700 dark:text-teal-400 block mb-0.5">
-                    👥 Member Contact AI (Contact Search)
+                    👥 Member Database AI (Networking)
                   </span>
                   Scoped exclusively to full registered member database for occupation, skills, phone, and email matching for emergencies & networking.
                 </div>
@@ -521,7 +505,8 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
               {!newsLoading &&
                 sortedHeadlines.map((h, idx) => {
                   const articleKey = (h.url || h.title).trim();
-                  const isUnread = !readArticleKeys.has(articleKey);
+                  const isAdmin = currentUser?.role === "admin";
+                  const isUnread = !isAdmin && !readArticleKeys.has(articleKey);
 
                   return (
                     <button
@@ -692,14 +677,14 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
             </div>
           )}
 
-          {/* ── Tab: Contact Search (Dedicated AI Member Search) ── */}
-          {activeTab === "Contact Search" && (
+          {/* ── Tab: Networking (Dedicated AI Member Search) ── */}
+          {activeTab === "Networking" && (
             <div className="flex flex-col h-[460px] sm:h-[500px]">
               {/* Top Info Banner */}
               <div className="flex items-center justify-between px-4 py-2 bg-slate-100/90 dark:bg-slate-900/90 border-b border-slate-200/80 dark:border-slate-800 text-xs shrink-0">
                 <span className="flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-300">
                   <Users className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
-                  <span>Member Database AI Search · All Professions, Networking & Emergency Coordination</span>
+                  <span>Member Database AI Search for networking</span>
                 </span>
                 <div className="flex items-center gap-2">
                   {contactAiPowered && (
@@ -942,7 +927,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                       {selectedHeadline.source} · {selectedHeadline.publishedAt}
                     </span>
                   </div>
-                  <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-snug">
+                  <h3 className={`text-base sm:text-lg text-slate-900 dark:text-white leading-snug ${currentUser?.role === "admin" ? "font-normal" : "font-bold"}`}>
                     {selectedHeadline.title}
                   </h3>
                 </div>

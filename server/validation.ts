@@ -26,7 +26,7 @@ export const MemberRegistrationSchema = z.object({
   gradYear: z.union([z.string().min(1, 'Graduation year is required'), z.number()]),
   schoolName: z.string().min(1, 'School name is required').max(200),
   maritalStatus: z.string().max(20).optional().or(z.literal('')),
-  jerseySize: z.string().min(1, 'Jersey size is required').max(10),
+  jerseySize: z.string().min(1, 'Jersey size is required').max(100),
   estateName: z.string().min(1, 'Estate name is required').max(200),
   area: z.string().min(1, 'Area is required').max(200),
   otherArea: z.string().max(200).optional().or(z.literal('')),

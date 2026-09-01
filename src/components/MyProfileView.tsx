@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Member } from "../types";
 import { MEMBER_DATABASE_SCHEMA } from "../constants/memberSchema";
 import { MemberAvatar } from "./MemberAvatar";
@@ -9,8 +9,17 @@ import {
   Phone,
   MessageSquare,
   Award,
+  Smartphone,
+  Trash2,
+  HardDrive,
+  CheckCircle2,
+  Download,
+  Zap,
+  RefreshCw,
 } from "lucide-react";
 import { formatMemberDirectoryName } from "../utils/nameUtils";
+import { isMemberProfileComplete } from "../utils/memberValidation";
+import { getStorageStats, clearAppCache, StorageStats } from "../utils/storageManager";
 
 function formatWhatsappUrl(phone?: string): string {
   if (!phone) return "#";
@@ -80,35 +89,39 @@ interface MyProfileViewProps {
   currentUser: Member;
   onUpdateSuccess: (m: Member) => void;
   onOpenTerms?: () => void;
+  onOpenInstallModal?: () => void;
+  isStandalone?: boolean;
 }
 
 export const MyProfileView: React.FC<MyProfileViewProps> = ({
   currentUser,
   onUpdateSuccess,
   onOpenTerms,
+  onOpenInstallModal,
+  isStandalone = false,
 }) => {
-  const isProfileComplete = (user: Member | null): boolean => {
-    if (!user) return false;
-    if (user.role === 'admin') return true;
-
-    const requiredFields: Array<keyof Member> = [
-      'fullName', 'email', 'phoneNumber', 'dateOfBirth', 'occupation',
-      'title', 'firstName', 'surname', 'whatsappNumber', 'gradYear',
-      'schoolName', 'jerseySize', 'estateName', 'area', 'streetName',
-      'closestNeighborName', 'closestNeighborPhone', 'nextOfKinName',
-      'nextOfKinPhone'
-    ];
-
-    for (const field of requiredFields) {
-      const val = user[field];
-      if (val === undefined || val === null) return false;
-      if (typeof val === 'string' && val.trim() === '') return false;
-    }
-    return true;
-  };
-
-  const isIncomplete = !isProfileComplete(currentUser);
+  const isIncomplete = !isMemberProfileComplete(currentUser);
   const [isEditing, setIsEditing] = useState(isIncomplete);
+  const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
+  const [isClearingCache, setIsClearingCache] = useState(false);
+  const [cacheClearedSuccess, setCacheClearedSuccess] = useState(false);
+
+  useEffect(() => {
+    getStorageStats().then(setStorageStats);
+  }, []);
+
+  const handleClearCache = async () => {
+    setIsClearingCache(true);
+    try {
+      await clearAppCache();
+      const updated = await getStorageStats();
+      setStorageStats(updated);
+      setCacheClearedSuccess(true);
+      setTimeout(() => setCacheClearedSuccess(false), 4000);
+    } finally {
+      setIsClearingCache(false);
+    }
+  };
 
   if (isEditing) {
     return (
@@ -186,6 +199,90 @@ export const MyProfileView: React.FC<MyProfileViewProps> = ({
           <UserCheck className="w-4 h-4" />
           <span>Edit My Profile</span>
         </button>
+      </div>
+
+      {/* App & Storage Management Card */}
+      <div className="bg-gradient-to-r from-teal-500/10 via-cyan-500/10 to-blue-500/10 border border-teal-500/20 dark:border-teal-500/30 rounded-3xl p-5 sm:p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-teal-600/15 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 mt-0.5">
+              <Smartphone className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                  Device App & Storage Settings
+                </h3>
+                {isStandalone ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                    Installed App
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    Web Mode
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                Zero-bloat storage architecture with hardware-accelerated 120fps UI performance.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+            {!isStandalone && onOpenInstallModal && (
+              <button
+                onClick={onOpenInstallModal}
+                className="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 active:scale-95 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Install on Device</span>
+              </button>
+            )}
+
+            <button
+              onClick={handleClearCache}
+              disabled={isClearingCache}
+              className="px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 disabled:opacity-50"
+              title="Clear temporary cache while keeping login intact"
+            >
+              {isClearingCache ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-teal-600" />
+              ) : (
+                <Trash2 className="w-3.5 h-3.5 text-slate-400" />
+              )}
+              <span>{isClearingCache ? "Cleaning…" : "Clear Cache & Speed Up"}</span>
+            </button>
+          </div>
+        </div>
+
+        {storageStats && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 text-xs">
+            <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800">
+              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Storage Used</span>
+              <span className="font-bold text-slate-900 dark:text-white text-sm">{storageStats.usageFormatted}</span>
+            </div>
+            <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800">
+              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Storage Quota</span>
+              <span className="font-bold text-slate-900 dark:text-white text-sm">{storageStats.quotaFormatted}</span>
+            </div>
+            <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800">
+              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Cache Policy</span>
+              <span className="font-bold text-teal-700 dark:text-teal-400 text-sm">LRU (Max 40)</span>
+            </div>
+            <div className="p-3 rounded-2xl bg-white/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800">
+              <span className="text-slate-500 dark:text-slate-400 block text-[11px]">Video Streams</span>
+              <span className="font-bold text-cyan-700 dark:text-cyan-400 text-sm">Zero Bloat (Excluded)</span>
+            </div>
+          </div>
+        )}
+
+        {cacheClearedSuccess && (
+          <div className="p-2.5 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 text-xs flex items-center gap-2 animate-fadeIn">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>Cache successfully purged! All temporary media storage has been reclaimed.</span>
+          </div>
+        )}
       </div>
 
       <div className="border-t border-slate-200 dark:border-slate-800" />

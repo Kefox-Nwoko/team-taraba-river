@@ -5,7 +5,7 @@ import { signInWithCustomToken, triggerGoogleAdminSignIn, FirebaseSyncManager } 
 import { AppStateManager } from "../services/storage";
 import { isMemberCredentialMatch } from "../lib/authMatching";
 import { INITIAL_MEMBERS } from "../data/seedData";
-import { LogIn, UserPlus, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck, BookOpen } from "lucide-react";
+import { LogIn, UserPlus, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck, BookOpen, Smartphone } from "lucide-react";
 import { BRAND_LOGO, LOGIN_WALL_BG } from "../constants/assets";
 import { clientConfig } from "../lib/config";
 interface LoginGateProps {
@@ -14,6 +14,8 @@ interface LoginGateProps {
   availableMembers: Member[];
   onExploreGuest?: () => void;
   onOpenManual?: () => void;
+  onOpenInstallModal?: () => void;
+  isStandalone?: boolean;
 }
 export const LoginGate: React.FC<LoginGateProps> = ({
   onLoginSuccess,
@@ -21,6 +23,8 @@ export const LoginGate: React.FC<LoginGateProps> = ({
   availableMembers,
   onExploreGuest,
   onOpenManual,
+  onOpenInstallModal,
+  isStandalone = false,
 }) => {
   const [credential, setCredential] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -129,7 +133,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     }
   };
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-4 overflow-y-auto bg-slate-950">
+    <div className="min-h-screen relative flex items-center justify-center p-4 py-12 bg-slate-950 overflow-x-hidden">
       {" "}
       {/* Background Login Wall Wallpaper — gradient shows instantly, heavy
           image fades in once decoded so first paint is never blocked. */}
@@ -237,6 +241,16 @@ export const LoginGate: React.FC<LoginGateProps> = ({
             >
               <BookOpen className="w-3.5 h-3.5" />
               <span>📖 Open User Guide & Documentation</span>
+            </button>
+          )}
+          {!isStandalone && onOpenInstallModal && (
+            <button
+              type="button"
+              onClick={onOpenInstallModal}
+              className="text-xs text-amber-400 hover:text-amber-300 transition flex items-center space-x-1.5 cursor-pointer py-1"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>📱 Install App on your device (iPhone / Android / Huawei)</span>
             </button>
           )}
         </div>{" "}

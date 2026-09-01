@@ -488,6 +488,65 @@ export class FirebaseSyncManager {
   }
 
   /**
+   * Queues an email directly to the Firestore 'mail' collection (Firebase Trigger Email extension compatible)
+   */
+  public static async queueEmail(params: {
+    to: string;
+    subject: string;
+    html: string;
+    text?: string;
+  }): Promise<void> {
+    try {
+      const mailDocRef = doc(collection(db, "mail"));
+      await setDoc(mailDocRef, {
+        to: [params.to],
+        message: {
+          subject: params.subject,
+          html: params.html,
+          text: params.text || "",
+        },
+        queuedAt: serverTimestamp(),
+        status: "PENDING",
+      });
+      // Also log to notification_logs
+      const logRef = doc(collection(db, "notification_logs"));
+      await setDoc(logRef, {
+        type: "birthday_email",
+        recipient: params.to,
+        subject: params.subject,
+        timestamp: new Date().toISOString(),
+        status: "queued",
+      });
+    } catch (err) {
+      logger.warn("Firestore queueEmail fallback", err);
+    }
+  }
+
+  /**
+   * Saves email reminder settings in Firestore under system/email_config
+   */
+  public static async saveEmailConfig(config: {
+    recipientEmail: string;
+    resendApiKey?: string;
+    enabled?: boolean;
+  }): Promise<void> {
+    try {
+      await setDoc(
+        doc(db, "system", "email_config"),
+        {
+          recipientEmail: config.recipientEmail,
+          resendApiKey: config.resendApiKey || "",
+          enabled: config.enabled ?? true,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      logger.warn("Firestore saveEmailConfig fallback", err);
+    }
+  }
+
+  /**
    * Subscribes to real-time synchronized visits metric across all clients
    */
   public static subscribeVisitMetrics(onUpdate: (totalVisits: number) => void) {

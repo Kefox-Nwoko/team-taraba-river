@@ -31,6 +31,7 @@ import {
   stripTitlePrefixes,
   normalizeTitle,
 } from "../utils/nameUtils";
+import { isMemberProfileComplete, getMissingMemberFields } from "../utils/memberValidation";
 
 interface MemberRegistrationModalProps {
   isOpen: boolean;
@@ -49,27 +50,8 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
   originatingPageName = "Dashboard",
   onOpenTerms,
 }) => {
-  const isProfileComplete = (user: Member | null | undefined): boolean => {
-    if (!user) return false;
-    if (user.role === 'admin') return true;
-
-    const requiredFields: Array<keyof Member> = [
-      'fullName', 'email', 'phoneNumber', 'dateOfBirth', 'occupation',
-      'title', 'firstName', 'surname', 'whatsappNumber', 'gradYear',
-      'schoolName', 'jerseySize', 'estateName', 'area', 'streetName',
-      'closestNeighborName', 'closestNeighborPhone', 'nextOfKinName',
-      'nextOfKinPhone'
-    ];
-
-    for (const field of requiredFields) {
-      const val = user[field];
-      if (val === undefined || val === null) return false;
-      if (typeof val === 'string' && val.trim() === '') return false;
-    }
-    return true;
-  };
-
-  const isForceUpdate = memberToEdit ? !isProfileComplete(memberToEdit) : false;
+  const isForceUpdate = memberToEdit ? !isMemberProfileComplete(memberToEdit) : false;
+  const missingFields = memberToEdit ? getMissingMemberFields(memberToEdit) : [];
 
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     if (memberToEdit) {
@@ -178,6 +160,27 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
       fullName: formData.fullName,
     });
 
+    // Validate all mandatory schema fields
+    const missingLabels: string[] = [];
+    for (const field of MEMBER_DATABASE_SCHEMA) {
+      if (field.required) {
+        let val = formData[field.key];
+        if (field.key === "title") val = cleanedNames.title;
+        if (field.key === "firstName") val = cleanedNames.firstName;
+        if (field.key === "surname") val = cleanedNames.surname;
+        if (field.key === "fullName") val = cleanedNames.fullName;
+
+        if (val === undefined || val === null || (typeof val === "string" && val.trim() === "")) {
+          missingLabels.push(field.label);
+        }
+      }
+    }
+
+    if (missingLabels.length > 0) {
+      setError(`Please complete all required mandatory fields before saving: ${missingLabels.join(", ")}`);
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -265,13 +268,36 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
       <div className="space-y-6 font-normal">
         <form onSubmit={handleSubmit} className="space-y-8 font-normal">
           {isForceUpdate && (
-            <div className="p-5 bg-amber-500/10 border border-amber-500/20 text-amber-900 dark:text-amber-300 text-sm rounded-2xl flex items-start space-x-3.5 font-normal">
+            <div className="p-5 bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-300 text-sm rounded-2xl flex items-start space-x-3.5 font-normal shadow-xs animate-fadeIn">
               <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="font-semibold text-sm">Action Required: Complete Your Profile</p>
-                <p className="text-xs opacity-90 leading-relaxed">
-                  Please update all mandatory fields (all fields except Marital Status and Skills) to activate your account. You will be able to explore the calendar, media library, and directories immediately after saving.
+              <div className="space-y-1.5 flex-1">
+                <p className="font-bold text-sm text-amber-800 dark:text-amber-200">
+                  ⚠️ Action Required: Mandatory Profile & T-Shirt / Jersey Size Update
                 </p>
+                <p className="text-xs opacity-90 leading-relaxed text-slate-700 dark:text-slate-300">
+                  Welcome! To keep our community member directory up to date and prepare official event apparel, all returning members must update any blank mandatory fields and <strong>select their T-shirt / Jersey size</strong>.
+                </p>
+                {missingFields.length > 0 && (
+                  <div className="pt-2">
+                    <p className="text-[11px] font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                      Fields requiring your update ({missingFields.length}):
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {missingFields.map((f) => (
+                        <span
+                          key={f.key}
+                          className={`px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+                            f.key === "jerseySize"
+                              ? "bg-teal-500/20 text-teal-800 dark:text-teal-300 border-teal-500/40 animate-pulse"
+                              : "bg-amber-500/15 text-amber-900 dark:text-amber-200 border-amber-500/30"
+                          }`}
+                        >
+                          {f.key === "jerseySize" ? "👕 " : "• "}{f.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

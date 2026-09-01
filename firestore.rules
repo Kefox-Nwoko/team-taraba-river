@@ -1,6 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // NOTE: The Express server uses the Firebase Admin SDK, which bypasses
+    // all security rules. These rules ONLY protect against direct client-side
+    // Firestore access (e.g., malicious browser scripts, Postman, etc.).
 
     // Helper: Check if the requesting user is authenticated
     function isAuthenticated() {
@@ -17,51 +20,71 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Members collection
+    // Members collection — authenticated users can read, owner or admin can write
     match /members/{memberId} {
-      // Any visitor / community member can read member profiles to allow credential matching & directory
-      allow read: if true;
-      // Authenticated users or registering users can create
-      allow create: if true;
-      // Document owner, admin, or system reset can update/delete
-      allow update, delete: if true;
-    }
-
-    // Events collection
-    match /events/{eventId} {
-      // Community events are publicly visible
-      allow read: if true;
-      // Authenticated users can create events
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      // Only the event creator or an admin can update/delete
-      allow update, delete: if isAdmin() || (isAuthenticated() && resource.data.createdById == request.auth.uid) || true;
+      allow update: if isOwner(memberId) || isAdmin();
+      allow delete: if isAdmin();
     }
 
-    // Photo approval requests
+    // Events collection — authenticated users can read, admin or creator can manage
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin() || (isAuthenticated() && resource.data.createdById == request.auth.uid);
+    }
+
+    // Photo approval requests — authenticated can read/submit, admin can manage
     match /photoRequests/{requestId} {
-      // Admins and members can read
-      allow read: if true;
-      // Authenticated users can create (submit a photo for review)
-      allow create: if true;
-      // Admins can update/delete (approve/reject)
-      allow update, delete: if true;
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
     }
 
-    // Activity logs
+    // Activity logs — read by authenticated, written only by server (Admin SDK)
     match /activityLogs/{logId} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
 
-    // System metrics & configs
+    // System config & metrics — read by authenticated, written by admin or server
     match /system/{metricId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
-    // Knowledge base articles
+    match /systemConfig/{configId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Settings (email config etc) — admin only
+    match /settings/{settingId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Mail queue & notification logs — server only (Admin SDK)
+    match /mail/{mailId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /notification_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Knowledge base articles — authenticated can read, admin can write
     match /knowledgeBase/{articleId} {
-      allow read: if true;
-      allow write: if isAdmin() || true;
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Media items — authenticated can read, server only writes (Admin SDK)
+    match /mediaItems/{mediaId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
 
     // Deny all other documents by default

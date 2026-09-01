@@ -138,7 +138,7 @@ const CHAPTERS: Chapter[] = [
         {
           number: 1,
           title: "Your Name & Avatar (Top Right)",
-          description: "Shows your photo and greeting (e.g., 'Welcome, back Kefox'). Tap it to open your profile or log out.",
+          description: "Shows your photo and greeting (e.g., 'Welcome back, Kefox'). Tap it to open your profile or log out.",
         },
         {
           number: 2,
@@ -175,7 +175,7 @@ const CHAPTERS: Chapter[] = [
   {
     id: "mem-news",
     section: "member",
-    title: "3. USOSA News, AI Xplora & Contact Search",
+    title: "3. USOSA News, AI Xplora & Networking",
     subtitle: "Browse latest unity school stories, ask AI anything live on the web, or find members by profession, phone, and email",
     icon: Newspaper,
     badgeText: "Member Guide",
@@ -184,7 +184,7 @@ const CHAPTERS: Chapter[] = [
     screenshotAlt: "Mobile USOSA News Update Screen",
     content: {
       purpose: "Read national alumni news stories, access live web AI intelligence, and quickly find member contact details by occupation (e.g. medical doctors for urgent health emergencies).",
-      screenTitle: "News, AI Xplora & Contact Hub",
+      screenTitle: "News, AI Xplora & Networking Hub",
       uiCallouts: [
         {
           number: 1,
@@ -198,7 +198,7 @@ const CHAPTERS: Chapter[] = [
         },
         {
           number: 3,
-          title: "Contact Search Tab (New)",
+          title: "Networking Tab",
           description: "Dedicated AI search scoped exclusively to querying the full registered member database by occupation, skills, phone, and email.",
         },
         {
@@ -211,15 +211,15 @@ const CHAPTERS: Chapter[] = [
         "On the Home page, scroll down to the 'USOSA News & AI Knowledge Hub' card.",
         "Tap 'Headlines' to read curated national stories, or tap 'Expand' to view complete summaries.",
         "Tap 'AI Xplora' to chat with live web AI and explore topics on any subject.",
-        "Tap 'Contact Search' to find doctors, lawyers, engineers, or specific phone numbers (e.g. search 'medical doctor' or 'clinical management' for health emergencies).",
+        "Tap 'Networking' to find doctors, lawyers, engineers, or specific phone numbers (e.g. search 'medical doctor' or 'clinical management' for health emergencies).",
         "Tap the phone or WhatsApp icons on any result to call or message the member immediately."
       ],
       proTips: [
-        "In Contact Search, you can tap quick filter chips like '🏥 Medical Doctors & Health' for instant 1-tap discovery.",
+        "In Networking, you can tap quick filter chips like '🏥 Medical Doctors & Health' for instant 1-tap discovery.",
         "Your AI Xplora chat history is securely saved on your device for 3 months so you can resume conversations anytime."
       ],
       importantNotes: [
-        "Contact Search queries only verified registered chapter members to protect privacy while enabling rapid emergency response."
+        "Networking queries only verified registered chapter members to protect privacy while enabling rapid emergency response."
       ]
     }
   },

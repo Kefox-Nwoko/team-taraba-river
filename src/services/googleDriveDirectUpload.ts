@@ -185,13 +185,32 @@ export async function uploadImageDirectToDrive(
   fileOrBlob: File | Blob,
   fileName: string,
   folderName: string,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  signal?: AbortSignal
 ): Promise<string> {
+  if (signal?.aborted) {
+    const err = new Error("Google Drive upload was aborted by user.");
+    err.name = "AbortError";
+    throw err;
+  }
+
   // Step 1: Get Access Token
   const accessToken = await getDriveAccessToken();
 
+  if (signal?.aborted) {
+    const err = new Error("Google Drive upload was aborted by user.");
+    err.name = "AbortError";
+    throw err;
+  }
+
   // Step 2: Resolve target Google Drive folder
   const targetFolderId = await getOrCreateEventSubfolder(folderName, accessToken);
+
+  if (signal?.aborted) {
+    const err = new Error("Google Drive upload was aborted by user.");
+    err.name = "AbortError";
+    throw err;
+  }
 
   // Step 3: Initialize Google Drive Resumable Upload Session
   const cleanName = (fileName || `image_${Date.now()}.webp`).replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -216,9 +235,15 @@ export async function uploadImageDirectToDrive(
           "X-Upload-Content-Type": mimeType,
         },
         body: JSON.stringify(metadata),
+        signal,
       }
     );
   } catch (networkErr: any) {
+    if (signal?.aborted || networkErr?.name === "AbortError") {
+      const err = new Error("Google Drive upload was aborted by user.");
+      err.name = "AbortError";
+      throw err;
+    }
     throw new Error(`Network error initiating Google Drive upload session: ${networkErr?.message || networkErr}`);
   }
 
@@ -240,12 +265,35 @@ export async function uploadImageDirectToDrive(
 
   // Step 4: PUT binary file data with XHR progress
   return new Promise<string>((resolve, reject) => {
+    if (signal?.aborted) {
+      const err = new Error("Google Drive upload was aborted by user.");
+      err.name = "AbortError";
+      reject(err);
+      return;
+    }
+
     const UPLOAD_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
     const xhr = new XMLHttpRequest();
     let timedOut = false;
 
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      if (signal) {
+        signal.removeEventListener("abort", handleAbort);
+      }
+    };
+
+    const handleAbort = () => {
+      xhr.abort();
+    };
+
+    if (signal) {
+      signal.addEventListener("abort", handleAbort, { once: true });
+    }
+
     const timeoutId = setTimeout(() => {
       timedOut = true;
+      cleanup();
       xhr.abort();
       reject(new Error(`Google Drive upload timed out for "${fileName}".`));
     }, UPLOAD_TIMEOUT_MS);
@@ -263,7 +311,7 @@ export async function uploadImageDirectToDrive(
     }
 
     xhr.onload = async () => {
-      clearTimeout(timeoutId);
+      cleanup();
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const data = JSON.parse(xhr.responseText);
@@ -294,16 +342,24 @@ export async function uploadImageDirectToDrive(
     };
 
     xhr.onerror = () => {
-      clearTimeout(timeoutId);
+      cleanup();
       if (!timedOut) {
-        reject(new Error("Network connection error during Google Drive upload."));
+        if (signal?.aborted) {
+          const err = new Error("Google Drive upload was aborted by user.");
+          err.name = "AbortError";
+          reject(err);
+        } else {
+          reject(new Error("Network connection error during Google Drive upload."));
+        }
       }
     };
 
     xhr.onabort = () => {
-      clearTimeout(timeoutId);
+      cleanup();
       if (!timedOut) {
-        reject(new Error("Google Drive upload was aborted."));
+        const err = new Error("Google Drive upload was aborted by user.");
+        err.name = "AbortError";
+        reject(err);
       }
     };
 

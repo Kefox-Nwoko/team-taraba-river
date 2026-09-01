@@ -5,11 +5,18 @@ import { Member, PhotoApprovalRequest, GroupEvent } from "../types";
 import { MemberDirectoryView } from "./MemberDirectoryView";
 import { AppStateManager } from "../services/storage";
 import { FirebaseSyncManager } from "../services/firebaseService";
-import { triggerCloudSyncAll, triggerYouTubeBackSync, resetSystemData, deleteEvent as deleteEventApi } from "../services/apiClient";
+import {
+  triggerCloudSyncAll,
+  triggerYouTubeBackSync,
+  resetSystemData,
+  deleteEvent as deleteEventApi,
+} from "../services/apiClient";
+
 import { deleteYouTubeVideo, extractYouTubeId, getYouTubeThumbnail } from "../services/youtubeDirectUpload";
 import { CreateEventModal } from "./CreateEventModal";
 import { ReturnButton } from "./ReturnButton";
 import { formatMemberDisplayName } from "../utils/nameUtils";
+import { isOfficialFutureEvent } from "../utils/eventUtils";
 import {
   Users,
   ShieldCheck,
@@ -42,6 +49,13 @@ import {
   X,
   AlertTriangle,
   Loader2,
+  Gift,
+  Mail,
+  Send,
+  Copy,
+  Lock,
+  Unlock,
+  Check,
 } from "lucide-react";
 
 interface AdminDashboardViewProps {
@@ -349,8 +363,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [activeTab, setActiveTab] = useState<"directory" | "rsvps" | "analytics" | "moderation" | "cloud_settings">("directory");
   const [pendingApprovals, setPendingApprovals] = useState<PhotoApprovalRequest[]>([]);
   const [previewModalReq, setPreviewModalReq] = useState<PhotoApprovalRequest | null>(null);
-  
-  // Rejection Confirmation State
+
   const [rejectingTargetReq, setRejectingTargetReq] = useState<PhotoApprovalRequest | null>(null);
   const [isBatchRejectModalOpen, setIsBatchRejectModalOpen] = useState(false);
   const [rejectionNotesInput, setRejectionNotesInput] = useState("");
@@ -548,9 +561,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         await FirebaseSyncManager.saveEvent(targetEvt);
       } catch (e) {}
     } else {
-      // This was a new folder upload submitted by a member — create and publish the event now
+      // This was a new folder upload submitted by a member — create and publish the media album now
       const newEvt: GroupEvent = {
-        id: req.eventId || `evt_folder_${Date.now()}`,
+        id: req.eventId || `folder_${Date.now()}`,
         title: req.folderName || req.title || "Community Event",
         date: req.date || req.uploadedAt?.split("T")[0] || new Date().toISOString().split("T")[0],
         time: "09:00",
@@ -610,9 +623,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         targetEvt.driveImageUrls = (targetEvt.driveImageUrls || []).filter((u) => u !== req.photoUrl);
       }
 
-      // If the event now has no media and was created specifically for this upload batch, clean it up
+      // If the media folder now has no media and was created specifically for this upload batch, clean it up
       const hasVideos = (targetEvt.youtubeVideoUrls || []).length > 0 || !!targetEvt.youtubeVideoUrl;
-      if ((targetEvt.driveImageUrls || []).length === 0 && !hasVideos && targetEvt.id.startsWith("evt_folder_")) {
+      if ((targetEvt.driveImageUrls || []).length === 0 && !hasVideos && (targetEvt.id.startsWith("folder_") || targetEvt.id.startsWith("evt_folder_"))) {
         const remainingEvents = allEvents.filter((e) => e.id !== targetEvt!.id);
         AppStateManager.saveEvents(remainingEvents);
         try {
@@ -819,14 +832,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </button>
 
         <button onClick={() => setActiveTab("cloud_settings")}
-          className={`col-span-2 sm:col-span-1 px-3 py-2.5 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer min-h-[42px] ${
+          className={`px-3 py-2.5 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer min-h-[42px] ${
             activeTab === "cloud_settings"
               ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/20"
               : "bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800"
           }`}
         >
           <FolderOpen className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 text-cyan-400" />
-          <span className="truncate">Cloud Media Integration</span>
+          <span className="truncate">Cloud Media</span>
         </button>
       </div>
 
@@ -868,10 +881,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* Section 2: Future Events & Member RSVP Board */}
           <div className="space-y-4">
             {(() => {
-              const today = new Date();
-              const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-              // STRICT RULE: Only future/upcoming events (date >= todayStr) are displayed. Past events are completely excluded.
-              const activeEvents = events.filter((evt) => evt.date >= todayStr);
+              // STRICT RULE: Only official future/upcoming events are displayed. Past events & media folders are completely excluded.
+              const activeEvents = events.filter(isOfficialFutureEvent);
 
               return (
                 <div className="space-y-4">

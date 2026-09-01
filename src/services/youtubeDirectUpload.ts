@@ -91,19 +91,35 @@ export async function uploadVideoDirectToYouTube(
   file: File,
   folderName: string,
   onProgress?: (percent: number) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
-  // Attempt upload with 1 automatic retry on transient failures
+  if (signal?.aborted) {
+    const err = new Error("Upload aborted by user.");
+    err.name = "AbortError";
+    throw err;
+  }
+
+  // Attempt upload with 1 automatic retry on transient failures (unless aborted)
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
+    if (signal?.aborted) {
+      const err = new Error("Upload aborted by user.");
+      err.name = "AbortError";
+      throw err;
+    }
+
     try {
-      const url = await doUpload(file, folderName, onProgress);
+      const url = await doUpload(file, folderName, onProgress, signal);
       return url;
     } catch (err: any) {
       lastError = err instanceof Error ? err : new Error(String(err));
+      if (lastError.name === "AbortError" || signal?.aborted) {
+        throw lastError;
+      }
       const msg = lastError.message.toLowerCase();
-      const isRetryable = msg.includes("network") || msg.includes("timeout") || msg.includes("aborted");
+      const isRetryable = msg.includes("network") || msg.includes("timeout");
 
-      if (attempt === 1 && isRetryable) {
+      if (attempt === 1 && isRetryable && !signal?.aborted) {
         logger.warn(`[YT] Upload attempt ${attempt} failed (retryable): ${lastError.message}. Retrying...`);
         // Small delay before retry
         await new Promise((r) => setTimeout(r, 2000));
@@ -119,9 +135,22 @@ async function doUpload(
   file: File,
   folderName: string,
   onProgress?: (percent: number) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
+  if (signal?.aborted) {
+    const err = new Error("Upload aborted by user.");
+    err.name = "AbortError";
+    throw err;
+  }
+
   // --- Step 1: Get access token ---
   const accessToken = await getAccessToken();
+
+  if (signal?.aborted) {
+    const err = new Error("Upload aborted by user.");
+    err.name = "AbortError";
+    throw err;
+  }
 
   // --- Step 2: Initialize resumable upload session ---
   const cleanTitle = (file.name || `Team Taraba River Video ${new Date().toLocaleDateString()}`)
@@ -154,9 +183,15 @@ async function doUpload(
           "X-Upload-Content-Type": file.type || "video/mp4",
         },
         body: JSON.stringify(metadata),
+        signal,
       },
     );
   } catch (networkErr: any) {
+    if (signal?.aborted || networkErr?.name === "AbortError") {
+      const err = new Error("Upload aborted by user.");
+      err.name = "AbortError";
+      throw err;
+    }
     throw new Error(`Network error creating YouTube upload session: ${networkErr?.message || networkErr}`);
   }
 
@@ -190,12 +225,35 @@ async function doUpload(
 
   // --- Step 3: Stream file bytes to YouTube via XHR with progress ---
   return new Promise<string>((resolve, reject) => {
+    if (signal?.aborted) {
+      const err = new Error("YouTube video upload was aborted by user.");
+      err.name = "AbortError";
+      reject(err);
+      return;
+    }
+
     const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes max
     const xhr = new XMLHttpRequest();
     let timedOut = false;
 
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      if (signal) {
+        signal.removeEventListener("abort", handleAbort);
+      }
+    };
+
+    const handleAbort = () => {
+      xhr.abort();
+    };
+
+    if (signal) {
+      signal.addEventListener("abort", handleAbort, { once: true });
+    }
+
     const timeoutId = setTimeout(() => {
       timedOut = true;
+      cleanup();
       xhr.abort();
       reject(new Error(`YouTube upload timed out after ${UPLOAD_TIMEOUT_MS / 60000} minutes for "${file.name}" (${sizeMB} MB).`));
     }, UPLOAD_TIMEOUT_MS);
@@ -213,7 +271,7 @@ async function doUpload(
     }
 
     xhr.onload = () => {
-      clearTimeout(timeoutId);
+      cleanup();
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const data = JSON.parse(xhr.responseText);
@@ -239,16 +297,24 @@ async function doUpload(
     };
 
     xhr.onerror = () => {
-      clearTimeout(timeoutId);
+      cleanup();
       if (!timedOut) {
-        reject(new Error("Network connection lost during YouTube video upload. Please check your internet and try again."));
+        if (signal?.aborted) {
+          const err = new Error("YouTube video upload was aborted by user.");
+          err.name = "AbortError";
+          reject(err);
+        } else {
+          reject(new Error("Network connection lost during YouTube video upload. Please check your internet and try again."));
+        }
       }
     };
 
     xhr.onabort = () => {
-      clearTimeout(timeoutId);
+      cleanup();
       if (!timedOut) {
-        reject(new Error("YouTube video upload was aborted."));
+        const err = new Error("YouTube video upload was aborted by user.");
+        err.name = "AbortError";
+        reject(err);
       }
     };
 

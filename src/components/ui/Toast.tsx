@@ -6,15 +6,22 @@ import React, {
 } from "react";
 import { CheckCircle2, AlertTriangle, Info, X } from "lucide-react";
 
-type ToastTone = "success" | "error" | "info";
-interface Toast {
+export type ToastTone = "success" | "error" | "info" | "warning";
+
+export interface ToastOptions {
+  persistent?: boolean;
+  duration?: number;
+}
+
+export interface Toast {
   id: number;
   message: string;
   tone: ToastTone;
+  persistent?: boolean;
 }
 
-interface ToastContextValue {
-  notify: (message: string, tone?: ToastTone) => void;
+export interface ToastContextValue {
+  notify: (message: string, tone?: ToastTone, options?: ToastOptions) => void;
 }
 
 const ToastContext = createContext<ToastContextValue>({
@@ -36,6 +43,10 @@ const toneStyles: Record<ToastTone, { ring: string; icon: React.ReactNode }> = {
     ring: "border-teal-300/70 dark:border-teal-700/60",
     icon: <Info className="w-5 h-5 text-teal-500 shrink-0" />,
   },
+  warning: {
+    ring: "border-amber-300/70 dark:border-amber-700/60",
+    icon: <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />,
+  },
 };
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -48,10 +59,16 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const notify = useCallback(
-    (message: string, tone: ToastTone = "info") => {
+    (message: string, tone: ToastTone = "info", options?: ToastOptions) => {
       const id = Date.now() + Math.random();
-      setToasts((prev) => [...prev, { id, message, tone }]);
-      setTimeout(() => dismiss(id), 4200);
+      const isPersistent = options?.persistent ?? false;
+      const duration = options?.duration ?? (isPersistent ? 0 : 4200);
+
+      setToasts((prev) => [...prev, { id, message, tone, persistent: isPersistent }]);
+
+      if (duration > 0) {
+        setTimeout(() => dismiss(id), duration);
+      }
     },
     [dismiss]
   );
@@ -64,16 +81,17 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({
           <div
             key={t.id}
             role="status"
-            className={`pointer-events-auto flex items-start gap-3 rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl px-4 py-3 shadow-2xl border ${toneStyles[t.tone].ring} animate-slideUp`}
+            className={`pointer-events-auto flex items-start gap-3 rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-xl px-4 py-3 shadow-2xl border ${toneStyles[t.tone]?.ring || toneStyles.info.ring} animate-slideUp`}
           >
-            {toneStyles[t.tone].icon}
+            {toneStyles[t.tone]?.icon || toneStyles.info.icon}
             <p className="text-sm text-slate-800 dark:text-slate-100 leading-snug flex-1">
               {t.message}
             </p>
             <button
               onClick={() => dismiss(t.id)}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors shrink-0"
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors shrink-0 p-0.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700/50 cursor-pointer"
               aria-label="Dismiss notification"
+              title="Close notification"
             >
               <X className="w-4 h-4" />
             </button>
