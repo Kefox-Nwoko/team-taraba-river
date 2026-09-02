@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { logger } from "../lib/logger";
 import { clientConfig } from "../lib/config";
 import { Member, PhotoApprovalRequest, GroupEvent } from "../types";
@@ -10,7 +10,10 @@ import {
   triggerYouTubeBackSync,
   resetSystemData,
   deleteEvent as deleteEventApi,
+  updateBirthdayEmailConfig,
 } from "../services/apiClient";
+import { db } from "../lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 import { deleteYouTubeVideo, extractYouTubeId, getYouTubeThumbnail } from "../services/youtubeDirectUpload";
 import { CreateEventModal } from "./CreateEventModal";
@@ -382,6 +385,48 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [cloudSaveMessage, setCloudSaveMessage] = useState<string | null>(null);
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [syncDirection, setSyncDirection] = useState<"reverse" | "forward">("forward");
+
+  // Email Config State
+  const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(false);
+  const [adminNotificationEmail, setAdminNotificationEmail] = useState("");
+  const [isSavingEmailConfig, setIsSavingEmailConfig] = useState(false);
+  const [emailConfigLoaded, setEmailConfigLoaded] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === "developer" && !emailConfigLoaded) {
+      const loadEmailConfig = async () => {
+        try {
+          const docSnap = await getDoc(doc(db, "system", "email_config"));
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setEmailAlertsEnabled(data.enabled ?? false);
+            setAdminNotificationEmail(data.recipientEmail || "");
+          }
+        } catch (e) {
+          logger.warn("Failed to load email config", e);
+        } finally {
+          setEmailConfigLoaded(true);
+        }
+      };
+      loadEmailConfig();
+    }
+  }, [activeTab, emailConfigLoaded]);
+
+  const handleSaveEmailConfig = async () => {
+    setIsSavingEmailConfig(true);
+    try {
+      await updateBirthdayEmailConfig({
+        enabled: emailAlertsEnabled,
+        recipientEmail: adminNotificationEmail,
+      });
+      alert("Admin birthday alert settings saved successfully!");
+    } catch (err) {
+      logger.error("Failed to save email config", err);
+      alert("Failed to save. Check your connection.");
+    } finally {
+      setIsSavingEmailConfig(false);
+    }
+  };
 
   const handleOpenCreateEvent = () => {
     setEditingEvent(null);
@@ -833,7 +878,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               )}
             </button>
 
-            {currentUser?.email === 'kefox.nwoko@gmail.com' && (
+            {currentUser?.email?.toLowerCase().trim() === 'kefox.nwoko@gmail.com' && (
               <button onClick={() => setActiveTab("developer")}
                 className={`px-3 py-2 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer shrink-0 min-h-[40px] ${
                   activeTab === "developer"
@@ -1182,37 +1227,37 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       )}
 
       {/* TAB 4: DEVELOPER (Highly Restricted) */}
-      {activeTab === "developer" && currentUser?.email === 'kefox.nwoko@gmail.com' && (
+      {activeTab === "developer" && currentUser?.email?.toLowerCase().trim() === 'kefox.nwoko@gmail.com' && (
         <div className="space-y-8 font-normal">
-          {/* Automated Birthday Emails Settings Card */}
+          {/* Admin Birthday Alerts Settings Card */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
                 <Gift className="w-6 h-6 text-purple-600 dark:text-purple-400" />
               </div>
               <div>
-                <h3 className="text-base sm:text-lg text-slate-900 dark:text-white font-bold">Automated Birthday Emails</h3>
-                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">Configure automated birthday greetings sent to members</p>
+                <h3 className="text-base sm:text-lg text-slate-900 dark:text-white font-bold">Admin Birthday Alerts</h3>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">Configure automated daily emails sent to the admin summarizing upcoming member birthdays</p>
               </div>
             </div>
             
             <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Enable Automated Emails</h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Toggle the automated daily birthday email sender</p>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Enable Admin Daily Alerts</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Toggle the automated daily email summarizing upcoming birthdays</p>
                 </div>
                 <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" className="sr-only peer" />
+                  <input type="checkbox" className="sr-only peer" checked={emailAlertsEnabled} onChange={(e) => setEmailAlertsEnabled(e.target.checked)} />
                   <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-purple-600"></div>
                 </label>
               </div>
               <div className="pt-3 border-t border-slate-200 dark:border-slate-700">
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Sender Email Address</label>
-                <input type="email" defaultValue="admin@teamtarabariver.com" className="w-full sm:max-w-md px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Admin Notification Email</label>
+                <input type="email" value={adminNotificationEmail} onChange={(e) => setAdminNotificationEmail(e.target.value)} placeholder="e.g. admin@tarabariver.org" className="w-full sm:max-w-md px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
               </div>
-              <button className="px-4 py-2 mt-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-colors">
-                Save Email Config
+              <button disabled={isSavingEmailConfig} onClick={handleSaveEmailConfig} className="px-4 py-2 mt-2 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white rounded-xl text-xs font-semibold transition-all disabled:opacity-50">
+                {isSavingEmailConfig ? "Saving..." : "Save Email Config"}
               </button>
             </div>
           </div>
