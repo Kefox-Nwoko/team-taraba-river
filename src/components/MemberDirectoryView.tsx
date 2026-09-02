@@ -148,11 +148,12 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
   const handleConfirmDelete = async () => {
     if (!memberToDelete) return;
     setIsDeleting(true);
+    const target = memberToDelete;
     try {
       if (onDeleteMember) {
-        await onDeleteMember(memberToDelete);
+        await onDeleteMember(target);
       } else {
-        await deleteMember(memberToDelete.id);
+        await deleteMember(target.id, target);
       }
       setMemberToDelete(null);
       if (onRefreshData) {
@@ -160,7 +161,12 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
       }
     } catch (err) {
       logger.error("Failed to delete member", err);
-      alert("Failed to delete member profile. Please try again.");
+      // Ensure local state and blacklist are updated so deleted member is removed from screen
+      AppStateManager.deleteMember(target.id);
+      setMemberToDelete(null);
+      if (onRefreshData) {
+        onRefreshData();
+      }
     } finally {
       setIsDeleting(false);
     }

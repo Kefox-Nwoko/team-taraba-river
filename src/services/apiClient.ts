@@ -73,7 +73,7 @@ export async function fetchMembers(): Promise<Member[]> {
   return AppStateManager.getMembers();
 }
 
-export async function deleteMember(memberId: string): Promise<void> {
+export async function deleteMember(memberId: string, member?: Member): Promise<void> {
   try {
     const headers = await getAuthHeaders();
     await fetch(apiUrl(`/api/members/${memberId}`), {
@@ -82,9 +82,10 @@ export async function deleteMember(memberId: string): Promise<void> {
     });
   } catch {}
 
-  await FirebaseSyncManager.deleteMember(memberId);
+  await FirebaseSyncManager.deleteMember(memberId, member?.email, member?.phoneNumber);
   AppStateManager.deleteMember(memberId);
 }
+
 export async function loginMember(
   credential: string
 ): Promise<{ member: Member; customToken?: string }> {

@@ -8,6 +8,7 @@ import {
   deleteDoc,
   onSnapshot,
   query,
+  where,
   orderBy,
   increment,
   serverTimestamp,
@@ -214,12 +215,48 @@ export class FirebaseSyncManager {
     }
   }
 
-  public static async deleteMember(memberId: string): Promise<void> {
+  public static async deleteMember(memberId: string, memberEmail?: string, memberPhone?: string): Promise<void> {
+    if (!memberId && !memberEmail && !memberPhone) return;
+
+    // 1. Direct document deletion by document ID
+    if (memberId) {
+      try {
+        await deleteDoc(doc(db, "members", memberId));
+      } catch (err) {
+        logger.warn(`Direct delete of members/${memberId} note:`, err);
+      }
+    }
+
+    // 2. Query-based cleanup to guarantee documents with matching fields are removed
     try {
-      await deleteDoc(doc(db, "members", memberId));
-    } catch (err) {
-      logger.error("Failed to delete member from Firestore", err);
-      throw err;
+      const colRef = collection(db, "members");
+      const idsToDelete = new Set<string>();
+
+      if (memberId) {
+        const qId = query(colRef, where("id", "==", memberId));
+        const snapId = await getDocs(qId);
+        snapId.forEach((d) => idsToDelete.add(d.id));
+      }
+
+      if (memberEmail && memberEmail.trim()) {
+        const qEmail = query(colRef, where("email", "==", memberEmail.trim()));
+        const snapEmail = await getDocs(qEmail);
+        snapEmail.forEach((d) => idsToDelete.add(d.id));
+      }
+
+      if (memberPhone && memberPhone.trim()) {
+        const qPhone = query(colRef, where("phoneNumber", "==", memberPhone.trim()));
+        const snapPhone = await getDocs(qPhone);
+        snapPhone.forEach((d) => idsToDelete.add(d.id));
+      }
+
+      for (const dId of idsToDelete) {
+        try {
+          await deleteDoc(doc(db, "members", dId));
+        } catch {}
+      }
+    } catch (queryErr) {
+      logger.warn("Query cleanup during member deletion warning:", queryErr);
     }
   }
 

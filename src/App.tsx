@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { logger } from "./lib/logger";
 import { Member, GroupEvent, PhotoApprovalRequest } from "./types";
 import { AppStateManager } from "./services/storage";
-import { fetchMembers, fetchEvents, fetchApprovals, fetchVisitMetrics } from "./services/apiClient";
+import { fetchMembers, fetchEvents, fetchApprovals, fetchVisitMetrics, deleteMember } from "./services/apiClient";
+import { formatMemberDirectoryName } from "./utils/nameUtils";
 import { FirebaseSyncManager, FirebaseService, triggerGoogleAdminSignIn } from "./services/firebaseService";
 import { EngagementTracker } from "./services/EngagementTracker";
 import { ChevronUp } from "lucide-react";
@@ -363,6 +364,20 @@ export default function App() {
     }
   };
 
+  const handleDeleteMember = async (memberToDelete: Member) => {
+    // 1. Optimistically remove from state so the UI reflects the deletion immediately
+    setMembers((prev) => prev.filter((m) => m.id !== memberToDelete.id));
+    // 2. Permanently record in blacklist and local storage
+    AppStateManager.deleteMember(memberToDelete.id);
+    // 3. Clean up in Firestore and API
+    try {
+      await deleteMember(memberToDelete.id, memberToDelete);
+      notify(`Member "${formatMemberDirectoryName(memberToDelete.title, memberToDelete.fullName)}" deleted successfully.`, "success");
+    } catch (err) {
+      logger.warn("Remote member deletion note:", err);
+    }
+  };
+
   const handleSignOut = () => {
     AppStateManager.setCurrentUser(null);
     setCurrentUser(null);
@@ -687,6 +702,7 @@ export default function App() {
                     setMemberToEdit(null);
                     setRegisterModalOpen(true);
                   }}
+                  onDeleteMember={handleDeleteMember}
                   onReturn={handleReturn}
                 />
               </Suspense>

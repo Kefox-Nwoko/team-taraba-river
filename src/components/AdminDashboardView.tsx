@@ -67,6 +67,7 @@ interface AdminDashboardViewProps {
   onRefreshData: () => void;
   onEditMember: (member: Member) => void;
   onRegisterClick: () => void;
+  onDeleteMember?: (member: Member) => void | Promise<void>;
   onReturn?: () => void;
 }
 
@@ -360,6 +361,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   onRefreshData,
   onEditMember,
   onRegisterClick,
+  onDeleteMember,
   onReturn,
 }) => {
   const [activeTab, setActiveTab] = useState<"directory" | "rsvps" | "analytics" | "moderation" | "cloud_settings" | "developer">("directory");
@@ -899,6 +901,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               currentUser={currentUser}
               onEditMember={onEditMember}
               onRegisterClick={onRegisterClick}
+              onDeleteMember={onDeleteMember}
               onRefreshData={onRefreshData}
               subTabsHeader={subTabsBar}
             />
