@@ -227,10 +227,41 @@ export async function getTomorrowCelebrants(
 }
 
 /**
- * Helper to check if today is the LAST DAY of the current month.
+ * Gathers celebrants celebrating TODAY (D-day alert).
  */
-export function isLastDayOfMonth(date: Date = getWATDate()): boolean {
-  const tomorrow = new Date(date);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  return tomorrow.getDate() === 1;
+export async function getTodayCelebrants(
+  currentDate: Date = getWATDate()
+): Promise<{ todayDate: Date; celebrants: ParsedCelebrant[] }> {
+  const tDay = currentDate.getDate();
+  const tMonth = currentDate.getMonth() + 1; // 1-12
+
+  const allMembers = await getAllMembersForBirthday();
+  const celebrants: ParsedCelebrant[] = [];
+
+  for (const m of allMembers) {
+    const raw = m as any;
+    const parsed = parseMemberBirthday(m.dateOfBirth, raw.birthDay, raw.birthMonth);
+    if (parsed && parsed.day === tDay && parsed.month === tMonth) {
+      celebrants.push({
+        member: m,
+        day: parsed.day,
+        month: parsed.month,
+        monthName: MONTH_NAMES[parsed.month - 1],
+        formattedDate: `${MONTH_ABBRS[parsed.month - 1]} ${parsed.day}`,
+        daysUntil: 0,
+      });
+    }
+  }
+
+  return {
+    todayDate: currentDate,
+    celebrants,
+  };
+}
+
+/**
+ * Helper to check if today is the FIRST DAY of the current month.
+ */
+export function isFirstDayOfMonth(date: Date = getWATDate()): boolean {
+  return date.getDate() === 1;
 }

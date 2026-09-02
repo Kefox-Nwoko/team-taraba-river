@@ -1832,6 +1832,20 @@ export async function triggerDailyBirthdayAlert(): Promise<{ success: boolean; c
   return data;
 }
 
+export async function triggerDailyDDayAlert(): Promise<{ success: boolean; celebrantsCount: number; provider: string }> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/admin/birthdays/send-dday-alert"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({}),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.error || `Failed to trigger D-Day alert (${res.status})`);
+  }
+  return data;
+}
+
 export async function updateBirthdayEmailConfig(updates: {
   recipientEmail?: string;
   resendApiKey?: string;

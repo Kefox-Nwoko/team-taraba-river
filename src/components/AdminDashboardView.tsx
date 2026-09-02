@@ -10,6 +10,9 @@ import {
   triggerYouTubeBackSync,
   resetSystemData,
   deleteEvent as deleteEventApi,
+  triggerMonthlyBirthdayDigest,
+  triggerDailyBirthdayAlert,
+  triggerDailyDDayAlert,
 } from "../services/apiClient";
 import { db } from "../lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
@@ -390,6 +393,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [adminNotificationEmail, setAdminNotificationEmail] = useState("");
   const [isSavingEmailConfig, setIsSavingEmailConfig] = useState(false);
   const [emailConfigLoaded, setEmailConfigLoaded] = useState(false);
+  const [isTestingAlerts, setIsTestingAlerts] = useState<{ [key: string]: boolean }>({});
 
   useEffect(() => {
     if (activeTab === "developer" && !emailConfigLoaded) {
@@ -424,6 +428,23 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       alert("Failed to save. Check your connection.");
     } finally {
       setIsSavingEmailConfig(false);
+    }
+  };
+
+  const handleTestAlert = async (type: 'monthly' | 'eve' | 'dday') => {
+    setIsTestingAlerts(prev => ({ ...prev, [type]: true }));
+    try {
+      let res;
+      if (type === 'monthly') res = await triggerMonthlyBirthdayDigest();
+      else if (type === 'eve') res = await triggerDailyBirthdayAlert();
+      else if (type === 'dday') res = await triggerDailyDDayAlert();
+      
+      alert(`Simulation Triggered Successfully!\n\nEmail Provider: ${res?.provider}\nCelebrants Found: ${res?.celebrantsCount}`);
+    } catch (err) {
+      logger.error(`Failed to test ${type} alert`, err);
+      alert("Failed to run test. Check console for errors.");
+    } finally {
+      setIsTestingAlerts(prev => ({ ...prev, [type]: false }));
     }
   };
 
@@ -1258,6 +1279,37 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <button disabled={isSavingEmailConfig} onClick={handleSaveEmailConfig} className="px-4 py-2 mt-2 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white rounded-xl text-xs font-semibold transition-all disabled:opacity-50">
                 {isSavingEmailConfig ? "Saving..." : "Save Email Config"}
               </button>
+
+              <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-700">
+                <h4 className="text-xs font-semibold text-slate-900 dark:text-white mb-2">Simulation & Testing Tools</h4>
+                <p className="text-[11px] text-slate-500 mb-3">Clicking these buttons will bypass the time restrictions and forcefully trigger the email logic immediately.</p>
+                <div className="flex flex-wrap gap-2">
+                  <button 
+                    disabled={isTestingAlerts['monthly']} 
+                    onClick={() => handleTestAlert('monthly')} 
+                    className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isTestingAlerts['monthly'] ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Calendar className="w-3.5 h-3.5" />}
+                    Test Monthly Digest (1st of Month)
+                  </button>
+                  <button 
+                    disabled={isTestingAlerts['eve']} 
+                    onClick={() => handleTestAlert('eve')} 
+                    className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isTestingAlerts['eve'] ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
+                    Test Eve Alert (8:00 PM)
+                  </button>
+                  <button 
+                    disabled={isTestingAlerts['dday']} 
+                    onClick={() => handleTestAlert('dday')} 
+                    className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg text-xs font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isTestingAlerts['dday'] ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Gift className="w-3.5 h-3.5" />}
+                    Test D-Day Alert (6:00 AM)
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
           

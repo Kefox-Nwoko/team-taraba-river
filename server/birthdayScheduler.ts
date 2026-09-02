@@ -1,12 +1,14 @@
 import {
   getWATDate,
-  isLastDayOfMonth,
+  isFirstDayOfMonth,
   getUpcomingNextMonthCelebrants,
   getTomorrowCelebrants,
+  getTodayCelebrants,
 } from "./birthdayService";
 import {
   buildMonthlyDigestEmailHtml,
   buildDailyEveAlertEmailHtml,
+  buildDailyDDayAlertEmailHtml,
 } from "./emailTemplates";
 import { getEmailConfig, sendEmail, SendEmailResult } from "./emailService";
 import { db, isFirestoreAvailable } from "./firebaseAdmin";
@@ -141,23 +143,68 @@ export async function triggerDailyEveAlert(force: boolean = false): Promise<Send
 }
 
 /**
- * Main cron tick function running periodically to check for 12:00 PM WAT triggers.
+ * Triggers the 6 AM D-Day Alert for today's celebrants.
+ */
+export async function triggerDailyDDayAlert(force: boolean = false): Promise<SendEmailResult & { celebrantsCount: number }> {
+  const watDate = getWATDate();
+  const todayInfo = await getTodayCelebrants(watDate);
+  const dateKey = watDate.toISOString().slice(0, 10);
+  const dispatchKey = `daily_dday_${dateKey}`;
+
+  if (todayInfo.celebrants.length === 0) {
+    serverLogger.info("[BirthdayScheduler] No celebrants today. Daily D-Day alert skipped.");
+    return { success: true, provider: "simulation", celebrantsCount: 0 };
+  }
+
+  if (!force && (await hasAlreadySent(dispatchKey))) {
+    serverLogger.info(`[BirthdayScheduler] Daily D-Day alert for ${dateKey} already sent today.`);
+    return { success: true, provider: "simulation", celebrantsCount: todayInfo.celebrants.length };
+  }
+
+  const config = await getEmailConfig();
+  const { subject, html, text } = buildDailyDDayAlertEmailHtml({
+    todayDate: todayInfo.todayDate,
+    celebrants: todayInfo.celebrants,
+    adminRecipientEmail: config.recipientEmail,
+  });
+
+  const result = await sendEmail({
+    to: config.recipientEmail,
+    subject,
+    html,
+    text,
+  });
+
+  if (result.success) {
+    await recordSentDispatch(dispatchKey, {
+      type: "daily_dday_alert",
+      targetDate: todayInfo.todayDate.toISOString().slice(0, 10),
+      celebrantsCount: todayInfo.celebrants.length,
+      celebrants: todayInfo.celebrants.map((c) => ({
+        id: c.member.id,
+        name: c.member.fullName || c.member.firstName,
+      })),
+      recipient: config.recipientEmail,
+      provider: result.provider,
+    });
+  }
+
+  return { ...result, celebrantsCount: todayInfo.celebrants.length };
+}
+
+/**
+ * Main cron tick function running periodically to check for triggers.
  */
 export async function checkAndRunBirthdaySchedules(): Promise<void> {
   const watDate = getWATDate();
   const hours = watDate.getHours();
 
-  // Only trigger during the 12:00 PM hour (12:00 - 12:59)
-  if (hours !== 12) {
-    return;
-  }
+  serverLogger.info(\`[BirthdayScheduler] ⏰ Checking schedules... Current WAT time: \${watDate.toISOString()} (Hour: \${hours})\`);
 
-  serverLogger.info(`[BirthdayScheduler] ⏰ 12:00 PM WAT Trigger Active (${watDate.toISOString()})`);
-
-  // 1. Check if today is the LAST DAY of the month -> Run Monthly Digest
-  if (isLastDayOfMonth(watDate)) {
+  // 1. 1st of every month for Monthly Digest (Triggered around 10 AM to avoid overlap, or anytime on the 1st)
+  if (isFirstDayOfMonth(watDate) && hours === 10) {
     try {
-      serverLogger.info("[BirthdayScheduler] Today is the last day of the month! Triggering Monthly Advance Digest...");
+      serverLogger.info("[BirthdayScheduler] Today is the 1st of the month (10 AM)! Triggering Monthly Advance Digest...");
       await triggerMonthlyDigest(false);
     } catch (err) {
       serverLogger.error("[BirthdayScheduler] Error running monthly digest", {
@@ -166,13 +213,28 @@ export async function checkAndRunBirthdaySchedules(): Promise<void> {
     }
   }
 
-  // 2. Daily 24-Hour Eve Alert for tomorrow's birthdays
-  try {
-    await triggerDailyEveAlert(false);
-  } catch (err) {
-    serverLogger.error("[BirthdayScheduler] Error running daily eve alert", {
-      error: err instanceof Error ? err.message : String(err),
-    });
+  // 2. Daily 24-Hour Eve Alert for tomorrow's birthdays (Triggered at 20:00 / 8 PM)
+  if (hours === 20) {
+    try {
+      serverLogger.info("[BirthdayScheduler] 8:00 PM WAT Trigger: Running daily eve alert...");
+      await triggerDailyEveAlert(false);
+    } catch (err) {
+      serverLogger.error("[BirthdayScheduler] Error running daily eve alert", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // 3. Daily D-Day Alert for today's birthdays (Triggered at 6:00 AM)
+  if (hours === 6) {
+    try {
+      serverLogger.info("[BirthdayScheduler] 6:00 AM WAT Trigger: Running daily D-Day alert...");
+      await triggerDailyDDayAlert(false);
+    } catch (err) {
+      serverLogger.error("[BirthdayScheduler] Error running daily D-Day alert", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
 
@@ -181,12 +243,12 @@ let schedulerTimer: NodeJS.Timeout | null = null;
 /**
  * Initializes the background birthday scheduler.
  */
-export function startBirthdayScheduler(checkIntervalMs: number = 10 * 60 * 1000): void {
+export function startBirthdayScheduler(checkIntervalMs: number = 30 * 60 * 1000): void {
   if (schedulerTimer) {
     clearInterval(schedulerTimer);
   }
 
-  serverLogger.info("[BirthdayScheduler] 🚀 Birthday Email Reminder Scheduler initialized (checking for 12:00 PM WAT triggers)");
+  serverLogger.info("[BirthdayScheduler] 🚀 Birthday Email Reminder Scheduler initialized (checking every 30 minutes for triggers)");
 
   // Initial check on boot
   checkAndRunBirthdaySchedules().catch((err) => {
@@ -195,7 +257,7 @@ export function startBirthdayScheduler(checkIntervalMs: number = 10 * 60 * 1000)
     });
   });
 
-  // Periodic interval check (every 10 minutes)
+  // Periodic interval check (every 30 minutes)
   schedulerTimer = setInterval(() => {
     checkAndRunBirthdaySchedules().catch((err) => {
       serverLogger.warn("[BirthdayScheduler] Error during periodic scheduler tick", {

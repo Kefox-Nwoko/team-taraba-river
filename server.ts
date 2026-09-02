@@ -31,7 +31,12 @@ import {
 import { uploadIntermediateMedia, finalizeMedia, getMediaStatus, uploadVideoBufferToYouTube, base64ToBuffer } from "./server/mediaPipeline";
 import { isMemberCredentialMatch } from "./src/lib/authMatching";
 import { CSV_SEED_MEMBERS } from "./src/data/csvMembers";
-import { startBirthdayScheduler, triggerMonthlyDigest, triggerDailyEveAlert } from "./server/birthdayScheduler";
+import { 
+  startBirthdayScheduler, 
+  triggerMonthlyDigest, 
+  triggerDailyEveAlert,
+  triggerDailyDDayAlert 
+} from "./server/birthdayScheduler";
 import { getUpcomingNextMonthCelebrants, getTomorrowCelebrants, getWATDate } from "./server/birthdayService";
 import { buildMonthlyDigestEmailHtml, buildDailyEveAlertEmailHtml, buildTestEmailHtml } from "./server/emailTemplates";
 import { getEmailConfig, updateEmailConfig, sendEmail } from "./server/emailService";
@@ -3135,6 +3140,16 @@ app.post("/api/admin/birthdays/send-daily-alert", requireAdmin, async (req: Requ
   } catch (error) {
     serverLogger.error("Trigger daily alert error", error);
     res.status(500).json({ error: "Failed to send daily alert." });
+  }
+});
+
+app.post("/api/admin/birthdays/send-dday-alert", requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const result = await triggerDailyDDayAlert(true);
+    res.json(result);
+  } catch (error) {
+    serverLogger.error("Trigger daily D-Day alert error", error);
+    res.status(500).json({ error: "Failed to send D-Day alert." });
   }
 });
 
