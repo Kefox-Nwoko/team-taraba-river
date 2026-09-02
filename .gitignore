@@ -10,3 +10,8 @@ service-account.json
 functions/
 .firebase/
 scratch/
+# Developer test artifacts (not for production)
+generate_emails.ts
+*_test.html
+copy_db.cjs
+

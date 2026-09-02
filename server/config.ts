@@ -3,7 +3,9 @@
  * Reads from process.env with sensible defaults for local development.
  */
 export const config = {
-  adminEmails: (process.env.ADMIN_EMAILS || 'tarabateam@gmail.com,kefox.nwoko@gmail.com')
+  // Admin emails must be set via ADMIN_EMAILS env var in production.
+  // Comma-separated: e.g. ADMIN_EMAILS="user1@gmail.com,user2@gmail.com"
+  adminEmails: (process.env.ADMIN_EMAILS || '')
     .split(',')
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean),

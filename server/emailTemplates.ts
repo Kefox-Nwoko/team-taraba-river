@@ -39,9 +39,9 @@ function getBaseEmailLayout(subject: string, title: string, preheader: string, c
     .title { margin: 0 0 20px 0; font-size: 20px; font-weight: 700; color: #0f172a; }
     .content { font-size: 15px; line-height: 1.6; color: #475569; }
     .footer { text-align: center; padding-top: 32px; font-size: 12px; color: #94a3b8; line-height: 1.5; }
-    .list-item { margin-bottom: 12px; padding: 12px 16px; background-color: #f8fafc; border-radius: 6px; border-left: 4px solid ${PRIMARY_COLOR}; }
-    .list-item-title { font-weight: 600; color: #0f172a; margin-bottom: 4px; display: block; }
-    .list-item-subtitle { font-size: 13px; color: #64748b; }
+    .list-item { margin-bottom: 12px; font-size: 15px; }
+    .list-item-title { font-weight: 600; color: #0f172a; }
+    .list-item-subtitle { font-size: 14px; color: #64748b; margin-left: 8px; }
     .btn { display: inline-block; padding: 10px 20px; background-color: ${PRIMARY_COLOR}; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; text-align: center; margin-top: 24px; }
   </style>
 </head>
@@ -105,8 +105,8 @@ export function buildMonthlyDigestEmailHtml(params: {
   const itemsHtml = celebrants.length > 0 
     ? celebrants.map(c => `
       <div class="list-item">
-        <span class="list-item-title">${formatMemberName(c)}</span>
-        <span class="list-item-subtitle">${monthName} ${c.day}</span>
+        <span class="list-item-title">🎉 ${formatMemberName(c)}</span>
+        <span class="list-item-subtitle">— ${monthName} ${c.day}</span>
       </div>
     `).join("")
     : `<p>There are no members celebrating birthdays in ${monthName}.</p>`;
@@ -158,8 +158,8 @@ export function buildDailyEveAlertEmailHtml(params: {
   const itemsHtml = celebrants.length > 0 
     ? celebrants.map(c => `
       <div class="list-item">
-        <span class="list-item-title">${formatMemberName(c)}</span>
-        <span class="list-item-subtitle">Tomorrow, ${dayName}, ${dateStr}</span>
+        <span class="list-item-title">🎉 ${formatMemberName(c)}</span>
+        <span class="list-item-subtitle">— Tomorrow, ${dayName}, ${dateStr}</span>
       </div>
     `).join("")
     : `<p>There are no celebrants tomorrow.</p>`;
@@ -211,8 +211,8 @@ export function buildDailyDDayAlertEmailHtml(params: {
   const itemsHtml = celebrants.length > 0 
     ? celebrants.map(c => `
       <div class="list-item">
-        <span class="list-item-title">${formatMemberName(c)}</span>
-        <span class="list-item-subtitle">Today, ${dayName}, ${dateStr}</span>
+        <span class="list-item-title">🎉 ${formatMemberName(c)}</span>
+        <span class="list-item-subtitle">— Today, ${dayName}, ${dateStr}</span>
       </div>
     `).join("")
     : `<p>There are no celebrants today.</p>`;
@@ -255,16 +255,16 @@ export function buildTestEmailHtml(recipientEmail: string): { subject: string; h
     <p>You will now receive the following automated schedules:</p>
     <div style="margin: 24px 0;">
       <div class="list-item">
-        <span class="list-item-title">Monthly Digest</span>
-        <span class="list-item-subtitle">1st of every month summarizing upcoming celebrants</span>
+        <span class="list-item-title">🎉 Monthly Digest</span>
+        <span class="list-item-subtitle">— 1st of every month summarizing upcoming celebrants</span>
       </div>
       <div class="list-item">
-        <span class="list-item-title">Eve Alert (8:00 PM)</span>
-        <span class="list-item-subtitle">Reminder to prepare announcements for tomorrow</span>
+        <span class="list-item-title">🎉 Eve Alert (8:00 PM)</span>
+        <span class="list-item-subtitle">— Reminder to prepare announcements for tomorrow</span>
       </div>
       <div class="list-item">
-        <span class="list-item-title">D-Day Alert (6:00 AM)</span>
-        <span class="list-item-subtitle">Final reminder to post the announcement today</span>
+        <span class="list-item-title">🎉 D-Day Alert (6:00 AM)</span>
+        <span class="list-item-subtitle">— Final reminder to post the announcement today</span>
       </div>
     </div>
     <p>Thank you for keeping Team Taraba River organized!</p>

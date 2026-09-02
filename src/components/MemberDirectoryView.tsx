@@ -97,7 +97,6 @@ export function getMemberSearchableText(m: Member): string {
     m.closestNeighborName,
     m.maritalStatus,
     m.jerseySize,
-    m.bio,
     m.title,
   ];
 

@@ -651,29 +651,7 @@ app.post("/api/auth/verify", rateLimiter, async (req: Request, res: Response) =>
   }
 });
 
-app.get("/api/system/visits", async (req: Request, res: Response) => {
-  try {
-    let metrics = {
-      totalVisits: 0,
-      lastVisitTimestamp: new Date().toISOString(),
-      latestUniqueUser: "Community Member"
-    };
-
-    if (isFirestoreAvailable()) {
-      const doc = await db.collection(COLLECTIONS.systemConfig).doc('visit_metrics').get();
-      if (doc.exists) {
-        metrics = doc.data() as any;
-      } else {
-        await db.collection(COLLECTIONS.systemConfig).doc('visit_metrics').set(metrics);
-      }
-    }
-
-    res.json(metrics);
-  } catch (error) {
-    serverLogger.error("Fetch visits error", error);
-    res.status(500).json({ error: "Failed to fetch visits metrics." });
-  }
-});
+// NOTE: /api/system/visits is handled below at the single canonical route.
 
 // 3. Auth: Login via credential (email/phone) — issues a Firebase custom token
 //    This allows the existing email/phone login UX while adding real token auth.
@@ -1141,7 +1119,7 @@ app.delete("/api/members/:id", conditionalAuth, conditionalRequireAdmin, async (
   try {
     if (!isFirestoreAvailable()) {
       fallbackMembers = fallbackMembers.filter((m) => m.id !== id);
-      invalidateMembersCache();
+      _membersCache = null;
       res.json({ success: true, message: "Member deleted successfully." });
       return;
     }
@@ -1155,7 +1133,7 @@ app.delete("/api/members/:id", conditionalAuth, conditionalRequireAdmin, async (
 
     const memberData = docSnap.data() as Member;
     await docRef.delete();
-    invalidateMembersCache();
+    _membersCache = null;
 
     await addActivityLog({
       id: `act_${Date.now()}`,
@@ -1163,6 +1141,7 @@ app.delete("/api/members/:id", conditionalAuth, conditionalRequireAdmin, async (
       memberName: memberData?.fullName || "Member",
       action: `Admin permanently deleted member profile (${memberData?.fullName || id})`,
       timestamp: new Date().toISOString(),
+      pointsEarned: 0,
     });
 
     res.json({ success: true, message: "Member deleted successfully." });
@@ -1327,6 +1306,12 @@ app.post("/api/events/:id/rsvp", conditionalAuth, async (req: Request, res: Resp
 
   const { id } = req.params;
   const { memberId, status } = validation.data;
+
+  // Security: a member can only RSVP for themselves unless they are an admin
+  if (req.user && req.user.role !== 'admin' && req.user.uid !== memberId) {
+    res.status(403).json({ error: 'You can only RSVP for yourself.' });
+    return;
+  }
 
   try {
     const eventRef = db.collection(COLLECTIONS.events).doc(id);
@@ -1558,7 +1543,7 @@ app.post("/api/admin/reset-data", conditionalAuth, conditionalRequireAdmin, asyn
 });
 
 // 12. Analytics Service
-app.get("/api/admin/analytics", conditionalAuth, async (req: Request, res: Response) => {
+app.get("/api/admin/analytics", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
   try {
     const members = await getMembers();
     const events = await getEvents();
@@ -1996,7 +1981,7 @@ app.post("/api/media/youtube-parse", conditionalAuth, async (req: Request, res: 
 });
 
 // Endpoint to save & update YouTube API Key dynamically
-app.post("/api/system/save-youtube-key", async (req: Request, res: Response) => {
+app.post("/api/system/save-youtube-key", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
   const { apiKey } = req.body || {};
   if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length < 10) {
     return res.status(400).json({ error: "Invalid YouTube API key format." });
@@ -2259,9 +2244,7 @@ app.post("/api/media/youtube-back-sync", conditionalAuth, async (req: Request, r
   }
 });
 
-app.get("/api/health", (req: Request, res: Response) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
-});
+// Duplicate /api/health stub removed — the full health check above is the canonical route.
 
 // 14. Media Pipeline: Upload intermediate media to Firestore
 app.post("/api/media/upload", conditionalAuth, async (req: Request, res: Response) => {
@@ -2960,7 +2943,7 @@ app.post("/api/ai-xplora", async (req: Request, res: Response) => {
 // ===================================================================
 //  Automated YouTube Upload & OAuth2 Bridge Pipeline
 // ===================================================================
-app.post("/api/media/upload-video-to-youtube", async (req: Request, res: Response) => {
+app.post("/api/media/upload-video-to-youtube", conditionalAuth, async (req: Request, res: Response) => {
   try {
     const { base64Data, fileName, folderName, mimeType } = req.body || {};
 
@@ -3042,6 +3025,111 @@ app.get("/oauth2callback", async (req: Request, res: Response) => {
   }
 });
 
+
+// ===================================================================
+//  Automated Cron Endpoints (Invoked via Cloud Scheduler)
+// ===================================================================
+const requireCronSecret = (req: Request, res: Response, next: NextFunction) => {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    // CRON_SECRET env var not configured — reject all cron requests for safety
+    res.status(503).json({ error: 'Cron automation is not configured on this server.' });
+    return;
+  }
+  const providedSecret = req.query.secret || req.headers['x-cron-secret'];
+  if (providedSecret !== secret) {
+    res.status(401).json({ error: 'Unauthorized. Invalid cron secret.' });
+    return;
+  }
+  next();
+};
+
+app.get("/api/cron/birthdays/monthly", requireCronSecret, async (req: Request, res: Response) => {
+  try {
+    const { nextMonth, nextMonthName, year, celebrants } = await getUpcomingNextMonthCelebrants();
+    const adminEmail = process.env.OWNER_EMAIL || "tarabateam@gmail.com";
+    
+    if (celebrants.length > 0) {
+      const emailConfig = await getEmailConfig();
+      if (!emailConfig.enabled) {
+        return res.json({ success: false, message: "Email system disabled", celebrants: celebrants.length });
+      }
+      
+      const { subject, html } = buildMonthlyDigestEmailHtml({
+        monthName: nextMonthName,
+        year,
+        celebrants,
+        adminRecipientEmail: adminEmail
+      });
+      
+      await sendEmail({ to: adminEmail, subject, html });
+      serverLogger.info(`[Cron] Sent Monthly Digest to ${adminEmail} for ${celebrants.length} celebrants.`);
+    }
+    
+    res.json({ success: true, count: celebrants.length, month: nextMonthName });
+  } catch (err: any) {
+    serverLogger.error("[Cron] Monthly digest failed", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/cron/birthdays/eve", requireCronSecret, async (req: Request, res: Response) => {
+  try {
+    const { tomorrowDate, celebrants } = await getTomorrowCelebrants();
+    const adminEmail = process.env.OWNER_EMAIL || "tarabateam@gmail.com";
+    
+    if (celebrants.length > 0) {
+      const emailConfig = await getEmailConfig();
+      if (!emailConfig.enabled) {
+        return res.json({ success: false, message: "Email system disabled", celebrants: celebrants.length });
+      }
+      
+      const { subject, html } = buildDailyEveAlertEmailHtml({
+        tomorrowDate,
+        celebrants,
+        adminRecipientEmail: adminEmail
+      });
+      
+      await sendEmail({ to: adminEmail, subject, html });
+      serverLogger.info(`[Cron] Sent Eve Alert to ${adminEmail} for ${celebrants.length} celebrants.`);
+    }
+    
+    res.json({ success: true, count: celebrants.length, date: tomorrowDate.toISOString() });
+  } catch (err: any) {
+    serverLogger.error("[Cron] Eve alert failed", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/cron/birthdays/today", requireCronSecret, async (req: Request, res: Response) => {
+  try {
+    const { getTodayCelebrants } = await import("./server/birthdayService");
+    const { todayDate, celebrants } = await getTodayCelebrants();
+    const adminEmail = process.env.OWNER_EMAIL || "tarabateam@gmail.com";
+    
+    if (celebrants.length > 0) {
+      const emailConfig = await getEmailConfig();
+      if (!emailConfig.enabled) {
+        return res.json({ success: false, message: "Email system disabled", celebrants: celebrants.length });
+      }
+      
+      const { buildDailyDDayAlertEmailHtml } = await import("./server/emailTemplates");
+      const { subject, html } = buildDailyDDayAlertEmailHtml({
+        todayDate,
+        celebrants,
+        adminRecipientEmail: adminEmail
+      });
+      
+      await sendEmail({ to: adminEmail, subject, html });
+      serverLogger.info(`[Cron] Sent D-Day Alert to ${adminEmail} for ${celebrants.length} celebrants.`);
+    }
+    
+    res.json({ success: true, count: celebrants.length, date: todayDate.toISOString() });
+  } catch (err: any) {
+    serverLogger.error("[Cron] D-Day alert failed", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ===================================================================
 //  Global Error Handler

@@ -265,3 +265,12 @@ export async function getTodayCelebrants(
 export function isFirstDayOfMonth(date: Date = getWATDate()): boolean {
   return date.getDate() === 1;
 }
+
+/**
+ * Helper to check if today is the LAST DAY of the current month.
+ */
+export function isLastDayOfMonth(date: Date = getWATDate()): boolean {
+  const tomorrow = new Date(date);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow.getDate() === 1;
+}
