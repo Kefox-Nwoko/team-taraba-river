@@ -18,3 +18,5 @@ services:
         value: tarabateam@gmail.com
       - key: ADMIN_EMAILS
         value: tarabateam@gmail.com,kefox.nwoko@gmail.com
+      - key: CRON_SECRET
+        value: c142a7b54f76c5d3bc02035a32559c3073202fb9056c8d5b
