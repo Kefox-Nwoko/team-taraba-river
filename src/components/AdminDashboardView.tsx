@@ -10,7 +10,6 @@ import {
   triggerYouTubeBackSync,
   resetSystemData,
   deleteEvent as deleteEventApi,
-  updateBirthdayEmailConfig,
 } from "../services/apiClient";
 import { db } from "../lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
@@ -415,7 +414,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const handleSaveEmailConfig = async () => {
     setIsSavingEmailConfig(true);
     try {
-      await updateBirthdayEmailConfig({
+      await FirebaseSyncManager.saveEmailConfig({
         enabled: emailAlertsEnabled,
         recipientEmail: adminNotificationEmail,
       });
