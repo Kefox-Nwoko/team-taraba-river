@@ -504,28 +504,6 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
                           <span className="text-slate-900 dark:text-white font-medium">{m.gradYear}</span>
                         </div>
                       )}
-                      {isAdmin && (
-                        <div className="flex items-center gap-2 pl-3 md:border-l border-slate-200 dark:border-slate-700 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => onEditMember(m)}
-                            className="px-3 py-1.5 rounded-xl bg-teal-50 dark:bg-teal-950/60 hover:bg-teal-100 dark:hover:bg-teal-900/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
-                            title={`Edit ${formattedName}'s profile`}
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                            <span>Edit</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setMemberToDelete(m)}
-                            className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
-                            title={`Permanently delete ${formattedName}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>Delete</span>
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </div>
 
