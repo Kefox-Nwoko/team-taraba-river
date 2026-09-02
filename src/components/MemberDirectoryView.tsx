@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useDeferredValue } from "react";
 import { Member } from "../types";
 import { adminAISearch, deleteMember } from "../services/apiClient";
+import { EngagementTracker } from "../services/EngagementTracker";
 import { logger } from "../lib/logger";
 import { MemberAvatar } from "./MemberAvatar";
 import { formatMemberDirectoryName } from "../utils/nameUtils";
@@ -171,6 +172,9 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
     if (!trimmed || !isAdmin) return;
 
     setIsAiSearching(true);
+    if (currentUser?.id) {
+      EngagementTracker.trackSearch(currentUser.id);
+    }
     try {
       const results = await adminAISearch(trimmed);
       setAiResults(results.length > 0 ? results : []);

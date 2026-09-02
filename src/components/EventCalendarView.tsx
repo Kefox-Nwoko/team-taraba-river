@@ -11,6 +11,7 @@ import {
 } from "../services/apiClient";
 import { AppStateManager } from "../services/storage";
 import { FirebaseSyncManager } from "../services/firebaseService";
+import { EngagementTracker } from "../services/EngagementTracker";
 import { MemberAvatar } from "./MemberAvatar";
 import { ReturnButton } from "./ReturnButton";
 import { UsosaNewsCard } from "./UsosaNewsCard";
@@ -338,6 +339,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
     // 2. Also notify backend API
     try {
       await submitEventRSVP(eventId, memberId, status);
+      await EngagementTracker.trackRsvp(memberId);
     } catch (err) {
       logger.error("Event RSVP API sync", err);
     }

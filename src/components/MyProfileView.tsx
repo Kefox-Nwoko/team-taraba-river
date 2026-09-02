@@ -17,6 +17,7 @@ import {
   Zap,
   RefreshCw,
 } from "lucide-react";
+import { EngagementTracker } from "../services/EngagementTracker";
 import { formatMemberDirectoryName } from "../utils/nameUtils";
 import { isMemberProfileComplete } from "../utils/memberValidation";
 import { getStorageStats, clearAppCache, StorageStats } from "../utils/storageManager";
@@ -130,6 +131,7 @@ export const MyProfileView: React.FC<MyProfileViewProps> = ({
           originatingPageName="My Profile"
           onSuccess={(m) => {
             setIsEditing(false);
+            EngagementTracker.trackProfileUpdate(m.id);
             onUpdateSuccess(m);
           }}
         />

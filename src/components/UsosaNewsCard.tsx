@@ -41,6 +41,7 @@ import {
 import { MarkdownMessage } from "./MarkdownMessage";
 import { formatMemberDisplayName } from "../utils/nameUtils";
 import { Member } from "../types";
+import { EngagementTracker } from "../services/EngagementTracker";
 
 interface UsosaNewsCardProps {
   currentUser: Member | null;
@@ -121,6 +122,9 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
       });
       // Permanent cloud & device sync (retains across 20+ logins)
       markNewsArticleAsRead(memberId, key).catch(() => {});
+      if (currentUser?.id) {
+        EngagementTracker.trackNewsRead(currentUser.id);
+      }
     }
   };
 

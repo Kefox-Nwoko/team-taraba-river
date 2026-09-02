@@ -31,6 +31,8 @@ import {
 import { uploadVideoDirectToYouTube, deleteYouTubeVideo } from "../services/youtubeDirectUpload";
 import { uploadImageDirectToDrive } from "../services/googleDriveDirectUpload";
 import { AppStateManager } from "../services/storage";
+import { EventLocationMap } from "./EventLocationMap";
+import { EngagementTracker } from "../services/EngagementTracker";
 
 interface MediaItem {
   id: string;
@@ -893,6 +895,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     if (totalSucceeded > 0) {
       setUploadProgressText(wasAborted ? "Finalizing completed uploads before stop..." : "Registering media in Event Gallery...");
       setUploadProgress(95);
+      
+      if (currentUser?.id) {
+        EngagementTracker.trackMediaUpload(currentUser.id);
+      }
 
       try {
         let targetEvent: GroupEvent | undefined;

@@ -360,7 +360,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   onRegisterClick,
   onReturn,
 }) => {
-  const [activeTab, setActiveTab] = useState<"directory" | "rsvps" | "analytics" | "moderation" | "cloud_settings">("directory");
+  const [activeTab, setActiveTab] = useState<"directory" | "rsvps" | "analytics" | "moderation" | "cloud_settings" | "developer">("directory");
   const [pendingApprovals, setPendingApprovals] = useState<PhotoApprovalRequest[]>([]);
   const [previewModalReq, setPreviewModalReq] = useState<PhotoApprovalRequest | null>(null);
 
@@ -530,7 +530,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     const memIdx = members.findIndex((m) => m.id === req.memberId);
     if (memIdx !== -1) {
       if (members[memIdx].role !== "admin") {
-        members[memIdx].activityPoints = (members[memIdx].activityPoints || 0) + 30;
+        members[memIdx].activityPoints = (members[memIdx].activityPoints || 0) + 20;
       }
       AppStateManager.saveMembers(members);
       try {
@@ -833,16 +833,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               )}
             </button>
 
-            <button onClick={() => setActiveTab("cloud_settings")}
-              className={`px-3 py-2 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer shrink-0 min-h-[40px] ${
-                activeTab === "cloud_settings"
-                  ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/20 font-semibold"
-                  : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-              }`}
-            >
-              <FolderOpen className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 text-cyan-400" />
-              <span className="truncate">Cloud Media</span>
-            </button>
+            {currentUser?.email === 'kefox.nwoko@gmail.com' && (
+              <button onClick={() => setActiveTab("developer")}
+                className={`px-3 py-2 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer shrink-0 min-h-[40px] ${
+                  activeTab === "developer"
+                    ? "bg-purple-700 text-white shadow-md shadow-purple-700/20 font-semibold"
+                    : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
+                }`}
+              >
+                <Lock className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0 text-purple-400" />
+                <span className="truncate">Developer</span>
+              </button>
+            )}
           </div>
         );
 
@@ -1179,8 +1181,43 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
       )}
 
-      {/* TAB 4: CLOUD MEDIA INTEGRATION (Single Unified Card Container) */}
-      {activeTab === "cloud_settings" && (
+      {/* TAB 4: DEVELOPER (Highly Restricted) */}
+      {activeTab === "developer" && currentUser?.email === 'kefox.nwoko@gmail.com' && (
+        <div className="space-y-8 font-normal">
+          {/* Automated Birthday Emails Settings Card */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-sm">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
+                <Gift className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg text-slate-900 dark:text-white font-bold">Automated Birthday Emails</h3>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">Configure automated birthday greetings sent to members</p>
+              </div>
+            </div>
+            
+            <div className="p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white">Enable Automated Emails</h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Toggle the automated daily birthday email sender</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" className="sr-only peer" />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-purple-600"></div>
+                </label>
+              </div>
+              <div className="pt-3 border-t border-slate-200 dark:border-slate-700">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Sender Email Address</label>
+                <input type="email" defaultValue="admin@teamtarabariver.com" className="w-full sm:max-w-md px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
+              </div>
+              <button className="px-4 py-2 mt-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold transition-colors">
+                Save Email Config
+              </button>
+            </div>
+          </div>
+          
+          <div className="border-t border-slate-200 dark:border-slate-800 my-6"></div>
         <div className="py-2 sm:py-4 space-y-6 font-normal animate-fadeIn">
           <div className="bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-6 shadow-sm">
             
@@ -1367,6 +1404,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </span>
             </div>
           </div>
+        </div>
         </div>
       )}
 

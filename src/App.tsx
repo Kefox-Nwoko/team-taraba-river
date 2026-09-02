@@ -4,6 +4,7 @@ import { Member, GroupEvent, PhotoApprovalRequest } from "./types";
 import { AppStateManager } from "./services/storage";
 import { fetchMembers, fetchEvents, fetchApprovals, fetchVisitMetrics } from "./services/apiClient";
 import { FirebaseSyncManager, FirebaseService, triggerGoogleAdminSignIn } from "./services/firebaseService";
+import { EngagementTracker } from "./services/EngagementTracker";
 import { ChevronUp } from "lucide-react";
 import { ViewSkeleton } from "./components/ui/Skeleton";
 import { NetworkStatusBanner } from "./components/NetworkStatusBanner";
@@ -167,6 +168,11 @@ export default function App() {
     FirebaseService.recordSessionVisit().then((visits) => {
       if (visits > 0) setTotalVisits(visits);
     });
+    
+    // Award activity points for visiting
+    if (currentUser?.id) {
+      EngagementTracker.trackVisit(currentUser.id);
+    }
 
     // 2. Real-time synchronized subscription across all active clients
     //    This is the single source of truth — once it fires, it supersedes all fallbacks.

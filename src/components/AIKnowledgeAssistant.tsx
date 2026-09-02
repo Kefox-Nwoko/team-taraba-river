@@ -3,6 +3,8 @@ import { AIQueryResponse, Member } from "../types";
 import { queryAIAssistant } from "../services/apiClient";
 import { Sparkles, Send, Bot, User, FileText, ExternalLink, Zap, ArrowLeft, ChevronLeft } from "lucide-react";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { EngagementTracker } from "../services/EngagementTracker";
+
 interface AIKnowledgeAssistantProps {
   isOpen: boolean;
   onClose: () => void;
@@ -43,6 +45,11 @@ export const AIKnowledgeAssistant: React.FC<AIKnowledgeAssistantProps> = ({
     if (!inputQuery.trim() || isLoading) return;
     const queryText = inputQuery.trim();
     setInputQuery("");
+    
+    if (currentUser?.id) {
+      EngagementTracker.trackAiResearch(currentUser.id);
+    }
+    
     const userMsg: ChatMessage = {
       id: `usr_${Date.now()}`,
       sender: "user",
