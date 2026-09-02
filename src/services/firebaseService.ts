@@ -219,8 +219,10 @@ export class FirebaseSyncManager {
       await deleteDoc(doc(db, "members", memberId));
     } catch (err) {
       logger.error("Failed to delete member from Firestore", err);
+      throw err;
     }
   }
+
 
   /**
    * Persistently marks a headline article as read in both LocalStorage and Firestore

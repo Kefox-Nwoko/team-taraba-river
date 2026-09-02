@@ -67,8 +67,27 @@ function getTabSessionId(): string {
     return `tab_${Date.now()}`;
   }
 }
+const LOCAL_STORAGE_KEY_DELETED_MEMBERS = "taraba_river_deleted_member_ids_v1";
+
 export class AppStateManager {
   private static listeners: Set<() => void> = new Set();
+
+  public static getDeletedMemberIds(): Set<string> {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_KEY_DELETED_MEMBERS);
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  public static markMemberAsDeleted(memberId: string): void {
+    try {
+      const set = this.getDeletedMemberIds();
+      set.add(memberId);
+      localStorage.setItem(LOCAL_STORAGE_KEY_DELETED_MEMBERS, JSON.stringify([...set]));
+    } catch {}
+  }
 
   public static getCloudMediaConfig(): CloudMediaConfig {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY_CLOUD_CONFIG);
@@ -91,9 +110,10 @@ export class AppStateManager {
     return updated;
   }
   public static getMembers(): Member[] {
+    const deletedIds = this.getDeletedMemberIds();
     const filterAdminAcc = (list: Member[]) =>
       list
-        .filter((m) => m.email?.toLowerCase() !== clientConfig.ownerEmail.toLowerCase())
+        .filter((m) => m.email?.toLowerCase() !== clientConfig.ownerEmail.toLowerCase() && !deletedIds.has(m.id))
         .map(sanitizeMember);
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY_MEMBERS);
     if (!raw) {
@@ -103,7 +123,7 @@ export class AppStateManager {
     }
     try {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return filterAdminAcc(parsed);
       }
       const clean = filterAdminAcc(INITIAL_MEMBERS);
@@ -115,10 +135,13 @@ export class AppStateManager {
     }
   }
   public static saveMembers(members: Member[]) {
-    localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(members));
+    const deletedIds = this.getDeletedMemberIds();
+    const cleanList = members.filter((m) => !deletedIds.has(m.id));
+    localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(cleanList));
     this.notify();
   }
   public static deleteMember(memberId: string): Member[] {
+    this.markMemberAsDeleted(memberId);
     const list = this.getMembers().filter((m) => m.id !== memberId);
     this.saveMembers(list);
     return list;
