@@ -199,7 +199,7 @@ export async function checkAndRunBirthdaySchedules(): Promise<void> {
   const watDate = getWATDate();
   const hours = watDate.getHours();
 
-  serverLogger.info(\`[BirthdayScheduler] ⏰ Checking schedules... Current WAT time: \${watDate.toISOString()} (Hour: \${hours})\`);
+  serverLogger.info(`[BirthdayScheduler] ⏰ Checking schedules... Current WAT time: ${watDate.toISOString()} (Hour: ${hours})`);
 
   // 1. 1st of every month for Monthly Digest (Triggered around 10 AM to avoid overlap, or anytime on the 1st)
   if (isFirstDayOfMonth(watDate) && hours === 10) {
