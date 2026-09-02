@@ -31,12 +31,6 @@ import {
 import { uploadIntermediateMedia, finalizeMedia, getMediaStatus, uploadVideoBufferToYouTube, base64ToBuffer } from "./server/mediaPipeline";
 import { isMemberCredentialMatch } from "./src/lib/authMatching";
 import { CSV_SEED_MEMBERS } from "./src/data/csvMembers";
-import { 
-  startBirthdayScheduler, 
-  triggerMonthlyDigest, 
-  triggerDailyEveAlert,
-  triggerDailyDDayAlert 
-} from "./server/birthdayScheduler";
 import { getUpcomingNextMonthCelebrants, getTomorrowCelebrants, getWATDate } from "./server/birthdayService";
 import { buildMonthlyDigestEmailHtml, buildDailyEveAlertEmailHtml, buildTestEmailHtml } from "./server/emailTemplates";
 import { getEmailConfig, updateEmailConfig, sendEmail } from "./server/emailService";
@@ -3050,134 +3044,6 @@ app.get("/oauth2callback", async (req: Request, res: Response) => {
 
 
 // ===================================================================
-//  Birthday Email Reminder & Notification Endpoints
-// ===================================================================
-
-app.get("/api/admin/birthdays/preview", requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const watDate = getWATDate();
-    const nextMonthInfo = await getUpcomingNextMonthCelebrants(watDate);
-    const tomorrowInfo = await getTomorrowCelebrants(watDate);
-    const config = await getEmailConfig();
-
-    const monthlyEmail = buildMonthlyDigestEmailHtml({
-      monthName: nextMonthInfo.nextMonthName,
-      year: nextMonthInfo.year,
-      celebrants: nextMonthInfo.celebrants,
-      adminRecipientEmail: config.recipientEmail,
-    });
-
-    const dailyEmail = buildDailyEveAlertEmailHtml({
-      tomorrowDate: tomorrowInfo.tomorrowDate,
-      celebrants: tomorrowInfo.celebrants,
-      adminRecipientEmail: config.recipientEmail,
-    });
-
-    res.json({
-      config: {
-        recipientEmail: config.recipientEmail,
-        hasResendKey: Boolean(config.resendApiKey),
-        senderEmail: config.senderEmail,
-        enabled: config.enabled,
-      },
-      nextMonth: {
-        month: nextMonthInfo.nextMonth,
-        monthName: nextMonthInfo.nextMonthName,
-        year: nextMonthInfo.year,
-        count: nextMonthInfo.celebrants.length,
-        celebrants: nextMonthInfo.celebrants,
-        subject: monthlyEmail.subject,
-        htmlPreview: monthlyEmail.html,
-      },
-      tomorrow: {
-        date: tomorrowInfo.tomorrowDate.toISOString().slice(0, 10),
-        count: tomorrowInfo.celebrants.length,
-        celebrants: tomorrowInfo.celebrants,
-        subject: dailyEmail.subject,
-        htmlPreview: dailyEmail.html,
-      },
-    });
-  } catch (error) {
-    serverLogger.error("Fetch birthday preview error", error);
-    res.status(500).json({ error: "Failed to generate birthday preview." });
-  }
-});
-
-app.post("/api/admin/birthdays/send-test", requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const config = await getEmailConfig();
-    const recipient = (req.body.recipient || config.recipientEmail || "tarabateam@gmail.com").trim();
-    const testEmail = buildTestEmailHtml(recipient);
-
-    const result = await sendEmail({
-      to: recipient,
-      subject: testEmail.subject,
-      html: testEmail.html,
-      text: testEmail.text,
-    });
-
-    res.json(result);
-  } catch (error) {
-    serverLogger.error("Send test email error", error);
-    res.status(500).json({ error: "Failed to send test email." });
-  }
-});
-
-app.post("/api/admin/birthdays/send-digest", requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const result = await triggerMonthlyDigest(true);
-    res.json(result);
-  } catch (error) {
-    serverLogger.error("Trigger monthly digest error", error);
-    res.status(500).json({ error: "Failed to send monthly digest." });
-  }
-});
-
-app.post("/api/admin/birthdays/send-daily-alert", requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const result = await triggerDailyEveAlert(true);
-    res.json(result);
-  } catch (error) {
-    serverLogger.error("Trigger daily alert error", error);
-    res.status(500).json({ error: "Failed to send daily alert." });
-  }
-});
-
-app.post("/api/admin/birthdays/send-dday-alert", requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const result = await triggerDailyDDayAlert(true);
-    res.json(result);
-  } catch (error) {
-    serverLogger.error("Trigger daily D-Day alert error", error);
-    res.status(500).json({ error: "Failed to send D-Day alert." });
-  }
-});
-
-app.post("/api/admin/birthdays/config", requireAdmin, async (req: Request, res: Response) => {
-  try {
-    const { recipientEmail, resendApiKey, senderEmail, enabled } = req.body;
-    const updated = await updateEmailConfig({
-      recipientEmail,
-      resendApiKey,
-      senderEmail,
-      enabled,
-    });
-    res.json({
-      success: true,
-      config: {
-        recipientEmail: updated.recipientEmail,
-        hasResendKey: Boolean(updated.resendApiKey),
-        senderEmail: updated.senderEmail,
-        enabled: updated.enabled,
-      },
-    });
-  } catch (error) {
-    serverLogger.error("Update email config error", error);
-    res.status(500).json({ error: "Failed to update email settings." });
-  }
-});
-
-// ===================================================================
 //  Global Error Handler
 // ===================================================================
 app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
@@ -3197,9 +3063,6 @@ async function startServer() {
 
   // Seed Firestore on startup (skipped if Firestore not available)
   await seedFirestoreIfNeeded();
-
-  // Start the background birthday email reminder scheduler (12:00 PM WAT daily checks)
-  startBirthdayScheduler();
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
