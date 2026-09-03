@@ -106,8 +106,8 @@ export async function fetchRecycleBin(): Promise<DeletedMemberEntry[]> {
   return await FirebaseSyncManager.getRecycleBin();
 }
 
-export async function restoreDeletedMember(originalId: string): Promise<Member | null> {
-  return await FirebaseSyncManager.restoreMemberFromRecycleBin(originalId);
+export async function restoreDeletedMember(originalId: string, memberObj?: Member): Promise<Member | null> {
+  return await FirebaseSyncManager.restoreMemberFromRecycleBin(originalId, memberObj);
 }
 
 export async function purgeDeletedMember(originalId: string): Promise<void> {

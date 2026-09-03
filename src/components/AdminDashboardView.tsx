@@ -401,6 +401,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   // Recycle Bin State (Windows PC Model)
   const [recycleBin, setRecycleBin] = useState<DeletedMemberEntry[]>(() => AppStateManager.getRecycleBin());
   const [isPurgingAll, setIsPurgingAll] = useState(false);
+  const [isRestoringAll, setIsRestoringAll] = useState(false);
   const [processingOriginalId, setProcessingOriginalId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -424,14 +425,40 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
     try {
       setProcessingOriginalId(entry.originalId);
-      await restoreDeletedMember(entry.originalId);
-      setRecycleBin((prev) => prev.filter((e) => e.originalId !== entry.originalId));
-      alert(`✅ Success: Member "${name}" has been restored to the active directory!`);
-      onRefreshData();
+      const restored = await restoreDeletedMember(entry.originalId, entry.member);
+      if (restored) {
+        setRecycleBin((prev) => prev.filter((e) => e.originalId !== entry.originalId && e.member.id !== entry.member.id));
+        alert(`✅ Success: Member "${name}" has been restored to the active directory!`);
+        onRefreshData();
+      } else {
+        alert(`❌ Error: Member "${name}" could not be restored.`);
+      }
     } catch (err: any) {
       alert(`❌ Error restoring member: ${err.message || "Failed to restore"}`);
     } finally {
       setProcessingOriginalId(null);
+    }
+  };
+
+  const handleRestoreAll = async () => {
+    if (recycleBin.length === 0) return;
+    const confirmed = window.confirm(
+      `🔄 RESTORE ALL MEMBERS (Windows Recovery Model):\n\nDo you want to restore all ${recycleBin.length} deleted member records back into the active Member Directory?\n\nThey will all immediately return to the directory, celebrants, and event RSVPs.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsRestoringAll(true);
+      for (const entry of recycleBin) {
+        await restoreDeletedMember(entry.originalId, entry.member);
+      }
+      setRecycleBin([]);
+      alert(`✅ Success: All staged deleted member records have been restored to the active directory!`);
+      onRefreshData();
+    } catch (err: any) {
+      alert(`❌ Error restoring all: ${err.message || "Failed to restore"}`);
+    } finally {
+      setIsRestoringAll(false);
     }
   };
 
@@ -1561,17 +1588,32 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 </div>
               </div>
 
-              {/* Windows "Empty Recycle Bin" Global Button */}
-              <button
-                type="button"
-                onClick={handleEmptyRecycleBin}
-                disabled={isPurgingAll || recycleBin.length === 0}
-                className="w-full sm:w-auto px-4 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-2 cursor-pointer shadow-sm border border-rose-500/30 disabled:opacity-40 disabled:pointer-events-none shrink-0"
-                title="Permanently purge all staged deleted member records"
-              >
-                <Trash2 className={`w-4 h-4 ${isPurgingAll ? "animate-bounce" : ""}`} />
-                <span>{isPurgingAll ? "Purging All..." : "Empty Recycle Bin"}</span>
-              </button>
+              {/* Windows Recycle Bin Global Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto shrink-0">
+                {/* Windows "Restore All Items" Button */}
+                <button
+                  type="button"
+                  onClick={handleRestoreAll}
+                  disabled={isRestoringAll || isPurgingAll || recycleBin.length === 0}
+                  className="flex-1 sm:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-2 cursor-pointer shadow-sm border border-emerald-500/30 disabled:opacity-40 disabled:pointer-events-none"
+                  title="Restore all staged deleted members back to active directory"
+                >
+                  <RotateCcw className={`w-4 h-4 ${isRestoringAll ? "animate-spin" : ""}`} />
+                  <span>{isRestoringAll ? "Restoring All..." : "Restore All Items"}</span>
+                </button>
+
+                {/* Windows "Empty Recycle Bin" Global Button */}
+                <button
+                  type="button"
+                  onClick={handleEmptyRecycleBin}
+                  disabled={isPurgingAll || isRestoringAll || recycleBin.length === 0}
+                  className="flex-1 sm:flex-none px-4 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-2 cursor-pointer shadow-sm border border-rose-500/30 disabled:opacity-40 disabled:pointer-events-none"
+                  title="Permanently purge all staged deleted member records"
+                >
+                  <Trash2 className={`w-4 h-4 ${isPurgingAll ? "animate-bounce" : ""}`} />
+                  <span>{isPurgingAll ? "Purging All..." : "Empty Recycle Bin"}</span>
+                </button>
+              </div>
             </div>
 
             {/* Status Summary Banner */}

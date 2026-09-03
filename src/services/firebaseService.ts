@@ -700,38 +700,51 @@ export class FirebaseSyncManager {
   /**
    * Restores a member from the recycle bin back to the active members collection.
    */
-  public static async restoreMemberFromRecycleBin(originalId: string): Promise<Member | null> {
+  public static async restoreMemberFromRecycleBin(originalId: string, memberObj?: Member): Promise<Member | null> {
     try {
-      // 1. Get from Firestore deleted_members
-      const docRef = doc(db, "deleted_members", originalId);
-      const snap = await getDoc(docRef);
-      let memberToRestore: Member | null = null;
+      let memberToRestore: Member | null = memberObj || null;
 
-      if (snap.exists()) {
-        const data = snap.data() as DeletedMemberEntry;
-        memberToRestore = data.member;
-      } else {
-        const localEntry = AppStateManager.getRecycleBin().find((e) => e.originalId === originalId);
+      // 1. Get from Firestore deleted_members if not provided
+      const docRef = doc(db, "deleted_members", originalId);
+      if (!memberToRestore) {
+        try {
+          const snap = await getDoc(docRef);
+          if (snap.exists()) {
+            const data = snap.data() as DeletedMemberEntry;
+            memberToRestore = data.member;
+          }
+        } catch {}
+      }
+
+      // 2. Fallback to local recycle bin
+      if (!memberToRestore) {
+        const localEntry = AppStateManager.getRecycleBin().find((e) => e.originalId === originalId || e.member.id === originalId);
         if (localEntry) memberToRestore = localEntry.member;
       }
 
+      // 3. Update local state and purge blacklist FIRST so UI becomes active immediately
+      const restoredLocal = AppStateManager.restoreMember(originalId, memberToRestore || undefined);
+      if (restoredLocal) memberToRestore = restoredLocal;
+
       if (!memberToRestore) return null;
 
-      // 2. Save back to active Firestore members
+      // 4. Save back to active Firestore members collection
       await this.saveMember(memberToRestore);
 
-      // 3. Remove from Firestore deleted_members
+      // 5. Remove from Firestore deleted_members collection
       try {
         await deleteDoc(docRef);
       } catch {}
-
-      // 4. Update local state
-      AppStateManager.restoreMember(originalId);
+      if (memberToRestore.id && memberToRestore.id !== originalId) {
+        try {
+          await deleteDoc(doc(db, "deleted_members", memberToRestore.id));
+        } catch {}
+      }
 
       return memberToRestore;
     } catch (err) {
       logger.error("Failed to restore member from recycle bin", err);
-      return AppStateManager.restoreMember(originalId);
+      return AppStateManager.restoreMember(originalId, memberObj);
     }
   }
 

@@ -92,13 +92,26 @@ export class AppStateManager {
     } catch {}
   }
 
-  public static unmarkMemberAsDeleted(memberId: string, email?: string, phone?: string): void {
+  public static unmarkMemberAsDeleted(memberId?: string, email?: string, phone?: string, whatsapp?: string): void {
     try {
       const set = this.getDeletedMemberIds();
-      if (memberId) set.delete(memberId);
-      if (email && email.trim()) set.delete(`email:${email.trim().toLowerCase()}`);
-      if (phone && phone.trim()) set.delete(`phone:${phone.trim()}`);
-      localStorage.setItem(LOCAL_STORAGE_KEY_DELETED_MEMBERS, JSON.stringify([...set]));
+      const cleanEmail = email?.trim().toLowerCase();
+      const cleanPhone = phone?.trim().replace(/\D/g, "");
+      const cleanWhatsapp = whatsapp?.trim().replace(/\D/g, "");
+
+      const newSet = new Set<string>();
+      for (const item of set) {
+        if (memberId && item === memberId) continue;
+        if (cleanEmail && (item === `email:${cleanEmail}` || item.toLowerCase() === cleanEmail || item.toLowerCase().includes(cleanEmail))) continue;
+        
+        // Check phone
+        const itemDigits = item.replace(/\D/g, "");
+        if (cleanPhone && (item === `phone:${phone}` || (itemDigits.length >= 7 && (itemDigits.endsWith(cleanPhone.slice(-7)) || cleanPhone.endsWith(itemDigits.slice(-7)))))) continue;
+        if (cleanWhatsapp && (item === `phone:${whatsapp}` || (itemDigits.length >= 7 && (itemDigits.endsWith(cleanWhatsapp.slice(-7)) || cleanWhatsapp.endsWith(itemDigits.slice(-7)))))) continue;
+
+        newSet.add(item);
+      }
+      localStorage.setItem(LOCAL_STORAGE_KEY_DELETED_MEMBERS, JSON.stringify([...newSet]));
     } catch {}
   }
 
@@ -107,11 +120,20 @@ export class AppStateManager {
       const raw = localStorage.getItem(LOCAL_STORAGE_KEY_RECYCLE_BIN);
       let list: DeletedMemberEntry[] = raw ? JSON.parse(raw) : [];
 
-      // Auto-populate from deleted blacklist & INITIAL_MEMBERS if not already present
+      // Auto-populate from deleted blacklist & known members if not already present
       const deletedIds = this.getDeletedMemberIds();
       const existingIds = new Set(list.map((e) => e.originalId));
 
-      INITIAL_MEMBERS.forEach((m) => {
+      const allKnownCandidates: Member[] = [...INITIAL_MEMBERS];
+      try {
+        const rawMembers = localStorage.getItem(LOCAL_STORAGE_KEY_MEMBERS);
+        if (rawMembers) {
+          const parsed = JSON.parse(rawMembers);
+          if (Array.isArray(parsed)) allKnownCandidates.push(...parsed);
+        }
+      } catch {}
+
+      allKnownCandidates.forEach((m) => {
         const isBlacklisted =
           deletedIds.has(m.id) ||
           (m.email && deletedIds.has(`email:${m.email.toLowerCase()}`)) ||
@@ -159,30 +181,50 @@ export class AppStateManager {
     } catch {}
   }
 
-  public static restoreMember(originalId: string): Member | null {
+  public static restoreMember(originalId: string, memberObj?: Member): Member | null {
     try {
-      const recycleBin = this.getRecycleBin();
-      const targetEntry = recycleBin.find((e) => e.originalId === originalId);
-      if (!targetEntry) return null;
+      let targetMember: Member | null = memberObj || null;
 
-      // 1. Remove from deleted blacklist
+      if (!targetMember) {
+        const recycleBin = this.getRecycleBin();
+        const targetEntry = recycleBin.find((e) => e.originalId === originalId || e.member.id === originalId);
+        if (targetEntry) {
+          targetMember = targetEntry.member;
+        } else {
+          // Check INITIAL_MEMBERS fallback
+          const initialMatch = INITIAL_MEMBERS.find((m) => m.id === originalId);
+          if (initialMatch) targetMember = initialMatch;
+        }
+      }
+
+      if (!targetMember) return null;
+
+      // 1. Thoroughly remove from deleted blacklist
       this.unmarkMemberAsDeleted(
-        targetEntry.member.id,
-        targetEntry.member.email,
-        targetEntry.member.phoneNumber
+        targetMember.id,
+        targetMember.email,
+        targetMember.phoneNumber,
+        targetMember.whatsappNumber
       );
+      if (originalId && originalId !== targetMember.id) {
+        this.unmarkMemberAsDeleted(originalId);
+      }
 
-      // 2. Remove from recycle bin
+      // 2. Remove from recycle bin storage
       this.removeFromRecycleBin(originalId);
+      this.removeFromRecycleBin(targetMember.id);
 
-      // 3. Save back to active members
-      const activeMembers = this.getMembers().filter((m) => m.id !== targetEntry.member.id);
-      activeMembers.unshift(targetEntry.member);
+      // 3. Save back to active members in localStorage
+      const activeMembers = this.getMembers().filter(
+        (m) => m.id !== targetMember!.id && (!targetMember!.email || m.email?.toLowerCase() !== targetMember!.email.toLowerCase())
+      );
+      activeMembers.unshift(targetMember);
       this.saveMembers(activeMembers);
 
       this.notify();
-      return targetEntry.member;
-    } catch {
+      return targetMember;
+    } catch (err) {
+      logger.error("Error in AppStateManager.restoreMember:", err);
       return null;
     }
   }
