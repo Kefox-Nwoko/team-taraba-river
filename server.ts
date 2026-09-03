@@ -1169,15 +1169,16 @@ app.post("/api/admin/members/restore", conditionalAuth, conditionalRequireAdmin,
     }
 
     const deletedDocRef = db.collection("deleted_members").doc(originalId);
-    const deletedDocSnap = await deletedDocRef.get();
+    let memberToRestore: Member | null = member || null;
 
-    if (!deletedDocSnap.exists) {
-      res.status(404).json({ error: "Deleted member entry not found in recycle bin." });
-      return;
-    }
-
-    const deletedData = deletedDocSnap.data() as any;
-    const memberToRestore: Member = member || deletedData.member;
+    try {
+      const deletedDocSnap = await deletedDocRef.get();
+      if (deletedDocSnap.exists) {
+        const deletedData = deletedDocSnap.data() as any;
+        if (!memberToRestore) memberToRestore = deletedData.member;
+        await deletedDocRef.delete().catch(() => {});
+      }
+    } catch {}
 
     if (!memberToRestore || !memberToRestore.id) {
       res.status(400).json({ error: "Invalid member data for restoration." });
@@ -1185,11 +1186,6 @@ app.post("/api/admin/members/restore", conditionalAuth, conditionalRequireAdmin,
     }
 
     const membersCol = db.collection(COLLECTIONS.members);
-    const existingSnap = await membersCol.doc(memberToRestore.id).get();
-    if (existingSnap.exists) {
-      await existingSnap.ref.delete();
-    }
-
     await membersCol.doc(memberToRestore.id).set(memberToRestore);
     _membersCache = null;
 

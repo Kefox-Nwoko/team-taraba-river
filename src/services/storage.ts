@@ -101,13 +101,27 @@ export class AppStateManager {
 
       const newSet = new Set<string>();
       for (const item of set) {
-        if (memberId && item === memberId) continue;
-        if (cleanEmail && (item === `email:${cleanEmail}` || item.toLowerCase() === cleanEmail || item.toLowerCase().includes(cleanEmail))) continue;
+        // Direct ID match
+        if (memberId && (item === memberId || item === `mem_${memberId}` || item === `mem_csv_${memberId}`)) continue;
         
-        // Check phone
+        // Email match
+        if (cleanEmail) {
+          const itemEmail = item.startsWith("email:") ? item.slice(6).trim().toLowerCase() : item.trim().toLowerCase();
+          if (itemEmail === cleanEmail) continue;
+        }
+        
+        // Phone / Whatsapp digits match
         const itemDigits = item.replace(/\D/g, "");
-        if (cleanPhone && (item === `phone:${phone}` || (itemDigits.length >= 7 && (itemDigits.endsWith(cleanPhone.slice(-7)) || cleanPhone.endsWith(itemDigits.slice(-7)))))) continue;
-        if (cleanWhatsapp && (item === `phone:${whatsapp}` || (itemDigits.length >= 7 && (itemDigits.endsWith(cleanWhatsapp.slice(-7)) || cleanWhatsapp.endsWith(itemDigits.slice(-7)))))) continue;
+        if (item.startsWith("phone:") || itemDigits.length >= 6) {
+          if (cleanPhone && cleanPhone.length >= 6) {
+            const pSuffix = cleanPhone.slice(-7);
+            if (itemDigits.endsWith(pSuffix) || cleanPhone.endsWith(itemDigits.slice(-7))) continue;
+          }
+          if (cleanWhatsapp && cleanWhatsapp.length >= 6) {
+            const wSuffix = cleanWhatsapp.slice(-7);
+            if (itemDigits.endsWith(wSuffix) || cleanWhatsapp.endsWith(itemDigits.slice(-7))) continue;
+          }
+        }
 
         newSet.add(item);
       }
@@ -207,19 +221,33 @@ export class AppStateManager {
         targetMember.whatsappNumber
       );
       if (originalId && originalId !== targetMember.id) {
-        this.unmarkMemberAsDeleted(originalId);
+        this.unmarkMemberAsDeleted(
+          originalId,
+          targetMember.email,
+          targetMember.phoneNumber,
+          targetMember.whatsappNumber
+        );
       }
 
       // 2. Remove from recycle bin storage
       this.removeFromRecycleBin(originalId);
       this.removeFromRecycleBin(targetMember.id);
 
-      // 3. Save back to active members in localStorage
-      const activeMembers = this.getMembers().filter(
+      // 3. Put member back into active members list in localStorage
+      let rawMembers: Member[] = [];
+      try {
+        const raw = localStorage.getItem(LOCAL_STORAGE_KEY_MEMBERS);
+        if (raw) rawMembers = JSON.parse(raw);
+      } catch {}
+      if (!Array.isArray(rawMembers) || rawMembers.length === 0) {
+        rawMembers = [...INITIAL_MEMBERS];
+      }
+
+      const activeMembers = rawMembers.filter(
         (m) => m.id !== targetMember!.id && (!targetMember!.email || m.email?.toLowerCase() !== targetMember!.email.toLowerCase())
       );
       activeMembers.unshift(targetMember);
-      this.saveMembers(activeMembers);
+      localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(activeMembers));
 
       this.notify();
       return targetMember;

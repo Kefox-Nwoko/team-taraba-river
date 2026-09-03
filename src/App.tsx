@@ -288,7 +288,11 @@ export default function App() {
     async function initData() {
       try {
         const seededMembers = await FirebaseSyncManager.seedCSVDataIfNeeded();
-        const cleanMembers = AppStateManager.filterDeleted(seededMembers);
+        const localMembers = AppStateManager.getMembers();
+        const memberMap = new Map<string, Member>();
+        for (const m of localMembers) { if (m?.id) memberMap.set(m.id, m); }
+        for (const m of seededMembers) { if (m?.id) memberMap.set(m.id, m); }
+        const cleanMembers = AppStateManager.filterDeleted(Array.from(memberMap.values()));
         setMembers(cleanMembers);
         AppStateManager.saveMembers(cleanMembers);
 
@@ -303,7 +307,11 @@ export default function App() {
 
     const unsubMembers = FirebaseSyncManager.subscribeMembers((updatedList) => {
       if (updatedList) {
-        const clean = AppStateManager.filterDeleted(updatedList);
+        const localMembers = AppStateManager.getMembers();
+        const memberMap = new Map<string, Member>();
+        for (const m of localMembers) { if (m?.id) memberMap.set(m.id, m); }
+        for (const m of updatedList) { if (m?.id) memberMap.set(m.id, m); }
+        const clean = AppStateManager.filterDeleted(Array.from(memberMap.values()));
         setMembers(clean);
         AppStateManager.saveMembers(clean);
       }

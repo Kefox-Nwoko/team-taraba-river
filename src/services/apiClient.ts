@@ -65,10 +65,19 @@ export async function fetchMembers(): Promise<Member[]> {
     }
   } catch {}
 
-  // Direct Firestore fallback
+  // Direct Firestore fallback merged with local/seed members
   try {
     const firestoreMembers = await FirebaseSyncManager.seedCSVDataIfNeeded();
-    if (firestoreMembers.length > 0) return AppStateManager.filterDeleted(firestoreMembers);
+    const localMembers = AppStateManager.getMembers();
+    const memberMap = new Map<string, Member>();
+    for (const m of localMembers) {
+      if (m && m.id) memberMap.set(m.id, m);
+    }
+    for (const m of firestoreMembers) {
+      if (m && m.id) memberMap.set(m.id, m);
+    }
+    const merged = Array.from(memberMap.values());
+    if (merged.length > 0) return AppStateManager.filterDeleted(merged);
   } catch {}
 
   return AppStateManager.getMembers();
@@ -107,21 +116,23 @@ export async function fetchRecycleBin(): Promise<DeletedMemberEntry[]> {
 }
 
 export async function restoreDeletedMember(originalId: string, memberObj?: Member): Promise<Member | null> {
+  let restored = await FirebaseSyncManager.restoreMemberFromRecycleBin(originalId, memberObj);
+
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(apiUrl("/api/admin/members/restore"), {
       method: "POST",
       headers,
-      body: JSON.stringify({ originalId, member: memberObj }),
+      body: JSON.stringify({ originalId, member: restored || memberObj }),
     });
     const contentType = res.headers.get("content-type") || "";
     if (res.ok && contentType.includes("application/json")) {
       const data = await res.json();
-      if (data && data.member) return data.member;
+      if (data && data.member) restored = data.member;
     }
   } catch {}
 
-  return await FirebaseSyncManager.restoreMemberFromRecycleBin(originalId, memberObj);
+  return restored;
 }
 
 export async function purgeDeletedMember(originalId: string): Promise<void> {
