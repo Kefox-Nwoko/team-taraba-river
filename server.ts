@@ -1534,11 +1534,40 @@ app.post("/api/admin/reset-data", conditionalAuth, conditionalRequireAdmin, asyn
       await d.ref.delete();
     }
 
-    // 3. (Portal visits intentionally left untouched)
+    // 3. (Portal visits intentionally left untouched in general reset)
     res.json({ success: true, message: "System engagement points and logs successfully reset to 0." });
   } catch (error: any) {
       serverLogger.error("Reset data error", error as Error);
     res.status(500).json({ error: error.message || "Failed to reset data." });
+  }
+});
+
+app.post("/api/admin/reset-visits", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
+  try {
+    if (isFirestoreAvailable() && db) {
+      await db.collection("system").doc("metrics").set(
+        {
+          totalVisits: 0,
+          lastVisitAt: FieldValue.serverTimestamp(),
+          lastRecordedSession: Date.now(),
+          latestUniqueUser: "Community Member",
+        },
+        { merge: true }
+      );
+      await db.collection("systemConfig").doc("visit_metrics").set(
+        {
+          totalVisits: 0,
+          lastVisitTimestamp: new Date().toISOString(),
+          latestUniqueUser: "Community Member",
+        },
+        { merge: true }
+      );
+    }
+    serverLogger.info("[Admin] Portal visits count reset to 0 by admin");
+    res.json({ success: true, message: "Home page portal visits count successfully reset to 0." });
+  } catch (err: any) {
+    serverLogger.error("[Admin] Failed to reset portal visits", err);
+    res.status(500).json({ error: err.message || "Failed to reset portal visits." });
   }
 });
 

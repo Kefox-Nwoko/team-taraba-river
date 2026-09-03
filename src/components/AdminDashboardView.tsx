@@ -9,6 +9,7 @@ import {
   triggerCloudSyncAll,
   triggerYouTubeBackSync,
   resetSystemData,
+  resetPortalVisits,
   deleteEvent as deleteEventApi,
 } from "../services/apiClient";
 import { db } from "../lib/firebase";
@@ -29,6 +30,7 @@ import {
   Calendar,
   Plus,
   RefreshCw,
+  RotateCcw,
   HelpCircle,
   UserX,
   ArrowLeft,
@@ -64,6 +66,7 @@ interface AdminDashboardViewProps {
   members: Member[];
   currentUser: Member | null;
   events: GroupEvent[];
+  totalVisits?: number;
   onRefreshData: () => void;
   onEditMember: (member: Member) => void;
   onRegisterClick: () => void;
@@ -358,6 +361,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   members,
   currentUser,
   events,
+  totalVisits = 0,
   onRefreshData,
   onEditMember,
   onRegisterClick,
@@ -761,6 +765,26 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
+  const [isResettingVisits, setIsResettingVisits] = useState(false);
+
+  const handleResetPortalVisits = async () => {
+    const confirmed = window.confirm(
+      `⚠️ WARNING: This will permanently reset the Home Page Portal Visits counter (currently ${totalVisits.toLocaleString()}) back to 0.\n\nAre you sure you want to proceed?`
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsResettingVisits(true);
+      const res = await resetPortalVisits();
+      alert(`⚡ Success: ${res.message || "Home page portal visits count reset to 0!"}`);
+      onRefreshData();
+    } catch (e: any) {
+      alert(`❌ Error: ${e.message || "Failed to reset portal visits."}`);
+    } finally {
+      setIsResettingVisits(false);
+    }
+  };
+
   const topActiveMembers = [...members]
     .filter((m) => (m.activityPoints || 0) > 0)
     .sort((a, b) => (b.activityPoints || 0) - (a.activityPoints || 0))
@@ -819,16 +843,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               <span className="truncate">Events</span>
             </button>
 
-            <button onClick={() => setActiveTab("analytics")}
-              className={`px-3 py-2 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer shrink-0 min-h-[40px] ${
-                activeTab === "analytics"
-                  ? "bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-bold"
-                  : "bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-              }`}
-            >
-              <Award className="w-4 h-4 sm:w-4.5 sm:h-4.5 shrink-0" />
-              <span className="truncate">Top Engagement</span>
-            </button>
+
 
             <button onClick={() => setActiveTab("moderation")}
               className={`relative px-3 py-2 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer shrink-0 min-h-[40px] ${
@@ -1049,52 +1064,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
       )}
 
-      {/* TAB 2: DATA VISUALIZATION */}
-      {activeTab === "analytics" && (
-        <div className="space-y-6 font-normal">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 py-6 sm:py-8 text-slate-900 dark:text-slate-100 space-y-4 transition-colors border-b border-slate-200 dark:border-slate-800">
-              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-                <div>
-                  <h3 className="text-sm text-slate-900 dark:text-white flex items-center space-x-2 font-normal">
-                    <Award className="w-5 h-5 text-amber-500" />
-                    <span>Top 10 Active Members Engagement</span>
-                  </h3>
-                </div>
-                <button
-                  onClick={handleResetSystemData}
-                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-normal rounded-xl transition flex items-center space-x-1.5 cursor-pointer shadow-sm active:scale-95 border border-red-500/20"
-                  title="Wipe database and start with a fresh blank slate"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Reset Data</span>
-                </button>
-              </div>
-              <div className="space-y-4 pt-2">
-                {topActiveMembers.length > 0 ? (
-                  topActiveMembers.map((m, idx) => (
-                    <div key={m.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800">
-                      <div className="flex items-center space-x-3">
-                        <span className="w-8 h-8 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center text-sm font-normal">
-                          #{idx + 1}
-                        </span>
-                        <span className="text-sm text-slate-900 dark:text-white font-normal">{formatMemberDisplayName(m.title, m.fullName)}</span>
-                      </div>
-                      <span className="text-sm text-amber-600 dark:text-amber-400 font-normal">
-                        {m.activityPoints || 0} Points
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 text-center text-sm text-slate-500">
-                    No member engagement recorded yet.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* TAB 3: PHOTO MODERATION */}
       {activeTab === "moderation" && (
@@ -1197,7 +1167,112 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
       {/* TAB 4: DEVELOPER (Highly Restricted - kefox.nwoko@gmail.com only) */}
       {activeTab === "developer" && isKefoxDeveloper && (
-        <div className="py-2 sm:py-4 space-y-6 font-normal animate-fadeIn">
+        <div className="py-2 sm:py-4 space-y-8 font-normal animate-fadeIn">
+
+          {/* ── CARD 1: MEMBER ENGAGEMENT & PLATFORM TRAFFIC CONSOLE ── */}
+          <div className="bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-6 shadow-sm">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
+              <div className="flex items-start sm:items-center space-x-3.5 min-w-0 w-full sm:w-auto">
+                <div className="p-3 bg-gradient-to-br from-amber-500 to-amber-700 text-white rounded-2xl shadow-sm shrink-0">
+                  <Award className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base sm:text-lg text-slate-900 dark:text-white font-semibold leading-snug break-words">
+                    Member Engagement &amp; Platform Traffic Console
+                  </h3>
+                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    Manage member activity points and reset home page portal visit metrics
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* ── SECTION: HOME PAGE PORTAL VISITS DISPLAY & 2ND RESET BUTTON ── */}
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 p-4 sm:p-5 bg-white dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
+              <div className="flex items-center space-x-4">
+                {/* Visual Portal Visits Tile exactly matching Home Page Screenshot */}
+                <div className="flex flex-col items-center justify-center p-3 bg-slate-900 dark:bg-black rounded-2xl border border-slate-800 text-center min-w-[96px] shadow-md shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-purple-900/60 border border-purple-500/40 flex items-center justify-center mb-1.5 shadow-xs">
+                    <Eye className="w-5 h-5 text-purple-300" />
+                  </div>
+                  <span className="text-[11px] font-medium text-slate-300">Portal Visits</span>
+                  <span className="text-2xl font-bold text-white tracking-tight mt-0.5">
+                    {(totalVisits || 0).toLocaleString()}
+                  </span>
+                </div>
+                <div>
+                  <h4 className="text-sm sm:text-base text-slate-900 dark:text-white font-semibold leading-snug">
+                    Home Page Portal Visits Counter
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-lg leading-relaxed">
+                    This counter reflects the genuine community visitor traffic displayed publicly in the Home page Community Impact section. Use the button on the right to reset this counter back to 0.
+                  </p>
+                </div>
+              </div>
+
+              {/* 2nd Reset Button: Dedicated to Portal Visits */}
+              <button
+                type="button"
+                onClick={handleResetPortalVisits}
+                disabled={isResettingVisits}
+                className="w-full md:w-auto px-4 py-2.5 bg-purple-700 hover:bg-purple-800 active:scale-95 text-white text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-2 cursor-pointer shadow-sm border border-purple-500/30 disabled:opacity-50 shrink-0"
+                title="Reset Home Page Portal Visits Counter to 0"
+              >
+                <RotateCcw className={`w-4 h-4 ${isResettingVisits ? "animate-spin" : ""}`} />
+                <span>{isResettingVisits ? "Resetting Visits..." : "Reset Portal Visits Counter"}</span>
+              </button>
+            </div>
+
+            {/* ── SECTION: TOP 10 ACTIVE MEMBERS ENGAGEMENT & 1ST RESET BUTTON ── */}
+            <div className="space-y-4 p-4 sm:p-5 bg-white dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800/60 pb-3">
+                <div>
+                  <h4 className="text-sm sm:text-base text-slate-900 dark:text-white font-semibold flex items-center space-x-2">
+                    <Award className="w-4 h-4 text-amber-500" />
+                    <span>Top 10 Active Members Engagement Leaderboard</span>
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Member activity points accumulated through event RSVPs, uploads, research, and profile updates
+                  </p>
+                </div>
+                {/* 1st Reset Button: Engagement Points */}
+                <button
+                  type="button"
+                  onClick={handleResetSystemData}
+                  className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-xl transition flex items-center space-x-1.5 cursor-pointer shadow-sm active:scale-95 border border-red-500/20 shrink-0"
+                  title="Wipe database activity points and start with a fresh blank slate"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Reset Engagement Points</span>
+                </button>
+              </div>
+
+              <div className="space-y-2.5 pt-1">
+                {topActiveMembers.length > 0 ? (
+                  topActiveMembers.map((m, idx) => (
+                    <div key={m.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200/70 dark:border-slate-800/70">
+                      <div className="flex items-center space-x-3">
+                        <span className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center text-xs font-bold">
+                          #{idx + 1}
+                        </span>
+                        <span className="text-xs sm:text-sm text-slate-900 dark:text-white font-medium">{formatMemberDisplayName(m.title, m.fullName)}</span>
+                      </div>
+                      <span className="text-xs sm:text-sm text-amber-600 dark:text-amber-400 font-semibold">
+                        {m.activityPoints || 0} Points
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-4 bg-slate-50 dark:bg-slate-950 rounded-xl border border-slate-200/70 dark:border-slate-800/70 text-center text-xs sm:text-sm text-slate-500">
+                    No member engagement recorded yet.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* ── CARD 2: OFFICIAL ADMIN CLOUD MEDIA & YOUTUBE INTEGRATION HUB ── */}
           <div className="bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-6 shadow-sm">
             
             {/* ── CARD HEADER ── */}

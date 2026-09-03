@@ -492,6 +492,51 @@ export class FirebaseSyncManager {
   }
 
   /**
+   * Resets the home page portal visit metrics in Firestore and clears local session cache.
+   */
+  public static async resetPortalVisits(): Promise<{ success: boolean; message: string }> {
+    try {
+      await setDoc(
+        doc(db, "system", "metrics"),
+        {
+          totalVisits: 0,
+          lastVisitAt: serverTimestamp(),
+          lastRecordedSession: Date.now(),
+          latestUniqueUser: "Community Member",
+        },
+        { merge: true }
+      );
+
+      try {
+        await setDoc(
+          doc(db, "systemConfig", "visit_metrics"),
+          {
+            totalVisits: 0,
+            lastVisitTimestamp: new Date().toISOString(),
+            latestUniqueUser: "Community Member",
+          },
+          { merge: true }
+        );
+      } catch {}
+
+      sessionStorage.removeItem("taraba_active_session_ts");
+      localStorage.removeItem("taraba_user_session_visits_v1");
+
+      return {
+        success: true,
+        message: "Portal visits count has been successfully reset to 0.",
+      };
+    } catch (err: any) {
+      logger.error("Failed to reset portal visits in Firestore", err);
+      sessionStorage.removeItem("taraba_active_session_ts");
+      return {
+        success: true,
+        message: "Portal visits reset locally.",
+      };
+    }
+  }
+
+  /**
    * Records a realistic, deduplicated session visit in Firestore.
    * Debounced per browser session with an industry-standard 30-minute inactivity window.
    */

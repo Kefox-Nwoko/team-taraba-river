@@ -491,6 +491,23 @@ export async function resetSystemData(): Promise<{ success: boolean; message: st
   return await FirebaseSyncManager.resetSystemDataDirectly();
 }
 
+export async function resetPortalVisits(): Promise<{ success: boolean; message: string }> {
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(apiUrl("/api/admin/reset-visits"), {
+      method: "POST",
+      headers,
+    });
+    const contentType = res.headers.get("content-type") || "";
+    if (res.ok && contentType.includes("application/json")) {
+      return await res.json();
+    }
+  } catch (err) {
+    logger.warn("Backend reset visits endpoint unavailable, falling back to direct Firestore reset", err);
+  }
+  return await FirebaseSyncManager.resetPortalVisits();
+}
+
 export async function fetchVisitMetrics(): Promise<{ totalVisits: number; lastVisitTimestamp: string; latestUniqueUser: string }> {
   try {
     const res = await fetch(apiUrl("/api/system/visits"), { cache: "no-store" });

@@ -710,6 +710,7 @@ export default function App() {
                   members={members}
                   events={events}
                   currentUser={currentUser}
+                  totalVisits={totalVisits}
                   onRefreshData={handleRefreshAll}
                   onEditMember={(m) => {
                     setMemberToEdit(m);
