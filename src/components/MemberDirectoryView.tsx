@@ -136,14 +136,18 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
   const deferredSearch = useDeferredValue(searchTerm);
   const localFiltered = useMemo(() => {
     const term = deferredSearch.trim().toLowerCase();
-    if (!term) return members;
-    return members.filter((m) => {
+    const cleanList = AppStateManager.filterDeleted(members);
+    if (!term) return cleanList;
+    return cleanList.filter((m) => {
       const searchable = getMemberSearchableText(m);
       return searchable.includes(term);
     });
   }, [members, deferredSearch]);
 
-  const displayedMembers = aiResults !== null ? aiResults : localFiltered;
+  const displayedMembers = useMemo(() => {
+    const raw = aiResults !== null ? aiResults : localFiltered;
+    return AppStateManager.filterDeleted(raw);
+  }, [aiResults, localFiltered]);
 
   const handleConfirmDelete = async () => {
     if (!memberToDelete) return;
@@ -156,17 +160,11 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
         await deleteMember(target.id, target);
       }
       setMemberToDelete(null);
-      if (onRefreshData) {
-        onRefreshData();
-      }
     } catch (err) {
       logger.error("Failed to delete member", err);
       // Ensure local state and blacklist are updated so deleted member is removed from screen
-      AppStateManager.deleteMember(target.id);
+      AppStateManager.deleteMember(target.id, target.email, target.phoneNumber);
       setMemberToDelete(null);
-      if (onRefreshData) {
-        onRefreshData();
-      }
     } finally {
       setIsDeleting(false);
     }

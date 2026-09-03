@@ -59,7 +59,7 @@ export async function fetchMembers(): Promise<Member[]> {
     if (res.ok && contentType.includes("application/json")) {
       const data = await res.json();
       if (Array.isArray(data.members) && data.members.length > 0) {
-        return data.members;
+        return AppStateManager.filterDeleted(data.members);
       }
     }
   } catch {}
@@ -67,13 +67,16 @@ export async function fetchMembers(): Promise<Member[]> {
   // Direct Firestore fallback
   try {
     const firestoreMembers = await FirebaseSyncManager.seedCSVDataIfNeeded();
-    if (firestoreMembers.length > 0) return firestoreMembers;
+    if (firestoreMembers.length > 0) return AppStateManager.filterDeleted(firestoreMembers);
   } catch {}
 
   return AppStateManager.getMembers();
 }
 
 export async function deleteMember(memberId: string, member?: Member): Promise<void> {
+  // Always mark permanently deleted in local storage first
+  AppStateManager.deleteMember(memberId, member?.email, member?.phoneNumber);
+
   try {
     const headers = await getAuthHeaders();
     await fetch(apiUrl(`/api/members/${memberId}`), {
@@ -83,7 +86,6 @@ export async function deleteMember(memberId: string, member?: Member): Promise<v
   } catch {}
 
   await FirebaseSyncManager.deleteMember(memberId, member?.email, member?.phoneNumber);
-  AppStateManager.deleteMember(memberId);
 }
 
 export async function loginMember(

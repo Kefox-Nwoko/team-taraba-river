@@ -149,7 +149,7 @@ export class FirebaseSyncManager {
           setDoc(doc(db, "members", clean.id), clean, { merge: true }).catch(() => {});
         }
       });
-      return firestoreMembers;
+      return AppStateManager.filterDeleted(firestoreMembers);
     } catch (err) {
       logger.warn("Firestore data fetch fallback", { error: err });
       return [];
@@ -164,8 +164,9 @@ export class FirebaseSyncManager {
           const raw = docSnap.data() as Member;
           list.push(sanitizeMemberRecord(raw));
         });
-        if (list.length > 0) {
-          onUpdate(list);
+        const cleanList = AppStateManager.filterDeleted(list);
+        if (cleanList.length > 0) {
+          onUpdate(cleanList);
         }
       });
     } catch (err) {

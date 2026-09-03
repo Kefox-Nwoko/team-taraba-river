@@ -7,7 +7,7 @@ import { isMemberCredentialMatch } from "../lib/authMatching";
 import { INITIAL_MEMBERS } from "../data/seedData";
 import { LogIn, UserPlus, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck, BookOpen } from "lucide-react";
 import { BRAND_LOGO, LOGIN_WALL_BG } from "../constants/assets";
-import { clientConfig } from "../lib/config";
+import { clientConfig, isAdminEmailClient } from "../lib/config";
 interface LoginGateProps {
   onLoginSuccess: (member: Member) => void;
   onOpenRegister: () => void;
@@ -105,7 +105,8 @@ export const LoginGate: React.FC<LoginGateProps> = ({
       }
 
       if (matched) {
-        const memberSession: Member = { ...matched, role: matched.role || "member" };
+        const isAdmin = isAdminEmailClient(matched.email) || matched.role === "admin";
+        const memberSession: Member = { ...matched, role: isAdmin ? "admin" : (matched.role || "member") };
         if (!memberSession.photoUrl) {
           const matchedPhoto = AppStateManager.findMatchingMember(memberSession);
           if (matchedPhoto && matchedPhoto.photoUrl) {

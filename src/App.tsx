@@ -291,8 +291,9 @@ export default function App() {
     async function initData() {
       try {
         const seededMembers = await FirebaseSyncManager.seedCSVDataIfNeeded();
-        setMembers(seededMembers);
-        AppStateManager.saveMembers(seededMembers);
+        const cleanMembers = AppStateManager.filterDeleted(seededMembers);
+        setMembers(cleanMembers);
+        AppStateManager.saveMembers(cleanMembers);
 
         const fetchedE = await fetchEvents();
         setEvents(fetchedE);
@@ -305,8 +306,9 @@ export default function App() {
 
     const unsubMembers = FirebaseSyncManager.subscribeMembers((updatedList) => {
       if (updatedList) {
-        setMembers(updatedList);
-        AppStateManager.saveMembers(updatedList);
+        const clean = AppStateManager.filterDeleted(updatedList);
+        setMembers(clean);
+        AppStateManager.saveMembers(clean);
       }
     });
 
@@ -354,8 +356,9 @@ export default function App() {
   const handleRefreshAll = async () => {
     try {
       const [m, e] = await Promise.all([fetchMembers(), fetchEvents()]);
-      setMembers(m);
-      AppStateManager.saveMembers(m);
+      const cleanMembers = AppStateManager.filterDeleted(m);
+      setMembers(cleanMembers);
+      AppStateManager.saveMembers(cleanMembers);
       setEvents(e);
       AppStateManager.saveEvents(e);
     } catch (err) {
@@ -365,10 +368,10 @@ export default function App() {
   };
 
   const handleDeleteMember = async (memberToDelete: Member) => {
-    // 1. Optimistically remove from state so the UI reflects the deletion immediately
-    setMembers((prev) => prev.filter((m) => m.id !== memberToDelete.id));
-    // 2. Permanently record in blacklist and local storage
-    AppStateManager.deleteMember(memberToDelete.id);
+    // 1. Immediately record in permanent blacklist (id, email, phone) so no event can bring it back
+    AppStateManager.deleteMember(memberToDelete.id, memberToDelete.email, memberToDelete.phoneNumber);
+    // 2. Optimistically remove from state so the UI reflects the deletion immediately
+    setMembers((prev) => AppStateManager.filterDeleted(prev).filter((m) => m.id !== memberToDelete.id));
     // 3. Clean up in Firestore and API
     try {
       await deleteMember(memberToDelete.id, memberToDelete);
