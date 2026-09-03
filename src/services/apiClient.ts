@@ -3,6 +3,7 @@ import {
   GroupEvent,
   PhotoApprovalRequest,
   AIQueryResponse,
+  DeletedMemberEntry,
 } from "../types";
 import { auth } from "../lib/firebase";
 import { logger } from "../lib/logger";
@@ -74,8 +75,21 @@ export async function fetchMembers(): Promise<Member[]> {
 }
 
 export async function deleteMember(memberId: string, member?: Member): Promise<void> {
-  // Always mark permanently deleted in local storage first
-  AppStateManager.deleteMember(memberId, member?.email, member?.phoneNumber);
+  // 1. Stage in local & persistent recycle bin
+  if (member) {
+    const entry: DeletedMemberEntry = {
+      originalId: memberId,
+      member,
+      deletedAt: new Date().toISOString(),
+      deletedBy: "Admin",
+      originalLocation: "Member Directory",
+    };
+    AppStateManager.addToRecycleBin(entry);
+    FirebaseSyncManager.addToRecycleBin(entry).catch(() => {});
+  }
+
+  // 2. Mark deleted in local storage
+  AppStateManager.deleteMember(memberId, member?.email, member?.phoneNumber, member);
 
   try {
     const headers = await getAuthHeaders();
@@ -86,6 +100,22 @@ export async function deleteMember(memberId: string, member?: Member): Promise<v
   } catch {}
 
   await FirebaseSyncManager.deleteMember(memberId, member?.email, member?.phoneNumber);
+}
+
+export async function fetchRecycleBin(): Promise<DeletedMemberEntry[]> {
+  return await FirebaseSyncManager.getRecycleBin();
+}
+
+export async function restoreDeletedMember(originalId: string): Promise<Member | null> {
+  return await FirebaseSyncManager.restoreMemberFromRecycleBin(originalId);
+}
+
+export async function purgeDeletedMember(originalId: string): Promise<void> {
+  await FirebaseSyncManager.purgeMemberFromRecycleBin(originalId);
+}
+
+export async function emptyRecycleBin(): Promise<void> {
+  await FirebaseSyncManager.emptyRecycleBin();
 }
 
 export async function loginMember(

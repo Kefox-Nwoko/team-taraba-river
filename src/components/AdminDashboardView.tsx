@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { logger } from "../lib/logger";
 import { clientConfig } from "../lib/config";
-import { Member, PhotoApprovalRequest, GroupEvent } from "../types";
+import { Member, PhotoApprovalRequest, GroupEvent, DeletedMemberEntry } from "../types";
 import { MemberDirectoryView } from "./MemberDirectoryView";
 import { AppStateManager } from "../services/storage";
 import { FirebaseSyncManager } from "../services/firebaseService";
@@ -10,6 +10,10 @@ import {
   triggerYouTubeBackSync,
   resetSystemData,
   resetPortalVisits,
+  fetchRecycleBin,
+  restoreDeletedMember,
+  purgeDeletedMember,
+  emptyRecycleBin,
   deleteEvent as deleteEventApi,
 } from "../services/apiClient";
 import { db } from "../lib/firebase";
@@ -393,6 +397,81 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   // Developer access restriction guard
   const isKefoxDeveloper = currentUser?.email?.toLowerCase().trim() === 'kefox.nwoko@gmail.com';
+
+  // Recycle Bin State (Windows PC Model)
+  const [recycleBin, setRecycleBin] = useState<DeletedMemberEntry[]>(() => AppStateManager.getRecycleBin());
+  const [isPurgingAll, setIsPurgingAll] = useState(false);
+  const [processingOriginalId, setProcessingOriginalId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeTab === "developer") {
+      FirebaseSyncManager.getRecycleBin().then((entries) => {
+        if (entries.length > 0) setRecycleBin(entries);
+      });
+      const unsub = FirebaseSyncManager.subscribeRecycleBin((entries) => {
+        setRecycleBin(entries);
+      });
+      return () => unsub();
+    }
+  }, [activeTab]);
+
+  const handleRestoreMember = async (entry: DeletedMemberEntry) => {
+    const name = formatMemberDisplayName(entry.member.title, entry.member.fullName);
+    const confirmed = window.confirm(
+      `🔄 RESTORE MEMBER (Windows Recovery Model):\n\nDo you want to restore "${name}" back to the active member directory?\n\nThis will remove them from the Recycle Bin and reactivate their profile across the portal.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setProcessingOriginalId(entry.originalId);
+      await restoreDeletedMember(entry.originalId);
+      setRecycleBin((prev) => prev.filter((e) => e.originalId !== entry.originalId));
+      alert(`✅ Success: Member "${name}" has been restored to the active directory!`);
+      onRefreshData();
+    } catch (err: any) {
+      alert(`❌ Error restoring member: ${err.message || "Failed to restore"}`);
+    } finally {
+      setProcessingOriginalId(null);
+    }
+  };
+
+  const handlePurgeMember = async (entry: DeletedMemberEntry) => {
+    const name = formatMemberDisplayName(entry.member.title, entry.member.fullName);
+    const confirmed = window.confirm(
+      `⚠️ PERMANENT PURGE (Windows PC Model):\n\nAre you sure you want to permanently delete "${name}"?\n\nThis will destroy all stored entry data for this member. It cannot be recovered.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setProcessingOriginalId(entry.originalId);
+      await purgeDeletedMember(entry.originalId);
+      setRecycleBin((prev) => prev.filter((e) => e.originalId !== entry.originalId));
+      alert(`🗑️ Purged: Entry for "${name}" has been permanently deleted.`);
+    } catch (err: any) {
+      alert(`❌ Error purging member: ${err.message || "Failed to purge"}`);
+    } finally {
+      setProcessingOriginalId(null);
+    }
+  };
+
+  const handleEmptyRecycleBin = async () => {
+    if (recycleBin.length === 0) return;
+    const confirmed = window.confirm(
+      `⚠️ EMPTY RECYCLE BIN (Final Purge):\n\nAre you sure you want to permanently delete all ${recycleBin.length} entries in the Recycle Bin?\n\nNone of these records can be recovered after this action.`
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsPurgingAll(true);
+      await emptyRecycleBin();
+      setRecycleBin([]);
+      alert("🗑️ Empty Recycle Bin: All staged deleted member records have been permanently purged.");
+    } catch (err: any) {
+      alert(`❌ Error emptying recycle bin: ${err.message || "Failed to empty"}`);
+    } finally {
+      setIsPurgingAll(false);
+    }
+  };
 
   useEffect(() => {
     if (activeTab === "developer" && !isKefoxDeveloper) {
@@ -1457,6 +1536,165 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <span>Auto 1-Hour Firestore Cleanup Active</span>
               </span>
             </div>
+          </div>
+
+          {/* ── CARD 3: WINDOWS-STYLE RECYCLE BIN & MEMBER RECOVERY CONSOLE ── */}
+          <div className="bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-6 shadow-sm">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
+              <div className="flex items-start sm:items-center space-x-3.5 min-w-0 w-full sm:w-auto">
+                <div className="p-3 bg-gradient-to-br from-rose-500 to-red-700 text-white rounded-2xl shadow-sm shrink-0">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-base sm:text-lg text-slate-900 dark:text-white font-semibold leading-snug break-words">
+                      Recycle Bin: Deleted Member Entries &amp; Recovery Console
+                    </h3>
+                    <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800">
+                      Windows PC Model
+                    </span>
+                  </div>
+                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    Staged deleted member repository with one-click recovery and final permanent purging
+                  </p>
+                </div>
+              </div>
+
+              {/* Windows "Empty Recycle Bin" Global Button */}
+              <button
+                type="button"
+                onClick={handleEmptyRecycleBin}
+                disabled={isPurgingAll || recycleBin.length === 0}
+                className="w-full sm:w-auto px-4 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-2 cursor-pointer shadow-sm border border-rose-500/30 disabled:opacity-40 disabled:pointer-events-none shrink-0"
+                title="Permanently purge all staged deleted member records"
+              >
+                <Trash2 className={`w-4 h-4 ${isPurgingAll ? "animate-bounce" : ""}`} />
+                <span>{isPurgingAll ? "Purging All..." : "Empty Recycle Bin"}</span>
+              </button>
+            </div>
+
+            {/* Status Summary Banner */}
+            <div className="flex items-center justify-between p-3.5 sm:p-4 bg-white dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 text-xs sm:text-sm">
+              <div className="flex items-center space-x-2.5">
+                <span className={`w-2.5 h-2.5 rounded-full ${recycleBin.length > 0 ? "bg-rose-500 animate-pulse" : "bg-slate-400"}`}></span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                  {recycleBin.length === 0
+                    ? "The Recycle Bin is empty."
+                    : `${recycleBin.length} deleted member ${recycleBin.length === 1 ? "entry" : "entries"} currently staged in storage`}
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
+                Recovered members instantly return to Directory &amp; Celebrants
+              </span>
+            </div>
+
+            {/* Recycle Bin Items List */}
+            {recycleBin.length === 0 ? (
+              <div className="py-12 px-4 bg-white dark:bg-slate-900/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 text-center space-y-3">
+                <div className="w-14 h-14 mx-auto rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400">
+                  <Trash2 className="w-7 h-7 stroke-[1.5]" />
+                </div>
+                <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Recycle Bin is Empty
+                </h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                  When members are removed from the Member Directory, their records are staged here safely following the Windows PC Recycle Bin model.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {recycleBin.map((entry) => {
+                  const m = entry.member;
+                  const isProcessing = processingOriginalId === entry.originalId;
+                  const displayName = formatMemberDisplayName(m.title, m.fullName);
+                  const deletedDate = new Date(entry.deletedAt).toLocaleString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  });
+
+                  return (
+                    <div
+                      key={entry.originalId}
+                      className="p-4 bg-white dark:bg-slate-900/80 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all hover:border-slate-300 dark:hover:border-slate-700"
+                    >
+                      {/* Left: Member Identity & Deletion Details */}
+                      <div className="flex items-start sm:items-center space-x-3.5 min-w-0 w-full md:w-auto">
+                        <div className="w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0 border border-slate-300 dark:border-slate-700">
+                          {m.photoUrl ? (
+                            <img
+                              src={m.photoUrl}
+                              alt={displayName}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLElement).style.display = "none";
+                              }}
+                            />
+                          ) : (
+                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                              {(m.firstName?.[0] || m.fullName?.[0] || "M").toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                              {displayName}
+                            </h4>
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                              {m.role || "Member"}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            {m.email && <span className="truncate">📧 {m.email}</span>}
+                            {m.phoneNumber && <span>📞 {m.phoneNumber}</span>}
+                            {m.gradYear && <span>🎓 Class of {m.gradYear}</span>}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400 dark:text-slate-500 mt-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/60">
+                            <span>📁 Original Location: Member Directory</span>
+                            <span>🕒 Date Deleted: {deletedDate}</span>
+                            {entry.deletedBy && <span>👤 Deleted By: {entry.deletedBy}</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Windows-style Actions (Restore vs Final Purge) */}
+                      <div className="flex items-center space-x-2.5 self-end md:self-auto shrink-0 w-full sm:w-auto justify-end">
+                        {/* Option 1: Recovery / Restore */}
+                        <button
+                          type="button"
+                          onClick={() => handleRestoreMember(entry)}
+                          disabled={isProcessing}
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-semibold rounded-xl transition flex items-center space-x-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                          title="Restore this member back to the active directory"
+                        >
+                          <RotateCcw className={`w-3.5 h-3.5 ${isProcessing ? "animate-spin" : ""}`} />
+                          <span>Restore</span>
+                        </button>
+
+                        {/* Option 2: Final Purging */}
+                        <button
+                          type="button"
+                          onClick={() => handlePurgeMember(entry)}
+                          disabled={isProcessing}
+                          className="px-3.5 py-2 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 active:scale-95 text-xs font-semibold rounded-xl transition flex items-center space-x-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                          title="Permanently purge this member record (cannot be undone)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Purge</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}

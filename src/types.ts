@@ -140,3 +140,11 @@ export interface TestResult {
   durationMs: number;
   errorDetails?: string;
 }
+
+export interface DeletedMemberEntry {
+  originalId: string;
+  member: Member;
+  deletedAt: string;
+  deletedBy?: string;
+  originalLocation?: string;
+}

@@ -1,4 +1,4 @@
-import { Member, GroupEvent, PhotoApprovalRequest, ActivityLog } from "../types";
+import { Member, GroupEvent, PhotoApprovalRequest, ActivityLog, DeletedMemberEntry } from "../types";
 import { logger } from "../lib/logger";
 import { clientConfig } from "../lib/config";
 import { isMemberCredentialMatch } from "../lib/authMatching";
@@ -13,6 +13,7 @@ const LOCAL_STORAGE_KEY_SESSION_COUNT = "taraba_river_session_counter_v2";
 const LOCAL_STORAGE_KEY_ACTIVE_SESSION = "taraba_river_active_session_user_v2";
 const LOCAL_STORAGE_KEY_USER_HISTORY = "taraba_river_user_history_v2";
 const LOCAL_STORAGE_KEY_CLOUD_CONFIG = "taraba_river_cloud_media_config_v1";
+const LOCAL_STORAGE_KEY_RECYCLE_BIN = "taraba_river_recycle_bin_v1";
 
 export interface CloudMediaConfig {
   dedicatedDriveUrl: string;
@@ -89,6 +90,101 @@ export class AppStateManager {
       if (phone && phone.trim()) set.add(`phone:${phone.trim()}`);
       localStorage.setItem(LOCAL_STORAGE_KEY_DELETED_MEMBERS, JSON.stringify([...set]));
     } catch {}
+  }
+
+  public static unmarkMemberAsDeleted(memberId: string, email?: string, phone?: string): void {
+    try {
+      const set = this.getDeletedMemberIds();
+      if (memberId) set.delete(memberId);
+      if (email && email.trim()) set.delete(`email:${email.trim().toLowerCase()}`);
+      if (phone && phone.trim()) set.delete(`phone:${phone.trim()}`);
+      localStorage.setItem(LOCAL_STORAGE_KEY_DELETED_MEMBERS, JSON.stringify([...set]));
+    } catch {}
+  }
+
+  public static getRecycleBin(): DeletedMemberEntry[] {
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_KEY_RECYCLE_BIN);
+      let list: DeletedMemberEntry[] = raw ? JSON.parse(raw) : [];
+
+      // Auto-populate from deleted blacklist & INITIAL_MEMBERS if not already present
+      const deletedIds = this.getDeletedMemberIds();
+      const existingIds = new Set(list.map((e) => e.originalId));
+
+      INITIAL_MEMBERS.forEach((m) => {
+        const isBlacklisted =
+          deletedIds.has(m.id) ||
+          (m.email && deletedIds.has(`email:${m.email.toLowerCase()}`)) ||
+          (m.phoneNumber && deletedIds.has(`phone:${m.phoneNumber}`));
+
+        if (isBlacklisted && !existingIds.has(m.id)) {
+          list.push({
+            originalId: m.id,
+            member: m,
+            deletedAt: new Date().toISOString(),
+            deletedBy: "Admin",
+            originalLocation: "Member Directory",
+          });
+          existingIds.add(m.id);
+        }
+      });
+
+      return list;
+    } catch {
+      return [];
+    }
+  }
+
+  public static addToRecycleBin(entry: DeletedMemberEntry): void {
+    try {
+      const current = this.getRecycleBin().filter((e) => e.originalId !== entry.originalId);
+      current.unshift(entry);
+      localStorage.setItem(LOCAL_STORAGE_KEY_RECYCLE_BIN, JSON.stringify(current));
+      this.notify();
+    } catch {}
+  }
+
+  public static removeFromRecycleBin(originalId: string): void {
+    try {
+      const current = this.getRecycleBin().filter((e) => e.originalId !== originalId);
+      localStorage.setItem(LOCAL_STORAGE_KEY_RECYCLE_BIN, JSON.stringify(current));
+      this.notify();
+    } catch {}
+  }
+
+  public static clearRecycleBin(): void {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY_RECYCLE_BIN, JSON.stringify([]));
+      this.notify();
+    } catch {}
+  }
+
+  public static restoreMember(originalId: string): Member | null {
+    try {
+      const recycleBin = this.getRecycleBin();
+      const targetEntry = recycleBin.find((e) => e.originalId === originalId);
+      if (!targetEntry) return null;
+
+      // 1. Remove from deleted blacklist
+      this.unmarkMemberAsDeleted(
+        targetEntry.member.id,
+        targetEntry.member.email,
+        targetEntry.member.phoneNumber
+      );
+
+      // 2. Remove from recycle bin
+      this.removeFromRecycleBin(originalId);
+
+      // 3. Save back to active members
+      const activeMembers = this.getMembers().filter((m) => m.id !== targetEntry.member.id);
+      activeMembers.unshift(targetEntry.member);
+      this.saveMembers(activeMembers);
+
+      this.notify();
+      return targetEntry.member;
+    } catch {
+      return null;
+    }
   }
 
   public static filterDeleted(members: Member[]): Member[] {

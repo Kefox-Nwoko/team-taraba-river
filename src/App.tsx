@@ -365,14 +365,14 @@ export default function App() {
   };
 
   const handleDeleteMember = async (memberToDelete: Member) => {
-    // 1. Immediately record in permanent blacklist (id, email, phone) so no event can bring it back
-    AppStateManager.deleteMember(memberToDelete.id, memberToDelete.email, memberToDelete.phoneNumber);
+    // 1. Immediately record in permanent blacklist (id, email, phone) and stage in recycle bin
+    AppStateManager.deleteMember(memberToDelete.id, memberToDelete.email, memberToDelete.phoneNumber, memberToDelete);
     // 2. Optimistically remove from state so the UI reflects the deletion immediately
     setMembers((prev) => AppStateManager.filterDeleted(prev).filter((m) => m.id !== memberToDelete.id));
     // 3. Clean up in Firestore and API
     try {
       await deleteMember(memberToDelete.id, memberToDelete);
-      notify(`Member "${formatMemberDirectoryName(memberToDelete.title, memberToDelete.fullName)}" deleted successfully.`, "success");
+      notify(`Member "${formatMemberDirectoryName(memberToDelete.title, memberToDelete.fullName)}" moved to Recycle Bin.`, "info");
     } catch (err) {
       logger.warn("Remote member deletion note:", err);
     }

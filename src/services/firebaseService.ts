@@ -26,6 +26,7 @@ import {
   GroupEvent,
   PhotoApprovalRequest,
   ActivityLog,
+  DeletedMemberEntry,
 } from "../types";
 import { sanitizeMemberRecord } from "../utils/nameUtils"; /** * Google Admin Sign-In via OAuth popup. * * SECURITY: If the Google popup fails, we throw an error instead of * falling back to a hardcoded admin session. The backend determines * the actual role via Firebase Custom Claims. */
 export async function triggerGoogleAdminSignIn(): Promise<Member> {
@@ -654,6 +655,143 @@ export class FirebaseSyncManager {
       });
     } catch (err) {
       logger.warn("Firestore subscribeVisitMetrics fallback", err);
+      return () => {};
+    }
+  }
+
+  /**
+   * Stores a deleted member entry into the Firestore recycle_bin / deleted_members collection.
+   */
+  public static async addToRecycleBin(entry: DeletedMemberEntry): Promise<void> {
+    try {
+      await setDoc(doc(db, "deleted_members", entry.originalId), {
+        ...entry,
+        storedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      logger.warn("Firestore addToRecycleBin fallback", err);
+    }
+  }
+
+  /**
+   * Retrieves all deleted member entries from Firestore recycle bin.
+   */
+  public static async getRecycleBin(): Promise<DeletedMemberEntry[]> {
+    try {
+      const snap = await getDocs(collection(db, "deleted_members"));
+      if (!snap.empty) {
+        return snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            originalId: data.originalId || d.id,
+            member: data.member,
+            deletedAt: data.deletedAt || new Date().toISOString(),
+            deletedBy: data.deletedBy || "Admin",
+            originalLocation: data.originalLocation || "Member Directory",
+          } as DeletedMemberEntry;
+        });
+      }
+    } catch (err) {
+      logger.warn("Firestore getRecycleBin fallback", err);
+    }
+    return AppStateManager.getRecycleBin();
+  }
+
+  /**
+   * Restores a member from the recycle bin back to the active members collection.
+   */
+  public static async restoreMemberFromRecycleBin(originalId: string): Promise<Member | null> {
+    try {
+      // 1. Get from Firestore deleted_members
+      const docRef = doc(db, "deleted_members", originalId);
+      const snap = await getDoc(docRef);
+      let memberToRestore: Member | null = null;
+
+      if (snap.exists()) {
+        const data = snap.data() as DeletedMemberEntry;
+        memberToRestore = data.member;
+      } else {
+        const localEntry = AppStateManager.getRecycleBin().find((e) => e.originalId === originalId);
+        if (localEntry) memberToRestore = localEntry.member;
+      }
+
+      if (!memberToRestore) return null;
+
+      // 2. Save back to active Firestore members
+      await this.saveMember(memberToRestore);
+
+      // 3. Remove from Firestore deleted_members
+      try {
+        await deleteDoc(docRef);
+      } catch {}
+
+      // 4. Update local state
+      AppStateManager.restoreMember(originalId);
+
+      return memberToRestore;
+    } catch (err) {
+      logger.error("Failed to restore member from recycle bin", err);
+      return AppStateManager.restoreMember(originalId);
+    }
+  }
+
+  /**
+   * Permanently purges a single member from the recycle bin (cannot be recovered).
+   */
+  public static async purgeMemberFromRecycleBin(originalId: string): Promise<void> {
+    try {
+      await deleteDoc(doc(db, "deleted_members", originalId));
+    } catch (err) {
+      logger.warn("Firestore purgeMemberFromRecycleBin fallback", err);
+    }
+    AppStateManager.removeFromRecycleBin(originalId);
+  }
+
+  /**
+   * Empties the entire recycle bin permanently.
+   */
+  public static async emptyRecycleBin(): Promise<void> {
+    try {
+      const snap = await getDocs(collection(db, "deleted_members"));
+      for (const d of snap.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (err) {
+      logger.warn("Firestore emptyRecycleBin fallback", err);
+    }
+    AppStateManager.clearRecycleBin();
+  }
+
+  /**
+   * Subscribes to real-time changes in the recycle bin.
+   */
+  public static subscribeRecycleBin(onUpdate: (entries: DeletedMemberEntry[]) => void): () => void {
+    try {
+      return onSnapshot(collection(db, "deleted_members"), (snap) => {
+        const list: DeletedMemberEntry[] = snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            originalId: data.originalId || d.id,
+            member: data.member,
+            deletedAt: data.deletedAt || new Date().toISOString(),
+            deletedBy: data.deletedBy || "Admin",
+            originalLocation: data.originalLocation || "Member Directory",
+          } as DeletedMemberEntry;
+        });
+
+        // Merge with local recycle bin if any
+        const local = AppStateManager.getRecycleBin();
+        const map = new Map<string, DeletedMemberEntry>();
+        local.forEach((e) => map.set(e.originalId, e));
+        list.forEach((e) => map.set(e.originalId, e));
+
+        const merged = Array.from(map.values()).sort(
+          (a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime()
+        );
+        onUpdate(merged);
+      });
+    } catch (err) {
+      logger.warn("Firestore subscribeRecycleBin fallback", err);
       return () => {};
     }
   }
