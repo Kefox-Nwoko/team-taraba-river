@@ -41,6 +41,7 @@ export interface GroupEvent {
   title: string;
   description: string;
   date: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD (Optional End Date for multi-day activities)
   time: string; // HH:MM
   location: string;
   category: string;

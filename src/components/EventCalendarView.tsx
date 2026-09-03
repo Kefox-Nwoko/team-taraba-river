@@ -16,7 +16,7 @@ import { MemberAvatar } from "./MemberAvatar";
 import { ReturnButton } from "./ReturnButton";
 import { UsosaNewsCard } from "./UsosaNewsCard";
 import { BirthdayCelebrationAnimation } from "./BirthdayCelebrationAnimation";
-import { isOfficialFutureEvent, getDaysUntilEvent } from "../utils/eventUtils";
+import { isOfficialFutureEvent, getDaysUntilEvent, isEventOngoing, getEventDurationInfo } from "../utils/eventUtils";
 import {
   Calendar as CalendarIcon,
   MapPin,
@@ -64,6 +64,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
   // Form State
   const [eventTitle, setEventTitle] = useState("");
   const [eventDate, setEventDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [eventEndDate, setEventEndDate] = useState("");
   const [eventTime, setEventTime] = useState("09:00");
   const [eventLocation, setEventLocation] = useState("");
   const [eventCategory, setEventCategory] = useState<string>("meeting");
@@ -141,9 +142,14 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
   const eventsInNext7Days = officialUpcomingEvents
     .filter((e) => {
       const days = getDaysUntilEvent(e.date);
-      return days !== null && days >= 0 && days <= 7;
+      return (days !== null && days >= 0 && days <= 7) || isEventOngoing(e);
     })
     .sort((a, b) => {
+      const ongoingA = isEventOngoing(a);
+      const ongoingB = isEventOngoing(b);
+      if (ongoingA && !ongoingB) return -1;
+      if (!ongoingA && ongoingB) return 1;
+
       const dA = getDaysUntilEvent(a.date) ?? 999;
       const dB = getDaysUntilEvent(b.date) ?? 999;
       return dA - dB;
@@ -153,12 +159,18 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
     .filter((e) => {
       if (selectedCategory === "next7days") {
         const days = getDaysUntilEvent(e.date);
-        return days !== null && days >= 0 && days <= 7;
+        return (days !== null && days >= 0 && days <= 7) || isEventOngoing(e);
       }
       if (selectedCategory === "all") return true;
       return e.category === selectedCategory;
     })
     .sort((a, b) => {
+      // 1. Ongoing events always come first
+      const ongoingA = isEventOngoing(a);
+      const ongoingB = isEventOngoing(b);
+      if (ongoingA && !ongoingB) return -1;
+      if (!ongoingA && ongoingB) return 1;
+
       const dA = getDaysUntilEvent(a.date) ?? 999;
       const dB = getDaysUntilEvent(b.date) ?? 999;
       return dA - dB;
@@ -272,6 +284,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
       const newEvt = await createEvent({
         title: eventTitle,
         date: eventDate,
+        endDate: eventEndDate && eventEndDate !== eventDate ? eventEndDate : undefined,
         time: eventTime,
         location: eventLocation,
         category: eventCategory,
@@ -415,9 +428,9 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm text-slate-700 dark:text-slate-300 mb-1.5 font-normal">
-                      Event Date *
+                      Start Date *
                     </label>
-                    <div className="relative w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-5 py-3.5 flex items-center justify-between text-xl font-normal text-slate-900 dark:text-white cursor-pointer select-none">
+                    <div className="relative w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-5 py-3.5 flex items-center justify-between text-base sm:text-xl font-normal text-slate-900 dark:text-white cursor-pointer select-none">
                       <span className="truncate">{formatDateLabel(eventDate)}</span>
                       <div className="flex items-center space-x-1 text-slate-400 dark:text-slate-500 shrink-0">
                         <CalendarIcon className="w-4 h-4" />
@@ -425,11 +438,70 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                       </div>
                       <DatePicker
                         value={eventDate}
-                        onChange={setEventDate}
+                        onChange={(val) => {
+                          setEventDate(val);
+                          if (eventEndDate && val > eventEndDate) {
+                            setEventEndDate(val);
+                          }
+                        }}
                         required
                       />
                     </div>
                   </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-sm text-slate-700 dark:text-slate-300 font-normal">
+                        End Date (Optional)
+                      </label>
+                      {eventEndDate && eventEndDate !== eventDate && (
+                        <button
+                          type="button"
+                          onClick={() => setEventEndDate("")}
+                          className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
+                        >
+                          Single Day
+                        </button>
+                      )}
+                    </div>
+                    <div className="relative w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-5 py-3.5 flex items-center justify-between text-base sm:text-xl font-normal text-slate-900 dark:text-white cursor-pointer select-none">
+                      <span className={`truncate ${!eventEndDate || eventEndDate === eventDate ? "text-slate-400 dark:text-slate-500" : "text-cyan-600 dark:text-cyan-400 font-semibold"}`}>
+                        {eventEndDate && eventEndDate !== eventDate ? formatDateLabel(eventEndDate) : "Same Day (1-Day Event)"}
+                      </span>
+                      <div className="flex items-center space-x-1 text-slate-400 dark:text-slate-500 shrink-0">
+                        <CalendarIcon className="w-4 h-4" />
+                        <ChevronDown className="w-4 h-4 text-cyan-500" />
+                      </div>
+                      <DatePicker
+                        value={eventEndDate || eventDate}
+                        minDate={eventDate}
+                        onChange={(val) => {
+                          if (val && val >= eventDate) {
+                            setEventEndDate(val);
+                          } else {
+                            setEventEndDate(eventDate);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Multi-day duration banner */}
+                {eventEndDate && eventEndDate > eventDate && (
+                  <div className="p-3.5 bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800/70 rounded-2xl flex items-center justify-between text-xs sm:text-sm text-cyan-900 dark:text-cyan-200">
+                    <span className="font-bold flex items-center gap-1.5">
+                      <span>📅</span>
+                      <span>
+                        Multi-Day Activity: {Math.max(1, Math.round((new Date(eventEndDate).getTime() - new Date(eventDate).getTime()) / (1000 * 60 * 60 * 24)) + 1)} Days Duration
+                      </span>
+                    </span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                      {formatDateLabel(eventDate)} ➔ {formatDateLabel(eventEndDate)}
+                    </span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-xl text-slate-700 dark:text-slate-300 mb-2 font-normal">
                       Event Time
@@ -438,21 +510,6 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                       type="time"
                       value={eventTime}
                       onChange={(e) => setEventTime(e.target.value)}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-5 py-3.5 text-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-normal"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-xl text-slate-700 dark:text-slate-300 mb-2 font-normal">
-                      Location / Venue *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Jalingo Town Hall"
-                      value={eventLocation}
-                      onChange={(e) => setEventLocation(e.target.value)}
                       className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-5 py-3.5 text-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-normal"
                     />
                   </div>
@@ -471,6 +528,20 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                       <option value="meeting">General Assembly Meeting</option>
                     </select>
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-xl text-slate-700 dark:text-slate-300 mb-2 font-normal">
+                    Location / Venue *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Jalingo Town Hall"
+                    value={eventLocation}
+                    onChange={(e) => setEventLocation(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-5 py-3.5 text-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-normal"
+                  />
                 </div>
                 <div>
                   <label className="block text-xl text-slate-700 dark:text-slate-300 mb-2 font-normal">
@@ -538,43 +609,100 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                   const daysUntil = getDaysUntilEvent(event.date);
                   const isWithin7Days = daysUntil !== null && daysUntil >= 0 && daysUntil <= 7;
                   const isPastWithin7Days = daysUntil !== null && daysUntil < 0 && daysUntil >= -7;
+                  const isOngoing = isEventOngoing(event);
+                  const durationInfo = getEventDurationInfo(event);
+
                   return (
                     <div
                       key={event.id}
-                      className={`group relative bg-white dark:bg-slate-900 rounded-2xl p-3.5 sm:p-4 border border-slate-200/90 dark:border-slate-800 hover:border-cyan-500/60 shadow-xs hover:shadow-md transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 overflow-hidden font-normal ${
-                        isPastWithin7Days ? "opacity-90" : ""
+                      className={`group relative bg-white dark:bg-slate-900 rounded-2xl p-3.5 sm:p-4 border shadow-xs hover:shadow-md transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 overflow-hidden font-normal ${
+                        isOngoing
+                          ? "border-emerald-500/80 ring-2 ring-emerald-400/60 dark:ring-emerald-500/50 shadow-lg shadow-emerald-500/15 bg-gradient-to-r from-emerald-500/[0.04] via-teal-500/[0.03] to-cyan-500/[0.04]"
+                          : isPastWithin7Days
+                          ? "border-slate-200/90 dark:border-slate-800 opacity-90"
+                          : "border-slate-200/90 dark:border-slate-800 hover:border-cyan-500/60"
                       }`}
                     >
-                      {isWithin7Days && (
+                      {/* Left Accent Bar: Vibrant gradient when ongoing, amber when within 7 days */}
+                      {isOngoing ? (
+                        <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-emerald-400 via-teal-500 to-cyan-500 animate-pulse" />
+                      ) : isWithin7Days ? (
                         <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-amber-400 to-orange-500" />
-                      )}
+                      ) : null}
 
-                      {/* Left: Compact Date Tag & Event Details in straight alignment */}
+                      {/* Left: Compact Date Tag & Event Details */}
                       <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 pl-1">
                         {/* Compact Date Box */}
-                        <div className="flex flex-col items-center justify-center shrink-0 w-12 sm:w-14 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-center font-normal">
-                          <span className="text-[10px] uppercase font-bold tracking-wider text-cyan-600 dark:text-cyan-400 leading-none">
-                            {new Date(event.date).toLocaleString("default", { month: "short" })}
-                          </span>
-                          <span className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight mt-0.5">
-                            {new Date(event.date).getDate()}
-                          </span>
-                        </div>
+                        {durationInfo.isMultiDay ? (
+                          <div className="flex flex-col items-center justify-center shrink-0 w-14 sm:w-16 py-1.5 px-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-center font-normal">
+                            <span className="text-[10px] uppercase font-bold tracking-wider text-cyan-600 dark:text-cyan-400 leading-none">
+                              {new Date(event.date).toLocaleString("default", { month: "short" })}
+                            </span>
+                            <span className="text-sm sm:text-base font-bold text-slate-900 dark:text-white leading-tight mt-0.5">
+                              {new Date(event.date).getDate()}–{new Date(event.endDate!).getDate()}
+                            </span>
+                            <span className="text-[9px] font-extrabold uppercase px-1 py-0.2 rounded bg-cyan-100 dark:bg-cyan-950 text-cyan-700 dark:text-cyan-300 mt-0.5">
+                              {durationInfo.totalDays}D
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center shrink-0 w-12 sm:w-14 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 text-center font-normal">
+                            <span className="text-[10px] uppercase font-bold tracking-wider text-cyan-600 dark:text-cyan-400 leading-none">
+                              {new Date(event.date).toLocaleString("default", { month: "short" })}
+                            </span>
+                            <span className="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight mt-0.5">
+                              {new Date(event.date).getDate()}
+                            </span>
+                            {isOngoing && (
+                              <span className="text-[9px] font-extrabold uppercase px-1 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 mt-0.5">
+                                Today
+                              </span>
+                            )}
+                          </div>
+                        )}
 
                         {/* Event Title & Metadata (Time, Location, Description) */}
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition truncate">
-                              {event.title}
-                            </h3>
+                            {/* ONGOING BADGE WITH ANIMATED PING */}
+                            {isOngoing && (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 text-white shadow-xs animate-pulse shrink-0">
+                                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping shrink-0" />
+                                ⚡ Ongoing Activity {durationInfo.isMultiDay && durationInfo.currentDayNumber ? `(Day ${durationInfo.currentDayNumber} of ${durationInfo.totalDays})` : "Today"}
+                              </span>
+                            )}
+
+                            {/* Event Title with Celebratory Animation Effect when Ongoing */}
+                            <BirthdayCelebrationAnimation autoPlay={isOngoing} continuous={isOngoing} durationMs={10000}>
+                              <h3 className={`text-sm sm:text-base font-semibold truncate transition ${
+                                isOngoing
+                                  ? "text-emerald-700 dark:text-emerald-300 font-bold"
+                                  : "text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-400"
+                              }`}>
+                                {event.title}
+                              </h3>
+                            </BirthdayCelebrationAnimation>
+
                             {event.category && (
                               <span className="px-2 py-0.5 rounded-md bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/40 text-[11px] font-medium shrink-0">
                                 {event.category}
                               </span>
                             )}
+
+                            {durationInfo.isMultiDay && !isOngoing && (
+                              <span className="px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/40 text-[11px] font-medium shrink-0">
+                                📅 {durationInfo.totalDays} Days ({durationInfo.formattedRange})
+                              </span>
+                            )}
                           </div>
 
                           <div className="flex items-center gap-3 sm:gap-4 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+                            {durationInfo.isMultiDay && (
+                              <span className="flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300 shrink-0">
+                                <CalendarIcon className="w-3.5 h-3.5 text-cyan-500" />
+                                <span>{durationInfo.formattedRange}</span>
+                              </span>
+                            )}
                             <span className="flex items-center gap-1 shrink-0">
                               <Clock className="w-3.5 h-3.5 text-slate-400" />
                               <span>{event.time}</span>

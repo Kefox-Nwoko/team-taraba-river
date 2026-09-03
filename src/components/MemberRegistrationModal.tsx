@@ -522,6 +522,7 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                             </div>
                             <DatePicker
                               value={getNormalizedIsoDate(value)}
+                              hideYear={true}
                               onChange={(val) => {
                                 handleFieldChange("dateOfBirth", val);
                                 if (val) {

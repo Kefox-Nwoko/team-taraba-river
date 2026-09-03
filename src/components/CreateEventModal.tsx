@@ -34,6 +34,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
 }) => {
   const [eventTitle, setEventTitle] = useState("");
   const [eventDate, setEventDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [eventEndDate, setEventEndDate] = useState("");
   const [eventTime, setEventTime] = useState("09:00");
   const [eventLocation, setEventLocation] = useState("");
   const [eventCategory, setEventCategory] = useState<string>("");
@@ -45,6 +46,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     if (eventToEdit) {
       setEventTitle(eventToEdit.title || "");
       setEventDate(eventToEdit.date || new Date().toISOString().split("T")[0]);
+      setEventEndDate(eventToEdit.endDate || "");
       setEventTime(eventToEdit.time || "09:00");
       setEventLocation(eventToEdit.location || "");
       setEventCategory(eventToEdit.category || "");
@@ -52,6 +54,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     } else {
       setEventTitle("");
       setEventDate(new Date().toISOString().split("T")[0]);
+      setEventEndDate("");
       setEventTime("09:00");
       setEventLocation("");
       setEventCategory("");
@@ -85,6 +88,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
         const updated = await updateEvent(eventToEdit.id, {
           title: eventTitle.trim(),
           date: eventDate,
+          endDate: eventEndDate && eventEndDate !== eventDate ? eventEndDate : undefined,
           time: eventTime,
           location: eventLocation.trim(),
           category: eventCategory.trim() || "General",
@@ -94,10 +98,8 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
         const idx = currentEvents.findIndex((ev) => ev.id === eventToEdit.id);
         if (idx !== -1) {
           currentEvents[idx] = updated;
-        } else {
-          currentEvents.unshift(updated);
+          AppStateManager.saveEvents(currentEvents);
         }
-        AppStateManager.saveEvents(currentEvents);
         try {
           await FirebaseSyncManager.saveEvent(updated);
         } catch {}
@@ -106,14 +108,15 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
         const newEvt = await createEvent({
           title: eventTitle.trim(),
           date: eventDate,
+          endDate: eventEndDate && eventEndDate !== eventDate ? eventEndDate : undefined,
           time: eventTime,
           location: eventLocation.trim(),
           category: eventCategory.trim() || "General",
           description: eventDescription.trim(),
           driveImageUrls: [],
           youtubeVideoUrl: "",
-          createdBy: currentUser ? currentUser.fullName : "Admin User",
-          createdById: currentUser ? currentUser.id : "mem_1",
+          createdBy: currentUser ? currentUser.fullName : "Community Member",
+          createdById: currentUser ? currentUser.id : "mem_admin",
         });
         const currentEvents = AppStateManager.getEvents();
         currentEvents.unshift(newEvt);
@@ -188,7 +191,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs uppercase font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Event Date *
+                  Start Date *
                 </label>
                 <div className="relative w-full rounded-2xl bg-slate-50 dark:bg-[#2A2A2A] border-none px-5 py-4 flex items-center justify-between text-sm text-slate-900 dark:text-white cursor-pointer select-none">
                   <span className="truncate">{formatDateLabel(eventDate)}</span>
@@ -198,12 +201,71 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   </div>
                   <DatePicker
                     value={eventDate}
-                    onChange={setEventDate}
+                    onChange={(val) => {
+                      setEventDate(val);
+                      if (eventEndDate && val > eventEndDate) {
+                        setEventEndDate(val);
+                      }
+                    }}
                     required
                   />
                 </div>
               </div>
 
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs uppercase font-medium text-slate-700 dark:text-slate-300">
+                    End Date (Optional)
+                  </label>
+                  {eventEndDate && eventEndDate !== eventDate && (
+                    <button
+                      type="button"
+                      onClick={() => setEventEndDate("")}
+                      className="text-[11px] text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
+                    >
+                      Single Day
+                    </button>
+                  )}
+                </div>
+                <div className="relative w-full rounded-2xl bg-slate-50 dark:bg-[#2A2A2A] border-none px-5 py-4 flex items-center justify-between text-sm text-slate-900 dark:text-white cursor-pointer select-none">
+                  <span className={`truncate ${!eventEndDate || eventEndDate === eventDate ? "text-slate-400 dark:text-slate-500" : "text-cyan-600 dark:text-cyan-400 font-semibold"}`}>
+                    {eventEndDate && eventEndDate !== eventDate ? formatDateLabel(eventEndDate) : "Same Day (1-Day Event)"}
+                  </span>
+                  <div className="flex items-center space-x-1 text-slate-400 dark:text-slate-500 shrink-0">
+                    <CalendarIcon className="w-4 h-4" />
+                    <ChevronDown className="w-4 h-4 text-cyan-500" />
+                  </div>
+                  <DatePicker
+                    value={eventEndDate || eventDate}
+                    minDate={eventDate}
+                    onChange={(val) => {
+                      if (val && val >= eventDate) {
+                        setEventEndDate(val);
+                      } else {
+                        setEventEndDate(eventDate);
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Multi-day duration banner */}
+            {eventEndDate && eventEndDate > eventDate && (
+              <div className="p-3.5 bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800/70 rounded-2xl flex items-center justify-between text-xs text-cyan-900 dark:text-cyan-200">
+                <span className="font-bold flex items-center gap-1.5">
+                  <span>📅</span>
+                  <span>
+                    Multi-Day Activity: {Math.max(1, Math.round((new Date(eventEndDate).getTime() - new Date(eventDate).getTime()) / (1000 * 60 * 60 * 24)) + 1)} Days Duration
+                  </span>
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                  {formatDateLabel(eventDate)} ➔ {formatDateLabel(eventEndDate)}
+                </span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs uppercase font-medium text-slate-700 dark:text-slate-300 mb-1">
                   Event Time
@@ -212,22 +274,6 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   type="time"
                   value={eventTime}
                   onChange={(e) => setEventTime(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-[#2A2A2A] border-none rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs uppercase font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Location / Venue *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Jalingo Town Hall / Port Harcourt Venue"
-                  value={eventLocation}
-                  onChange={(e) => setEventLocation(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-[#2A2A2A] border-none rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm"
                 />
               </div>
@@ -244,6 +290,20 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   className="w-full bg-slate-50 dark:bg-[#2A2A2A] border-none rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-xs uppercase font-medium text-slate-700 dark:text-slate-300 mb-1">
+                Location / Venue *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Jalingo Town Hall / Port Harcourt Venue"
+                value={eventLocation}
+                onChange={(e) => setEventLocation(e.target.value)}
+                className="w-full bg-slate-50 dark:bg-[#2A2A2A] border-none rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm"
+              />
             </div>
 
             <div>

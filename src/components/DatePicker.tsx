@@ -8,6 +8,7 @@ interface DatePickerProps {
   maxDate?: string; // "YYYY-MM-DD" - restricts future dates beyond this
   minDate?: string; // "YYYY-MM-DD" - restricts past dates before this
   onDateRestricted?: (attemptedDate: string, reason: "future" | "past") => void;
+  hideYear?: boolean; // When true, hides year selector and displays only Month and Date (e.g. for Birthdays)
 }
 
 const MONTH_NAMES = [
@@ -60,6 +61,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   maxDate,
   minDate,
   onDateRestricted,
+  hideYear = false,
 }) => {
   const parsed = parseDate(value || new Date().toISOString().split("T")[0]);
   const [viewYear, setViewYear] = useState(parsed.year);
@@ -231,18 +233,20 @@ export const DatePicker: React.FC<DatePickerProps> = ({
                   </option>
                 ))}
               </select>
-              <select
-                value={viewYear}
-                onChange={(e) => setViewYear(Number(e.target.value))}
-                onClick={(e) => e.stopPropagation()}
-                className="font-semibold text-slate-800 dark:text-white text-sm bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 py-1 px-1.5 rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer focus:outline-none"
-              >
-                {Array.from({ length: 110 }, (_, i) => new Date().getFullYear() + 5 - i).map((yr) => (
-                  <option key={yr} value={yr} className="bg-white dark:bg-[#1E1E1E] text-slate-900 dark:text-white">
-                    {yr}
-                  </option>
-                ))}
-              </select>
+              {!hideYear && (
+                <select
+                  value={viewYear}
+                  onChange={(e) => setViewYear(Number(e.target.value))}
+                  onClick={(e) => e.stopPropagation()}
+                  className="font-semibold text-slate-800 dark:text-white text-sm bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 py-1 px-1.5 rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer focus:outline-none"
+                >
+                  {Array.from({ length: 110 }, (_, i) => new Date().getFullYear() + 5 - i).map((yr) => (
+                    <option key={yr} value={yr} className="bg-white dark:bg-[#1E1E1E] text-slate-900 dark:text-white">
+                      {yr}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <button
               type="button"

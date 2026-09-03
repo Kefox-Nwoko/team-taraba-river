@@ -4,12 +4,14 @@ interface BirthdayCelebrationAnimationProps {
   children: React.ReactNode;
   autoPlay?: boolean;
   durationMs?: number;
+  continuous?: boolean;
 }
 
 export const BirthdayCelebrationAnimation: React.FC<BirthdayCelebrationAnimationProps> = ({
   children,
   autoPlay = true,
   durationMs = 3500,
+  continuous = false,
 }) => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -26,20 +28,23 @@ export const BirthdayCelebrationAnimation: React.FC<BirthdayCelebrationAnimation
   }, []);
 
   useEffect(() => {
-    if (!autoPlay || prefersReducedMotion || hasPlayedRef.current) return;
+    if (!autoPlay || prefersReducedMotion) return;
+    if (hasPlayedRef.current && !continuous) return;
 
     const timer = setTimeout(() => {
       if (containerRef.current) {
         hasPlayedRef.current = true;
         setIsAnimating(true);
-        setTimeout(() => setIsAnimating(false), durationMs);
+        if (!continuous) {
+          setTimeout(() => setIsAnimating(false), durationMs);
+        }
       }
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [autoPlay, prefersReducedMotion, durationMs]);
+  }, [autoPlay, prefersReducedMotion, durationMs, continuous]);
 
-  const showEffects = isAnimating && !prefersReducedMotion;
+  const showEffects = (isAnimating || continuous) && !prefersReducedMotion;
 
   return (
     <span ref={containerRef} className="relative block">
@@ -64,3 +69,7 @@ export const BirthdayCelebrationAnimation: React.FC<BirthdayCelebrationAnimation
     </span>
   );
 };
+
+export const ActivityCelebrationAnimation: React.FC<BirthdayCelebrationAnimationProps> = (props) => (
+  <BirthdayCelebrationAnimation continuous={props.continuous ?? true} {...props} />
+);
