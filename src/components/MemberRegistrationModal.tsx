@@ -23,7 +23,9 @@ import {
   ArrowLeft,
   Upload,
   Ruler,
+  ChevronDown,
 } from "lucide-react";
+import { DatePicker } from "./DatePicker";
 import { MemberAvatar, getMemberInitials } from "./MemberAvatar";
 import { TShirtSizeGuideModal } from "./TShirtSizeGuideModal";
 import {
@@ -117,6 +119,43 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
       }
       return updated;
     });
+  };
+
+  const formatBirthdayLabel = (val: string) => {
+    if (!val || typeof val !== "string" || !val.trim()) {
+      return "Select Birthday (Date & Month)";
+    }
+    try {
+      const parts = val.trim().split(/[-/]/);
+      if (parts.length === 3) {
+        const [year, month, day] = parts;
+        const date = new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10));
+        if (!isNaN(date.getTime())) {
+          return date.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+        }
+      }
+      return val;
+    } catch {
+      return val;
+    }
+  };
+
+  const getNormalizedIsoDate = (val: string) => {
+    if (!val || typeof val !== "string") {
+      return new Date().toISOString().split("T")[0];
+    }
+    const clean = val.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+      return clean;
+    }
+    const parsed = new Date(`${clean} 2000`);
+    if (!isNaN(parsed.getTime())) {
+      const y = 2000;
+      const m = String(parsed.getMonth() + 1).padStart(2, "0");
+      const d = String(parsed.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+    return new Date().toISOString().split("T")[0];
   };
 
   const handleFileChange = (key: string, file: File | null) => {
@@ -471,6 +510,33 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                             {value && !value.startsWith("data:image") && (
                               <img src={value} alt="Preview" className="w-24 h-24 object-cover rounded-xl shadow-sm border border-slate-200 dark:border-slate-700" />
                             )}
+                          </div>
+                        ) : field.key === "dateOfBirth" ? (
+                          <div className="relative w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-5 py-4 flex items-center justify-between text-sm text-slate-900 dark:text-white cursor-pointer select-none shadow-sm hover:border-teal-500/60 transition font-normal">
+                            <span className={`truncate ${!value ? "text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-white font-medium"}`}>
+                              {formatBirthdayLabel(value)}
+                            </span>
+                            <div className="flex items-center space-x-1 text-slate-400 dark:text-slate-500 shrink-0">
+                              <Calendar className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                              <ChevronDown className="w-4 h-4 text-cyan-500" />
+                            </div>
+                            <DatePicker
+                              value={getNormalizedIsoDate(value)}
+                              onChange={(val) => {
+                                handleFieldChange("dateOfBirth", val);
+                                if (val) {
+                                  const [y, m, d] = val.split("-");
+                                  const mIndex = parseInt(m, 10) - 1;
+                                  const mName = [
+                                    "January", "February", "March", "April", "May", "June",
+                                    "July", "August", "September", "October", "November", "December"
+                                  ][mIndex];
+                                  handleFieldChange("birthMonth", mName);
+                                  handleFieldChange("birthDay", parseInt(d, 10).toString());
+                                }
+                              }}
+                              required={field.required}
+                            />
                           </div>
                         ) : (
                           <input

@@ -17,7 +17,7 @@ export const MEMBER_DATABASE_SCHEMA: SchemaFieldDefinition[] = [
   { key: 'title', label: 'Title', type: 'select', options: ['Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Engr.', 'Prof.', 'Chief'], category: 'personal', categoryLabel: '1. Personal Identity', placeholder: 'Select title', required: true },
   { key: 'firstName', label: 'First Name', type: 'text', category: 'personal', categoryLabel: '1. Personal Identity', placeholder: 'e.g. Bako', required: true },
   { key: 'surname', label: 'Surname / Last Name', type: 'text', category: 'personal', categoryLabel: '1. Personal Identity', placeholder: 'e.g. Danladi', required: true },
-  { key: 'dateOfBirth', label: 'Birthday', type: 'text', category: 'personal', categoryLabel: '1. Personal Identity', placeholder: 'DD, MM (e.g. 15, August)', description: 'Used for community birthday celebrations', required: true },
+  { key: 'dateOfBirth', label: 'Birthday', type: 'text', category: 'personal', categoryLabel: '1. Personal Identity', placeholder: 'Select Birthday (Date & Month)', description: 'Used for community birthday celebrations', required: true },
   { key: 'maritalStatus', label: 'Marital Status', type: 'select', options: ['Single', 'Married', 'Divorced', 'Widowed'], category: 'personal', categoryLabel: '1. Personal Identity', placeholder: 'Select marital status', required: false },
   {
     key: 'jerseySize',

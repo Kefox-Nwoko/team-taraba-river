@@ -16,9 +16,28 @@ const MONTH_NAMES = [
 ];
 const DAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 
-function parseDate(dateStr: string) {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return { year: y, month: m - 1, day: d };
+function parseDate(dateStr?: string | null) {
+  const now = new Date();
+  if (!dateStr || typeof dateStr !== "string") {
+    return { year: now.getFullYear(), month: now.getMonth(), day: now.getDate() };
+  }
+  const clean = dateStr.trim();
+  const isoMatch = clean.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (isoMatch) {
+    const y = parseInt(isoMatch[1], 10);
+    const m = parseInt(isoMatch[2], 10) - 1;
+    const d = parseInt(isoMatch[3], 10);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      return { year: y, month: m, day: d };
+    }
+  }
+
+  const parsed = new Date(clean.includes(" ") && !clean.match(/\d{4}/) ? `${clean} ${now.getFullYear()}` : clean);
+  if (!isNaN(parsed.getTime())) {
+    return { year: parsed.getFullYear(), month: parsed.getMonth(), day: parsed.getDate() };
+  }
+
+  return { year: now.getFullYear(), month: now.getMonth(), day: now.getDate() };
 }
 
 function formatISO(year: number, month: number, day: number) {
@@ -190,21 +209,46 @@ export const DatePicker: React.FC<DatePickerProps> = ({
              onClick={(e) => e.stopPropagation()}
               style={{ fontSize: '0.7rem' }}>
           {/* Header */}
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 gap-1">
             <button
               type="button"
               onClick={goToPrevMonth}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
+              title="Previous month"
             >
               <ChevronLeft className="w-5 h-5 text-slate-500 dark:text-slate-400" />
             </button>
-            <span className="font-semibold text-slate-800 dark:text-white text-base">
-              {MONTH_NAMES[viewMonth]} {viewYear}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <select
+                value={viewMonth}
+                onChange={(e) => setViewMonth(Number(e.target.value))}
+                onClick={(e) => e.stopPropagation()}
+                className="font-semibold text-slate-800 dark:text-white text-sm bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 py-1 px-1.5 rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer focus:outline-none"
+              >
+                {MONTH_NAMES.map((name, idx) => (
+                  <option key={name} value={idx} className="bg-white dark:bg-[#1E1E1E] text-slate-900 dark:text-white">
+                    {name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={viewYear}
+                onChange={(e) => setViewYear(Number(e.target.value))}
+                onClick={(e) => e.stopPropagation()}
+                className="font-semibold text-slate-800 dark:text-white text-sm bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 py-1 px-1.5 rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer focus:outline-none"
+              >
+                {Array.from({ length: 110 }, (_, i) => new Date().getFullYear() + 5 - i).map((yr) => (
+                  <option key={yr} value={yr} className="bg-white dark:bg-[#1E1E1E] text-slate-900 dark:text-white">
+                    {yr}
+                  </option>
+                ))}
+              </select>
+            </div>
             <button
               type="button"
               onClick={goToNextMonth}
-              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
+              title="Next month"
             >
               <ChevronRight className="w-5 h-5 text-slate-500 dark:text-slate-400" />
             </button>
