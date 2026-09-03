@@ -564,25 +564,36 @@ export default function App() {
           />
         </Suspense>
 
-        {registerModalOpen && currentUser?.role !== "admin" ? (
-          <Suspense fallback={<ModalFallback />}>
-            <MemberRegistrationModal
-              isOpen={registerModalOpen}
-              onClose={() => setRegisterModalOpen(false)}
-              onOpenTerms={() => setTermsModalOpen(true)}
-              memberToEdit={memberToEdit}
-              originatingPageName={getOriginatingPageName()}
-              onSuccess={(updatedM) => {
-                handleRefreshAll();
-                if (!currentUser || currentUser.id === updatedM.id) {
-                  setCurrentUser(updatedM);
-                  AppStateManager.setCurrentUser(updatedM);
-                }
-                setRegisterModalOpen(false);
-              }}
-            />
-          </Suspense>
-        ) : signInModalOpen ? (
+        {/* Registration Modal Overlay - Enabled for all users and admins */}
+        {registerModalOpen && (
+          <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md px-4 sm:px-6 lg:px-8 pt-20 sm:pt-28 pb-16 overflow-y-auto flex items-start justify-center animate-fadeIn">
+            <div className="w-full max-w-[1400px] mx-auto bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 my-8">
+              <Suspense fallback={<ModalFallback />}>
+                <MemberRegistrationModal
+                  isOpen={registerModalOpen}
+                  onClose={() => {
+                    setRegisterModalOpen(false);
+                    setMemberToEdit(null);
+                  }}
+                  onOpenTerms={() => setTermsModalOpen(true)}
+                  memberToEdit={memberToEdit}
+                  originatingPageName={getOriginatingPageName()}
+                  onSuccess={(updatedM) => {
+                    handleRefreshAll();
+                    if (!currentUser || currentUser.id === updatedM.id) {
+                      setCurrentUser(updatedM);
+                      AppStateManager.setCurrentUser(updatedM);
+                    }
+                    setRegisterModalOpen(false);
+                    setMemberToEdit(null);
+                  }}
+                />
+              </Suspense>
+            </div>
+          </div>
+        )}
+
+        {signInModalOpen && (
           <SignInModal
             isOpen={signInModalOpen}
             onClose={() => setSignInModalOpen(false)}
@@ -599,7 +610,9 @@ export default function App() {
             }}
             availableMembers={members}
           />
-        ) : archModalOpen ? (
+        )}
+
+        {archModalOpen && (
           <Suspense fallback={<ModalFallback />}>
             <MicroservicesArchModal
               isOpen={archModalOpen}
@@ -607,7 +620,9 @@ export default function App() {
               originatingPageName={getOriginatingPageName()}
             />
           </Suspense>
-        ) : aiAssistantOpen ? (
+        )}
+
+        {aiAssistantOpen && (
           <Suspense fallback={<ModalFallback />}>
             <AIKnowledgeAssistant
               isOpen={aiAssistantOpen}
@@ -624,8 +639,9 @@ export default function App() {
               }}
             />
           </Suspense>
-        ) : (
-          <div className="space-y-6 sm:space-y-8">
+        )}
+
+        <div className="space-y-6 sm:space-y-8">
             {/* Hero Banner & Calendar - Events page only */}
             {activeTab === "events" && (
               <div className="w-full flex flex-col">
@@ -731,7 +747,6 @@ export default function App() {
               </Suspense>
             )}
           </div>
-        )}
       </main>
 
       {/* Modern Mobile Bottom Navigation Bar */}
