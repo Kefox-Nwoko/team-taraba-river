@@ -291,7 +291,7 @@ export class AppStateManager {
     localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(cleanList));
     this.notify();
   }
-  public static deleteMember(memberId: string, email?: string, phone?: string): Member[] {
+  public static deleteMember(memberId: string, email?: string, phone?: string, member?: Member): Member[] {
     this.markMemberAsDeleted(memberId, email, phone);
     const list = this.filterDeleted(this.getMembers());
     this.saveMembers(list);

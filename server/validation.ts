@@ -109,6 +109,13 @@ export const MemberContactSearchSchema = z.object({
   query: z.string().min(1, 'Search query is required').max(500),
 });
 
+// --- Admin Member Restore Schema ---
+
+export const MemberRestoreSchema = z.object({
+  originalId: z.string().min(1, 'originalId is required'),
+  member: z.any().optional(),
+});
+
 // --- Media Pipeline Schemas ---
 
 export const MediaUploadSchema = z.object({

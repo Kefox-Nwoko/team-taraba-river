@@ -429,7 +429,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       if (restored) {
         setRecycleBin((prev) => prev.filter((e) => e.originalId !== entry.originalId && e.member.id !== entry.member.id));
         alert(`✅ Success: Member "${name}" has been restored to the active directory!`);
-        onRefreshData();
       } else {
         alert(`❌ Error: Member "${name}" could not be restored.`);
       }
@@ -454,7 +453,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       }
       setRecycleBin([]);
       alert(`✅ Success: All staged deleted member records have been restored to the active directory!`);
-      onRefreshData();
     } catch (err: any) {
       alert(`❌ Error restoring all: ${err.message || "Failed to restore"}`);
     } finally {

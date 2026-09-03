@@ -1,5 +1,5 @@
 import { initializeApp, getApps, App } from 'firebase-admin/app';
-import { getFirestore, Firestore } from 'firebase-admin/firestore';
+import { getFirestore, Firestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
 import { cert } from 'firebase-admin';
 
@@ -124,4 +124,4 @@ export function isFirestoreAvailable(): boolean {
   return firestoreAvailable;
 }
 
-export { db, adminAuth };
+export { db, adminAuth, FieldValue };

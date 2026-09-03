@@ -107,6 +107,20 @@ export async function fetchRecycleBin(): Promise<DeletedMemberEntry[]> {
 }
 
 export async function restoreDeletedMember(originalId: string, memberObj?: Member): Promise<Member | null> {
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(apiUrl("/api/admin/members/restore"), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ originalId, member: memberObj }),
+    });
+    const contentType = res.headers.get("content-type") || "";
+    if (res.ok && contentType.includes("application/json")) {
+      const data = await res.json();
+      if (data && data.member) return data.member;
+    }
+  } catch {}
+
   return await FirebaseSyncManager.restoreMemberFromRecycleBin(originalId, memberObj);
 }
 

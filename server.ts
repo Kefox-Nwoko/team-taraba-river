@@ -10,7 +10,7 @@ import { serverLogger } from "./server/logger";
 import { config, isAdminEmail } from "./server/config";
 
 // Server modules
-import { db, adminAuth, checkFirestoreConnection, isFirestoreAvailable } from "./server/firebaseAdmin";
+import { db, adminAuth, checkFirestoreConnection, isFirestoreAvailable, FieldValue } from "./server/firebaseAdmin";
 import { authMiddleware, requireAdmin } from "./server/authMiddleware";
 import {
   validateBody,
@@ -25,6 +25,7 @@ import {
   LoginCredentialSchema,
   AdminAISearchSchema,
   MemberContactSearchSchema,
+  MemberRestoreSchema,
   MediaUploadSchema,
   MediaFinalizeSchema,
 } from "./server/validation";
@@ -1148,6 +1149,65 @@ app.delete("/api/members/:id", conditionalAuth, conditionalRequireAdmin, async (
   } catch (error) {
     serverLogger.error("Delete member error", error);
     res.status(500).json({ error: "Failed to delete member profile." });
+  }
+});
+
+// 6c. Member Service: Restore Profile from Recycle Bin (Admin only)
+app.post("/api/admin/members/restore", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
+  const validation = validateBody(MemberRestoreSchema, req.body);
+  if (!validation.success) {
+    res.status(400).json({ error: (validation as any).error });
+    return;
+  }
+
+  const { originalId, member } = validation.data;
+
+  try {
+    if (!isFirestoreAvailable()) {
+      res.status(500).json({ error: "Firestore is not available." });
+      return;
+    }
+
+    const deletedDocRef = db.collection("deleted_members").doc(originalId);
+    const deletedDocSnap = await deletedDocRef.get();
+
+    if (!deletedDocSnap.exists) {
+      res.status(404).json({ error: "Deleted member entry not found in recycle bin." });
+      return;
+    }
+
+    const deletedData = deletedDocSnap.data() as any;
+    const memberToRestore: Member = member || deletedData.member;
+
+    if (!memberToRestore || !memberToRestore.id) {
+      res.status(400).json({ error: "Invalid member data for restoration." });
+      return;
+    }
+
+    const membersCol = db.collection(COLLECTIONS.members);
+    const existingSnap = await membersCol.doc(memberToRestore.id).get();
+    if (existingSnap.exists) {
+      await existingSnap.ref.delete();
+    }
+
+    await membersCol.doc(memberToRestore.id).set(memberToRestore);
+    _membersCache = null;
+
+    await deletedDocRef.delete();
+
+    await addActivityLog({
+      id: `act_${Date.now()}`,
+      memberId: memberToRestore.id,
+      memberName: memberToRestore.fullName || "Member",
+      action: `Admin restored member profile from recycle bin (${memberToRestore.fullName || originalId})`,
+      timestamp: new Date().toISOString(),
+      pointsEarned: 0,
+    });
+
+    res.json({ success: true, member: memberToRestore });
+  } catch (error) {
+    serverLogger.error("Restore member error", error);
+    res.status(500).json({ error: "Failed to restore member profile." });
   }
 });
 
