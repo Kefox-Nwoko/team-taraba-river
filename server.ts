@@ -3047,7 +3047,7 @@ const requireCronSecret = (req: Request, res: Response, next: NextFunction) => {
 app.get("/api/cron/birthdays/monthly", requireCronSecret, async (req: Request, res: Response) => {
   try {
     const { nextMonth, nextMonthName, year, celebrants } = await getUpcomingNextMonthCelebrants();
-    const adminEmail = process.env.OWNER_EMAIL || "tarabateam@gmail.com";
+    const adminEmail = "tarabateam@gmail.com";
     
     if (celebrants.length > 0) {
       const emailConfig = await getEmailConfig();
@@ -3076,7 +3076,7 @@ app.get("/api/cron/birthdays/monthly", requireCronSecret, async (req: Request, r
 app.get("/api/cron/birthdays/eve", requireCronSecret, async (req: Request, res: Response) => {
   try {
     const { tomorrowDate, celebrants } = await getTomorrowCelebrants();
-    const adminEmail = process.env.OWNER_EMAIL || "tarabateam@gmail.com";
+    const adminEmail = "tarabateam@gmail.com";
     
     if (celebrants.length > 0) {
       const emailConfig = await getEmailConfig();
@@ -3105,7 +3105,7 @@ app.get("/api/cron/birthdays/today", requireCronSecret, async (req: Request, res
   try {
     const { getTodayCelebrants } = await import("./server/birthdayService");
     const { todayDate, celebrants } = await getTodayCelebrants();
-    const adminEmail = process.env.OWNER_EMAIL || "tarabateam@gmail.com";
+    const adminEmail = "tarabateam@gmail.com";
     
     if (celebrants.length > 0) {
       const emailConfig = await getEmailConfig();

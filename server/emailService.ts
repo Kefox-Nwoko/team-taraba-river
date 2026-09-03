@@ -19,27 +19,16 @@ let inMemoryConfig: EmailConfig = { ...DEFAULT_CONFIG };
 
 /**
  * Retrieve current email configuration from Firestore or memory.
+ * Permanently enabled and locked to the organization owner: tarabateam@gmail.com
  */
 export async function getEmailConfig(): Promise<EmailConfig> {
-  try {
-    if (isFirestoreAvailable() && db) {
-      const doc = await db.collection("settings").doc("email_config").get();
-      if (doc.exists) {
-        const data = doc.data() as Partial<EmailConfig>;
-        return {
-          recipientEmail: data.recipientEmail || inMemoryConfig.recipientEmail,
-          resendApiKey: data.resendApiKey || process.env.RESEND_API_KEY || inMemoryConfig.resendApiKey || "",
-          senderEmail: data.senderEmail || inMemoryConfig.senderEmail,
-          enabled: data.enabled !== undefined ? data.enabled : inMemoryConfig.enabled,
-        };
-      }
-    }
-  } catch (err) {
-    serverLogger.warn("[EmailService] Could not read email_config from Firestore, using memory fallback", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-  return inMemoryConfig;
+  const apiKey = process.env.RESEND_API_KEY || inMemoryConfig.resendApiKey || "";
+  return {
+    recipientEmail: "tarabateam@gmail.com",
+    resendApiKey: apiKey,
+    senderEmail: process.env.SENDER_EMAIL || inMemoryConfig.senderEmail || "Team Taraba River <onboarding@resend.dev>",
+    enabled: true,
+  };
 }
 
 /**
