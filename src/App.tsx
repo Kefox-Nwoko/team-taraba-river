@@ -69,9 +69,6 @@ export default function App() {
     try {
       const savedTab = localStorage.getItem("taraba_active_tab");
       const user = AppStateManager.getCurrentUser();
-      if (user?.role === "admin") {
-        if (savedTab === "admin" || !savedTab) return "admin";
-      }
       if (user && user.role !== "admin" && !isMemberProfileComplete(user)) {
         return "profile";
       }
@@ -403,8 +400,8 @@ export default function App() {
       const adminMember = await triggerGoogleAdminSignIn();
       AppStateManager.setCurrentUser(adminMember);
       setCurrentUser(adminMember);
-      setActiveTab("admin");
-      try { localStorage.setItem("taraba_active_tab", "admin"); } catch {}
+      setActiveTab("events");
+      try { localStorage.setItem("taraba_active_tab", "events"); } catch {}
     } catch (err) {
       logger.error("Google Admin Sign In error", err);
     }
@@ -443,9 +440,10 @@ export default function App() {
             AppStateManager.setCurrentUser(loggedUser);
             setCurrentUser(loggedUser);
             const isComplete = isMemberProfileComplete(loggedUser);
-            const targetTab = loggedUser.role === "admin"
-              ? "admin"
-              : (!isComplete ? "profile" : "events");
+            // Always redirect to Home ("events") page upon sign in, even for admins
+            const targetTab = (!isComplete && loggedUser.role !== "admin")
+              ? "profile"
+              : "events";
             setActiveTab(targetTab);
             try { localStorage.setItem("taraba_active_tab", targetTab); } catch {}
 
