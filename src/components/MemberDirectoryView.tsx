@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useDeferredValue } from "react";
 import { Member } from "../types";
 import { adminAISearch, deleteMember } from "../services/apiClient";
+import { AppStateManager } from "../services/storage";
 import { EngagementTracker } from "../services/EngagementTracker";
 import { logger } from "../lib/logger";
 import { MemberAvatar } from "./MemberAvatar";
