@@ -99,22 +99,6 @@ export async function checkFirestoreConnection(): Promise<boolean> {
       message: err?.message,
       code: err?.code,
     });
-    // Fallback to (default) database if a custom one was configured and failed
-    if (firestoreDatabaseId !== '(default)') {
-      try {
-        serverLogger.info('Trying (default) database as fallback...');
-        db = getFirestore(app);
-        await db.collection('members').limit(1).get();
-        firestoreAvailable = true;
-        serverLogger.info('Firestore connected using (default) database');
-        return true;
-      } catch (fallbackErr: any) {
-        serverLogger.error('Fallback to (default) database also failed', {
-          message: fallbackErr?.message,
-          code: fallbackErr?.code,
-        });
-      }
-    }
     firestoreAvailable = false;
     return false;
   }

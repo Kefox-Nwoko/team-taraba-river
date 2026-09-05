@@ -22,8 +22,8 @@ import { doc, getDoc } from "firebase/firestore";
 import { deleteYouTubeVideo, extractYouTubeId, getYouTubeThumbnail } from "../services/youtubeDirectUpload";
 import { CreateEventModal } from "./CreateEventModal";
 import { ReturnButton } from "./ReturnButton";
+import { isOfficialFutureEvent, isChapterEvent } from "../utils/eventUtils";
 import { formatMemberDisplayName } from "../utils/nameUtils";
-import { isOfficialFutureEvent } from "../utils/eventUtils";
 import {
   Users,
   ShieldCheck,
@@ -71,7 +71,8 @@ interface AdminDashboardViewProps {
   currentUser: Member | null;
   events: GroupEvent[];
   totalVisits?: number;
-  onRefreshData: () => void;
+  onRefreshData: (event?: GroupEvent) => void | Promise<void>;
+  onMemberRestored?: (member: Member) => void;
   onEditMember: (member: Member) => void;
   onRegisterClick: () => void;
   onDeleteMember?: (member: Member) => void | Promise<void>;
@@ -364,14 +365,28 @@ const PendingMediaModerationCard: React.FC<PendingMediaModerationCardProps> = ({
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   members,
   currentUser,
-  events,
+  events: propEvents,
   totalVisits = 0,
   onRefreshData,
+  onMemberRestored,
   onEditMember,
   onRegisterClick,
   onDeleteMember,
   onReturn,
 }) => {
+  const [events, setEvents] = useState<GroupEvent[]>(propEvents);
+
+  useEffect(() => {
+    setEvents(propEvents);
+  }, [propEvents]);
+
+  useEffect(() => {
+    const unsub = AppStateManager.subscribe(() => {
+      setEvents(AppStateManager.getEvents());
+    });
+    return () => unsub();
+  }, []);
+
   const [activeTab, setActiveTab] = useState<"directory" | "rsvps" | "analytics" | "moderation" | "cloud_settings" | "developer">("directory");
   const [pendingApprovals, setPendingApprovals] = useState<PhotoApprovalRequest[]>([]);
   const [previewModalReq, setPreviewModalReq] = useState<PhotoApprovalRequest | null>(null);
@@ -407,12 +422,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   useEffect(() => {
     if (activeTab === "developer") {
       FirebaseSyncManager.getRecycleBin().then((entries) => {
-        if (entries.length > 0) setRecycleBin(entries);
+        setRecycleBin(entries || []);
       });
-      const unsub = FirebaseSyncManager.subscribeRecycleBin((entries) => {
-        setRecycleBin(entries);
+      const unsubFirestore = FirebaseSyncManager.subscribeRecycleBin((entries) => {
+        setRecycleBin(entries || []);
       });
-      return () => unsub();
+      const unsubLocal = AppStateManager.subscribe(() => {
+        setRecycleBin(AppStateManager.getRecycleBin());
+      });
+      return () => {
+        unsubFirestore();
+        unsubLocal();
+      };
     }
   }, [activeTab]);
 
@@ -428,7 +449,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       const restored = await restoreDeletedMember(entry.originalId, entry.member);
       if (restored) {
         setRecycleBin((prev) => prev.filter((e) => e.originalId !== entry.originalId && e.member.id !== entry.member.id));
-        onRefreshData();
+        if (onMemberRestored) onMemberRestored(restored);
+        await Promise.resolve(onRefreshData());
         alert(`✅ Success: Member "${name}" has been restored to the active directory!`);
       } else {
         alert(`❌ Error: Member "${name}" could not be restored.`);
@@ -450,10 +472,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     try {
       setIsRestoringAll(true);
       for (const entry of recycleBin) {
-        await restoreDeletedMember(entry.originalId, entry.member);
+        const restored = await restoreDeletedMember(entry.originalId, entry.member);
+        if (restored && onMemberRestored) onMemberRestored(restored);
       }
       setRecycleBin([]);
-      onRefreshData();
+      await Promise.resolve(onRefreshData());
       alert(`✅ Success: All staged deleted member records have been restored to the active directory!`);
     } catch (err: any) {
       alert(`❌ Error restoring all: ${err.message || "Failed to restore"}`);
@@ -525,13 +548,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     const { id: eventId } = deletingCalendarEventTarget;
     try {
       setDeletingEventId(eventId);
-      const remainingEvents = events.filter((e) => e.id !== eventId);
+      setEvents((prev) => prev.filter((e) => e.id !== eventId));
+      const remainingEvents = AppStateManager.getEvents().filter((e) => e.id !== eventId);
       AppStateManager.saveEvents(remainingEvents);
       await FirebaseSyncManager.deleteEvent(eventId);
       try {
         await deleteEventApi(eventId);
       } catch {}
-      onRefreshData();
+      await Promise.resolve(onRefreshData());
     } catch (err) {
       logger.error("Delete event failed", err);
     } finally {
@@ -598,7 +622,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     try {
       const res = await triggerCloudSyncAll(syncDirection);
       if (res && res.events) {
-        AppStateManager.saveEvents(res.events);
+        const local = AppStateManager.getEvents();
+        const map = new Map<string, GroupEvent>();
+        for (const e of local) { if (e?.id) map.set(e.id, e); }
+        for (const e of res.events) { if (e?.id) map.set(e.id, e); }
+        AppStateManager.saveEvents(Array.from(map.values()));
       }
       const updated = AppStateManager.saveCloudMediaConfig({
         lastSyncedAt: new Date().toISOString(),
@@ -632,7 +660,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     try {
       const res = await triggerYouTubeBackSync();
       if (res && res.events) {
-        AppStateManager.saveEvents(res.events);
+        const local = AppStateManager.getEvents();
+        const map = new Map<string, GroupEvent>();
+        for (const e of local) { if (e?.id) map.set(e.id, e); }
+        for (const e of res.events) { if (e?.id) map.set(e.id, e); }
+        AppStateManager.saveEvents(Array.from(map.values()));
       }
       onRefreshData();
       const syncMsg = (res as any).message || "Video sync complete!";
@@ -1031,8 +1063,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           {/* Section 2: Future Events & Member RSVP Board */}
           <div className="space-y-4">
             {(() => {
-              // STRICT RULE: Only official future/upcoming events are displayed. Past events & media folders are completely excluded.
-              const activeEvents = events.filter(isOfficialFutureEvent);
+              // Admin view shows all official chapter events (excludes synced cloud media folders)
+              const activeEvents = events.filter(isChapterEvent);
 
               return (
                 <div className="space-y-4">
@@ -1079,9 +1111,13 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                                 </h3>
 
                                 {evt.category && (
-                                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/60 text-[11px] font-medium shrink-0">
-                                    🏷️ {evt.category}
-                                  </span>
+                                  <div className="flex flex-wrap items-center gap-1 shrink-0">
+                                    {evt.category.split(/[,/]/).map((c) => c.trim()).filter(Boolean).map((catName) => (
+                                      <span key={catName} className="px-2.5 py-0.5 rounded-full bg-cyan-50 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/60 text-[11px] font-medium shrink-0">
+                                        🏷️ {catName}
+                                      </span>
+                                    ))}
+                                  </div>
                                 )}
                               </div>
 
@@ -1750,7 +1786,20 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         }}
         currentUser={currentUser}
         eventToEdit={editingEvent}
-        onSuccess={onRefreshData}
+        onSuccess={async (savedEvent) => {
+          if (savedEvent && savedEvent.id) {
+            setEvents((prev) => {
+              const next = prev.filter((e) => e.id !== savedEvent.id);
+              next.unshift(savedEvent);
+              return next;
+            });
+            const current = AppStateManager.getEvents();
+            const merged = current.filter((e) => e.id !== savedEvent.id);
+            merged.unshift(savedEvent);
+            AppStateManager.saveEvents(merged);
+          }
+          await Promise.resolve(onRefreshData(savedEvent));
+        }}
       />
 
       {/* ── FULLSCREEN MEDIA REVIEW MODAL ── */}

@@ -42,20 +42,25 @@ export const MemberUpdateSchema = MemberRegistrationSchema.partial();
 // --- Event Schemas ---
 
 export const EventCreationSchema = z.object({
+  id: z.string().max(100).optional(),
   title: z.string().min(2, 'Event title is required').max(300),
   description: z.string().max(2000).optional().default('Group activity organized by Team Taraba River.'),
   date: z.string().min(1, 'Event date is required'),
+  endDate: z.string().max(100).optional(),
   time: z.string().optional().default('09:00'),
   location: z.string().min(2, 'Event location is required').max(300),
-  category: z.enum(['cleanup', 'meeting', 'workshop', 'celebration', 'sports', 'outreach']).optional().default('meeting'),
-  driveImageUrls: z.array(z.string().url()).optional().default([]),
+  category: z.union([
+    z.string().max(300),
+    z.array(z.string()).transform(cats => cats.join(', '))
+  ]).optional().default('meeting'),
+  driveImageUrls: z.array(z.string()).optional().default([]),
   driveFolderId: z.string().max(200).optional(),
   youtubeVideoUrl: z.string().optional().default(''),
   youtubeTitle: z.string().max(300).optional(),
   createdBy: z.string().max(200).optional().default('Team Member'),
   createdById: z.string().optional(),
   maxCapacity: z.number().int().positive().optional().default(100),
-});
+}).passthrough();
 
 // --- Approval Schemas ---
 

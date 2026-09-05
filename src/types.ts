@@ -34,6 +34,9 @@ export interface Member {
   nextOfKinPhone?: string;
   isGoogleAuth?: boolean;
   readNewsArticles?: string[];
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
 }
 
 export interface GroupEvent {

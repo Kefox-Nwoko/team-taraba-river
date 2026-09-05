@@ -11,6 +11,7 @@ import { FirebaseSyncManager } from "./firebaseService";
 import { AppStateManager } from "./storage";
 import { isMemberCredentialMatch } from "../lib/authMatching";
 import { sanitizeMemberRecord } from "../utils/nameUtils";
+import { sanitizeEventRecord } from "../utils/eventUtils";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
@@ -84,22 +85,13 @@ export async function fetchMembers(): Promise<Member[]> {
 }
 
 export async function deleteMember(memberId: string, member?: Member): Promise<void> {
-  // 1. Stage in local & persistent recycle bin
-  if (member) {
-    const entry: DeletedMemberEntry = {
-      originalId: memberId,
-      member,
-      deletedAt: new Date().toISOString(),
-      deletedBy: "Admin",
-      originalLocation: "Member Directory",
-    };
-    AppStateManager.addToRecycleBin(entry);
-    FirebaseSyncManager.addToRecycleBin(entry).catch(() => {});
-  }
-
-  // 2. Mark deleted in local storage
+  // 1. Mark soft-deleted in local storage & local recycle bin
   AppStateManager.deleteMember(memberId, member?.email, member?.phoneNumber, member);
 
+  // 2. Soft-delete in Firestore (marks isDeleted: true without destroying the doc)
+  await FirebaseSyncManager.deleteMember(memberId, member?.email, member?.phoneNumber, member);
+
+  // 3. Inform optional backend endpoint if running
   try {
     const headers = await getAuthHeaders();
     await fetch(apiUrl(`/api/members/${memberId}`), {
@@ -107,8 +99,6 @@ export async function deleteMember(memberId: string, member?: Member): Promise<v
       headers,
     });
   } catch {}
-
-  await FirebaseSyncManager.deleteMember(memberId, member?.email, member?.phoneNumber);
 }
 
 export async function fetchRecycleBin(): Promise<DeletedMemberEntry[]> {
@@ -128,10 +118,16 @@ export async function restoreDeletedMember(originalId: string, memberObj?: Membe
     const contentType = res.headers.get("content-type") || "";
     if (res.ok && contentType.includes("application/json")) {
       const data = await res.json();
-      if (data && data.member) restored = data.member;
+      if (data && data.member && typeof data.member === "object" && data.member.id) {
+        // Merge while strictly guaranteeing active status
+        restored = { ...restored, ...data.member, isDeleted: false, deletedAt: undefined, deletedBy: undefined };
+      }
     }
   } catch {}
 
+  if (restored) {
+    restored.isDeleted = false;
+  }
   return restored;
 }
 
@@ -259,34 +255,78 @@ export async function updateMemberProfile(
   return updatedMember;
 }
 export async function fetchEvents(): Promise<GroupEvent[]> {
+  const localEvents = AppStateManager.getEvents();
+  const eventMap = new Map<string, GroupEvent>();
+  for (const e of localEvents) {
+    if (e && e.id) eventMap.set(e.id, sanitizeEventRecord(e));
+  }
+
+  // 1. Try server endpoint
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(apiUrl("/api/events"), { headers });
     const contentType = res.headers.get("content-type") || "";
     if (res.ok && contentType.includes("application/json")) {
       const data = await res.json();
-      if (Array.isArray(data.events) && data.events.length > 0) {
-        return data.events;
+      if (Array.isArray(data.events)) {
+        for (const e of data.events) {
+          if (e && e.id) eventMap.set(e.id, sanitizeEventRecord(e));
+        }
       }
     }
   } catch {}
 
-  // Direct Firestore fallback
+  // 2. Direct Firestore fallback
   try {
     const firestoreEvents = await FirebaseSyncManager.fetchEventsFromFirestore();
-    if (firestoreEvents.length > 0) return firestoreEvents;
+    for (const e of firestoreEvents) {
+      if (e && e.id) eventMap.set(e.id, sanitizeEventRecord(e));
+    }
   } catch {}
+
+  // Re-read local events right before saving to prevent overwriting newly created or updated events with stale remote responses
+  const currentLocal = AppStateManager.getEvents();
+  for (const e of currentLocal) {
+    if (e && e.id) {
+      const sanitized = sanitizeEventRecord(e);
+      if (!eventMap.has(e.id)) {
+        eventMap.set(e.id, sanitized);
+      } else {
+        const remote = eventMap.get(e.id)!;
+        const combinedAttendees = Array.from(new Set([...(remote.attendeeIds || []), ...(sanitized.attendeeIds || [])]));
+        const combinedMaybe = Array.from(new Set([...(remote.maybeIds || []), ...(sanitized.maybeIds || [])]));
+        const combinedDeclined = Array.from(new Set([...(remote.declinedIds || []), ...(sanitized.declinedIds || [])]));
+
+        eventMap.set(e.id, {
+          ...sanitized,
+          ...remote,
+          id: e.id,
+          attendeeIds: combinedAttendees,
+          maybeIds: combinedMaybe,
+          declinedIds: combinedDeclined,
+        });
+      }
+    }
+  }
+
+  const merged = Array.from(eventMap.values()).filter((e) => !e.id.startsWith("evt_arch_"));
+  if (merged.length > 0) {
+    AppStateManager.saveEvents(merged);
+    return merged;
+  }
 
   return AppStateManager.getEvents();
 }
+
 export async function createEvent(eventData: Partial<GroupEvent>): Promise<GroupEvent> {
-  const newEvent: GroupEvent = {
+  const newEvent: GroupEvent = sanitizeEventRecord({
     id: eventData.id || `evt_${Date.now()}`,
     title: eventData.title || "Community Event",
     date: eventData.date || new Date().toISOString().split("T")[0],
+    endDate: eventData.endDate || undefined,
     time: eventData.time || "09:00",
     location: eventData.location || "",
-    category: eventData.category || "cleanup",
+    category: eventData.category || "meeting",
     description: eventData.description || "",
     driveImageUrls: eventData.driveImageUrls || [],
     driveFolderId: eventData.driveFolderId || `drive_folder_${Date.now()}`,
@@ -297,24 +337,40 @@ export async function createEvent(eventData: Partial<GroupEvent>): Promise<Group
     maxCapacity: eventData.maxCapacity || 100,
     createdAt: new Date().toISOString(),
     ...eventData,
-  };
+  });
 
+  // 1. Save synchronously to LocalStorage so UI never loses the event
+  const currentEvents = AppStateManager.getEvents();
+  const existingIdx = currentEvents.findIndex((e) => e.id === newEvent.id);
+  if (existingIdx >= 0) {
+    currentEvents[existingIdx] = newEvent;
+  } else {
+    currentEvents.unshift(newEvent);
+  }
+  AppStateManager.saveEvents(currentEvents);
+
+  // 2. Direct Firestore write with clean record
+  try {
+    await FirebaseSyncManager.saveEvent(newEvent);
+  } catch (err) {
+    logger.warn("Direct Firestore saveEvent notice", err);
+  }
+
+  // 3. Inform optional server endpoint
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(apiUrl("/api/events"), {
       method: "POST",
       headers,
-      body: JSON.stringify(eventData),
+      body: JSON.stringify(newEvent),
     });
     const contentType = res.headers.get("content-type") || "";
     if (res.ok && contentType.includes("application/json")) {
       const data = await res.json();
-      if (data && data.event) return data.event;
+      if (data && data.event) return sanitizeEventRecord(data.event);
     }
   } catch {}
 
-  // Direct Firestore fallback
-  await FirebaseSyncManager.saveEvent(newEvent);
   return newEvent;
 }
 
@@ -330,33 +386,49 @@ export async function updateEvent(id: string, eventData: Partial<GroupEvent>): P
     const contentType = res.headers.get("content-type") || "";
     if (res.ok && contentType.includes("application/json")) {
       const data = await res.json();
-      if (data && data.event) updatedEvent = data.event;
+      if (data && data.event) {
+        updatedEvent = sanitizeEventRecord({ ...data.event, id });
+      }
     }
   } catch {}
 
   if (!updatedEvent) {
     const existing = AppStateManager.getEvents().find((e) => e.id === id);
-    updatedEvent = {
+    updatedEvent = sanitizeEventRecord({
       ...(existing || {
         id,
-        title: "Event",
-        date: "",
-        time: "",
+        title: "Community Event",
+        date: new Date().toISOString().split("T")[0],
+        time: "09:00",
         location: "",
-        category: "cleanup",
+        category: "meeting",
         description: "",
         driveImageUrls: [],
-        createdBy: "Admin",
-        createdById: "admin",
+        youtubeVideoUrl: "",
+        createdBy: "Community Member",
+        createdById: "mem_guest",
         attendeeIds: [],
         maxCapacity: 100,
         createdAt: new Date().toISOString(),
       }),
       ...eventData,
-    };
-    await FirebaseSyncManager.saveEvent(updatedEvent);
+      id,
+    });
   }
 
+  updatedEvent.id = id;
+
+  // Replace in LocalStorage immediately
+  const localEvents = AppStateManager.getEvents();
+  const idx = localEvents.findIndex((e) => e.id === id);
+  if (idx >= 0) {
+    localEvents[idx] = updatedEvent;
+  } else {
+    localEvents.unshift(updatedEvent);
+  }
+  AppStateManager.saveEvents(localEvents);
+
+  await FirebaseSyncManager.saveEvent(updatedEvent);
   return updatedEvent;
 }
 

@@ -164,7 +164,8 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
     } catch (err) {
       logger.error("Failed to delete member", err);
       // Ensure local state and blacklist are updated so deleted member is removed from screen
-      AppStateManager.deleteMember(target.id, target.email, target.phoneNumber);
+      // Pass the full member object so the recycle bin entry is staged correctly
+      AppStateManager.deleteMember(target.id, target.email, target.phoneNumber, target);
       setMemberToDelete(null);
     } finally {
       setIsDeleting(false);

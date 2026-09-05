@@ -29,7 +29,6 @@ interface NavbarProps {
   onToggleAiAssistant?: () => void;
   isAiAssistantOpen?: boolean;
   pendingApprovalsCount?: number;
-  onCreateEvent?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -42,7 +41,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleAiAssistant,
   isAiAssistantOpen,
   pendingApprovalsCount = 0,
-  onCreateEvent,
 }) => {
   const { theme, toggleTheme } = useTheme();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);

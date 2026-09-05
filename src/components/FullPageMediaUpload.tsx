@@ -1416,18 +1416,31 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             </div>
           )}
 
-          <div className="flex flex-row items-center justify-end gap-3 pt-4 pb-20 border-t border-slate-200 dark:border-slate-800">
-            {isUploading && (
-              <button
-                type="button"
-                onClick={handleStopUpload}
-                disabled={isCancelling}
-                className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-red-500/10 hover:bg-red-500/20 active:scale-95 text-red-600 dark:text-red-400 border border-red-500/30 font-semibold text-sm transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50 shadow-xs"
-              >
-                <StopCircle className="w-4 h-4 text-red-500" />
-                <span>{isCancelling ? "Stopping Upload..." : "Stop Upload"}</span>
-              </button>
-            )}
+          <div className="flex flex-row items-center justify-between gap-3 pt-4 pb-20 border-t border-slate-200 dark:border-slate-800">
+            {/* Left side: Cancel (idle) or Stop Upload (active) */}
+            <div className="flex items-center gap-2">
+              {isUploading ? (
+                <button
+                  type="button"
+                  onClick={handleStopUpload}
+                  disabled={isCancelling}
+                  className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-red-500/10 hover:bg-red-500/20 active:scale-95 text-red-600 dark:text-red-400 border border-red-500/30 font-semibold text-sm transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50 shadow-xs"
+                >
+                  <StopCircle className="w-4 h-4 text-red-500" />
+                  <span>{isCancelling ? "Stopping Upload..." : "Stop Upload"}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onReturn}
+                  className="w-full sm:w-auto px-5 py-3 rounded-2xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-300 dark:bg-slate-800 dark:hover:bg-rose-950/50 dark:hover:text-rose-400 dark:hover:border-rose-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-semibold text-sm transition-all flex items-center justify-center space-x-2 cursor-pointer shadow-xs"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Cancel</span>
+                </button>
+              )}
+            </div>
+            {/* Right side: Submit */}
             <button
               type="submit"
               disabled={!isFormValid || isUploading}

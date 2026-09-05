@@ -16,12 +16,14 @@ import {
   ChevronDown,
   Edit,
 } from "lucide-react";
+import { CategoryMultiSelect } from "./CategoryMultiSelect";
+import { parseEventCategories, formatEventCategories } from "../constants/eventCategories";
 
 interface CreateEventModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: Member | null;
-  onSuccess: () => void;
+  onSuccess: (event?: GroupEvent) => void;
   eventToEdit?: GroupEvent | null;
 }
 
@@ -37,7 +39,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const [eventEndDate, setEventEndDate] = useState("");
   const [eventTime, setEventTime] = useState("09:00");
   const [eventLocation, setEventLocation] = useState("");
-  const [eventCategory, setEventCategory] = useState<string>("");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(["General Announcement"]);
   const [eventDescription, setEventDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
       setEventEndDate(eventToEdit.endDate || "");
       setEventTime(eventToEdit.time || "09:00");
       setEventLocation(eventToEdit.location || "");
-      setEventCategory(eventToEdit.category || "");
+      setSelectedCategories(parseEventCategories(eventToEdit.category));
       setEventDescription(eventToEdit.description || "");
     } else {
       setEventTitle("");
@@ -57,7 +59,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
       setEventEndDate("");
       setEventTime("09:00");
       setEventLocation("");
-      setEventCategory("");
+      setSelectedCategories(["Meeting"]);
       setEventDescription("");
     }
   }, [eventToEdit, isOpen]);
@@ -82,6 +84,8 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     }
     setErrorMessage(null);
     setIsSubmitting(true);
+    let savedEvent: GroupEvent | null = null;
+    const categoryString = formatEventCategories(selectedCategories);
     try {
       if (eventToEdit) {
         // Edit mode
@@ -91,18 +95,24 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           endDate: eventEndDate && eventEndDate !== eventDate ? eventEndDate : undefined,
           time: eventTime,
           location: eventLocation.trim(),
-          category: eventCategory.trim() || "General",
+          category: categoryString,
           description: eventDescription.trim(),
+          driveImageUrls: eventToEdit.driveImageUrls || [],
+          driveFolderId: eventToEdit.driveFolderId || '',
+          youtubeVideoUrl: eventToEdit.youtubeVideoUrl || '',
         });
         const currentEvents = AppStateManager.getEvents();
         const idx = currentEvents.findIndex((ev) => ev.id === eventToEdit.id);
         if (idx !== -1) {
           currentEvents[idx] = updated;
-          AppStateManager.saveEvents(currentEvents);
+        } else {
+          currentEvents.unshift(updated);
         }
+        AppStateManager.saveEvents(currentEvents);
         try {
           await FirebaseSyncManager.saveEvent(updated);
         } catch {}
+        savedEvent = updated;
       } else {
         // Create mode
         const newEvt = await createEvent({
@@ -111,7 +121,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           endDate: eventEndDate && eventEndDate !== eventDate ? eventEndDate : undefined,
           time: eventTime,
           location: eventLocation.trim(),
-          category: eventCategory.trim() || "General",
+          category: categoryString,
           description: eventDescription.trim(),
           driveImageUrls: [],
           youtubeVideoUrl: "",
@@ -119,13 +129,19 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           createdById: currentUser ? currentUser.id : "mem_admin",
         });
         const currentEvents = AppStateManager.getEvents();
-        currentEvents.unshift(newEvt);
+        const existingIdx = currentEvents.findIndex((ev) => ev.id === newEvt.id);
+        if (existingIdx >= 0) {
+          currentEvents[existingIdx] = newEvt;
+        } else {
+          currentEvents.unshift(newEvt);
+        }
         AppStateManager.saveEvents(currentEvents);
         try {
           await FirebaseSyncManager.saveEvent(newEvt);
         } catch {}
+        savedEvent = newEvt;
       }
-      onSuccess();
+      await Promise.resolve(onSuccess(savedEvent));
       onClose();
     } catch (err: any) {
       logger.error("Save event error", err);
@@ -280,31 +296,23 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
               <div>
                 <label className="block text-xs uppercase font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Category (Optional)
+                  Location / Venue *
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Cleanup, Workshop, Hangout..."
-                  value={eventCategory}
-                  onChange={(e) => setEventCategory(e.target.value)}
+                  required
+                  placeholder="e.g. Jalingo Town Hall / Port Harcourt Venue"
+                  value={eventLocation}
+                  onChange={(e) => setEventLocation(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-[#2A2A2A] border-none rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm"
                 />
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs uppercase font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Location / Venue *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Jalingo Town Hall / Port Harcourt Venue"
-                value={eventLocation}
-                onChange={(e) => setEventLocation(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-[#2A2A2A] border-none rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm"
-              />
-            </div>
+            <CategoryMultiSelect
+              selectedCategories={selectedCategories}
+              onChange={setSelectedCategories}
+            />
 
             <div>
               <label className="block text-xs uppercase font-medium text-slate-700 dark:text-slate-300 mb-1">

@@ -39,9 +39,6 @@ const MemberRegistrationModal = lazy(() =>
 const MicroservicesArchModal = lazy(() =>
   import("./components/MicroservicesArchModal").then((m) => ({ default: m.MicroservicesArchModal }))
 );
-const CreateEventModal = lazy(() =>
-  import("./components/CreateEventModal").then((m) => ({ default: m.CreateEventModal }))
-);
 const FullPageMediaUpload = lazy(() =>
   import("./components/FullPageMediaUpload").then((m) => ({ default: m.FullPageMediaUpload }))
 );
@@ -201,7 +198,6 @@ export default function App() {
   const [signInModalOpen, setSignInModalOpen] = useState(false);
   const [archModalOpen, setArchModalOpen] = useState(false);
   const [aiAssistantOpen, setAiAssistantOpen] = useState(false);
-  const [createEventModalOpen, setCreateEventModalOpen] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [isEventsSubViewOpen, setIsEventsSubViewOpen] = useState(false);
 
@@ -297,8 +293,13 @@ export default function App() {
         AppStateManager.saveMembers(cleanMembers);
 
         const fetchedE = await fetchEvents();
-        setEvents(fetchedE);
-        AppStateManager.saveEvents(fetchedE);
+        const localE = AppStateManager.getEvents();
+        const eMap = new Map<string, GroupEvent>();
+        for (const ev of localE) { if (ev?.id) eMap.set(ev.id, ev); }
+        for (const ev of fetchedE) { if (ev?.id) eMap.set(ev.id, ev); }
+        const cleanEvents = Array.from(eMap.values()).filter((ev) => !ev.id.startsWith("evt_arch_"));
+        setEvents(cleanEvents);
+        AppStateManager.saveEvents(cleanEvents);
       } catch (err) {
         logger.warn("Backend/Firestore sync warning, using cached local data", { error: err });
       }
@@ -319,8 +320,13 @@ export default function App() {
 
     const unsubEvents = FirebaseSyncManager.subscribeEvents((updatedEvents) => {
       if (updatedEvents) {
-        setEvents(updatedEvents);
-        AppStateManager.saveEvents(updatedEvents);
+        const localE = AppStateManager.getEvents();
+        const eMap = new Map<string, GroupEvent>();
+        for (const ev of localE) { if (ev?.id) eMap.set(ev.id, ev); }
+        for (const ev of updatedEvents) { if (ev?.id) eMap.set(ev.id, ev); }
+        const cleanEvents = Array.from(eMap.values()).filter((ev) => !ev.id.startsWith("evt_arch_"));
+        setEvents(cleanEvents);
+        AppStateManager.saveEvents(cleanEvents);
       }
     });
 
@@ -348,24 +354,77 @@ export default function App() {
     };
   }, []);
 
-  const handleRefreshEvents = async () => {
+  const handleRefreshEvents = async (savedEvent?: GroupEvent) => {
+    if (savedEvent && savedEvent.id) {
+      setEvents((prev) => {
+        const next = prev.filter((e) => e.id !== savedEvent.id);
+        next.unshift(savedEvent);
+        return next;
+      });
+      const localEvents = AppStateManager.getEvents();
+      const merged = localEvents.filter((e) => e.id !== savedEvent.id);
+      merged.unshift(savedEvent);
+      AppStateManager.saveEvents(merged);
+    }
     try {
       const fetchedE = await fetchEvents();
-      setEvents(fetchedE);
-      AppStateManager.saveEvents(fetchedE);
+      const localE = AppStateManager.getEvents();
+      const eMap = new Map<string, GroupEvent>();
+      for (const ev of localE) { if (ev?.id) eMap.set(ev.id, ev); }
+      for (const ev of fetchedE) { if (ev?.id) eMap.set(ev.id, ev); }
+      if (savedEvent && savedEvent.id) {
+        eMap.set(savedEvent.id, savedEvent);
+      }
+      const seen = new Set<string>();
+      const cleanEvents = Array.from(eMap.values()).filter((ev) => {
+        if (!ev?.id || seen.has(ev.id)) return false;
+        seen.add(ev.id);
+        return !ev.id.startsWith("evt_arch_");
+      });
+      setEvents(cleanEvents);
+      AppStateManager.saveEvents(cleanEvents);
     } catch (err) {
       setEvents(AppStateManager.getEvents());
     }
   };
 
-  const handleRefreshAll = async () => {
+  const handleRefreshAll = async (savedEvent?: GroupEvent) => {
+    if (savedEvent && savedEvent.id) {
+      setEvents((prev) => {
+        const next = prev.filter((ev) => ev.id !== savedEvent.id);
+        next.unshift(savedEvent);
+        return next;
+      });
+      const localEvents = AppStateManager.getEvents();
+      const merged = localEvents.filter((ev) => ev.id !== savedEvent.id);
+      merged.unshift(savedEvent);
+      AppStateManager.saveEvents(merged);
+    }
     try {
       const [m, e] = await Promise.all([fetchMembers(), fetchEvents()]);
-      const cleanMembers = AppStateManager.filterDeleted(m);
+      const localMembers = AppStateManager.getMembers();
+      const memberMap = new Map<string, Member>();
+      for (const lm of localMembers) { if (lm?.id) memberMap.set(lm.id, lm); }
+      for (const fm of m) { if (fm?.id) memberMap.set(fm.id, fm); }
+      const cleanMembers = AppStateManager.filterDeleted(Array.from(memberMap.values()));
       setMembers(cleanMembers);
       AppStateManager.saveMembers(cleanMembers);
-      setEvents(e);
-      AppStateManager.saveEvents(e);
+
+      const localE = AppStateManager.getEvents();
+      const eMap = new Map<string, GroupEvent>();
+      for (const ev of localE) { if (ev?.id) eMap.set(ev.id, ev); }
+      for (const ev of e) { if (ev?.id) eMap.set(ev.id, ev); }
+      if (savedEvent && savedEvent.id) {
+        eMap.set(savedEvent.id, savedEvent);
+      }
+      const seen = new Set<string>();
+      const cleanEvents = Array.from(eMap.values()).filter((ev) => {
+        if (!ev?.id || seen.has(ev.id)) return false;
+        seen.add(ev.id);
+        return !ev.id.startsWith("evt_arch_");
+      });
+      setEvents(cleanEvents);
+      AppStateManager.saveEvents(cleanEvents);
     } catch (err) {
       setMembers(AppStateManager.getMembers());
       setEvents(AppStateManager.getEvents());
@@ -373,15 +432,15 @@ export default function App() {
   };
 
   const handleDeleteMember = async (memberToDelete: Member) => {
-    // 1. Immediately record in permanent blacklist (id, email, phone) and stage in recycle bin
-    AppStateManager.deleteMember(memberToDelete.id, memberToDelete.email, memberToDelete.phoneNumber, memberToDelete);
-    // 2. Optimistically remove from state so the UI reflects the deletion immediately
-    setMembers((prev) => AppStateManager.filterDeleted(prev).filter((m) => m.id !== memberToDelete.id));
-    // 3. Clean up in Firestore and API
+    // 1. Optimistically remove from UI immediately
+    setMembers((prev) => prev.filter((m) => m.id !== memberToDelete.id));
+    // 2. Stage in recycle bin FIRST, then mark deleted + clean up Firestore — all via apiClient atomically
     try {
       await deleteMember(memberToDelete.id, memberToDelete);
       notify(`Member "${formatMemberDirectoryName(memberToDelete.title, memberToDelete.fullName)}" moved to Recycle Bin.`, "info");
     } catch (err) {
+      // Fallback: ensure local blacklist is updated even on error, so UI stays consistent
+      AppStateManager.deleteMember(memberToDelete.id, memberToDelete.email, memberToDelete.phoneNumber, memberToDelete);
       logger.warn("Remote member deletion note:", err);
     }
   };
@@ -547,7 +606,6 @@ export default function App() {
         }}
         isAiAssistantOpen={aiAssistantOpen}
         pendingApprovalsCount={pendingApprovalsCount}
-        onCreateEvent={() => setCreateEventModalOpen(true)}
       />
 
       {/* Terms and Conditions Modal */}
@@ -560,17 +618,6 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-16">
-        <Suspense fallback={<ModalFallback />}>
-          <CreateEventModal
-            isOpen={createEventModalOpen}
-            onClose={() => setCreateEventModalOpen(false)}
-            currentUser={currentUser}
-            onSuccess={() => {
-              handleRefreshEvents();
-              setCreateEventModalOpen(false);
-            }}
-          />
-        </Suspense>
 
         {/* Registration Modal Overlay - Enabled for all users and admins */}
         {registerModalOpen && (
@@ -720,6 +767,18 @@ export default function App() {
                   currentUser={currentUser}
                   totalVisits={totalVisits}
                   onRefreshData={handleRefreshAll}
+                  onMemberRestored={(restored) => {
+                    setMembers((prev) => {
+                      const next = prev.filter((m) => m.id !== restored.id);
+                      next.unshift(restored);
+                      return next;
+                    });
+                    AppStateManager.saveMembers(
+                      AppStateManager.filterDeleted(
+                        [restored, ...AppStateManager.getMembers().filter((m) => m.id !== restored.id)]
+                      )
+                    );
+                  }}
                   onEditMember={(m) => {
                     setMemberToEdit(m);
                     setRegisterModalOpen(true);

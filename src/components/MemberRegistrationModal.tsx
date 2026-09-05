@@ -295,8 +295,7 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
             {memberToEdit ? "Edit Member Profile" : "Member Registration Form"}
           </h1>
         </div>
-        {!isForceUpdate && (
-          <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
             <button
               type="button"
               onClick={onClose}
@@ -306,16 +305,17 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
               <X className="w-4 h-4" />
               <span>Cancel</span>
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3.5 py-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs rounded-xl transition shadow-md flex items-center justify-center space-x-2 group cursor-pointer shrink-0 font-medium"
-            >
-              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-              <span>Back to {originatingPageName}</span>
-            </button>
+            {!isForceUpdate && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs rounded-xl transition shadow-md flex items-center justify-center space-x-2 group cursor-pointer shrink-0 font-medium"
+              >
+                <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
+                <span>Back to {originatingPageName}</span>
+              </button>
+            )}
           </div>
-        )}
       </div>
 
       {/* Main Form Body - No background block */}

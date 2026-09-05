@@ -190,20 +190,12 @@ export const DatePicker: React.FC<DatePickerProps> = ({
 
   return (
     <div ref={containerRef} className="absolute inset-0 w-full h-full z-10 cursor-pointer" onClick={() => setIsOpen(!isOpen)}>
-      {/* Hidden native input for form validation */}
-      {required && (
-        <input
-          type="date"
-          required
-          max={maxDate}
-          min={minDate}
-          value={value}
-          onChange={() => {}}
-          tabIndex={-1}
-          className="absolute opacity-0 w-0 h-0 pointer-events-none"
-          aria-hidden="true"
-        />
-      )}
+      {/* Hidden input for form integration */}
+      <input
+        type="hidden"
+        value={value}
+        readOnly
+      />
 
       {/* Calendar Dropdown */}
       {isOpen && (

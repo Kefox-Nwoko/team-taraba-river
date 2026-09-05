@@ -313,7 +313,7 @@ async function getMembers(): Promise<Member[]> {
   if (!isFirestoreAvailable()) return fallbackMembers;
   if (_membersCache && Date.now() - _membersCache.ts < DATA_CACHE_TTL) return _membersCache.data;
   const snapshot = await db.collection(COLLECTIONS.members).get();
-  const data = snapshot.docs.map(doc => doc.data() as Member);
+  const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Member));
   _membersCache = { data, ts: Date.now() };
   return data;
 }
@@ -349,8 +349,9 @@ async function getEvents(): Promise<GroupEvent[]> {
     list = [...fallbackEvents];
   } else {
     try {
-      const snapshot = await db.collection(COLLECTIONS.events).orderBy('createdAt', 'desc').get();
-      list = snapshot.docs.map(doc => doc.data() as GroupEvent);
+      const snapshot = await db.collection(COLLECTIONS.events).get();
+      list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GroupEvent));
+      list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     } catch {
       list = [...fallbackEvents];
     }
@@ -385,7 +386,7 @@ async function getApprovals(): Promise<PhotoApprovalRequest[]> {
   if (!isFirestoreAvailable()) return fallbackApprovals;
   const snapshot = await db.collection(COLLECTIONS.photoRequests).get();
   return snapshot.docs.map(doc => {
-    const data = doc.data() as PhotoApprovalRequest;
+    const data = { id: doc.id, ...doc.data() } as PhotoApprovalRequest;
     delete data.previewDataUrl;
     return data;
   });
@@ -1218,8 +1219,8 @@ app.get("/api/events", conditionalAuth, async (req: Request, res: Response) => {
   }
 });
 
-// 8. Events Service: Create
-app.post("/api/events", conditionalAuth, async (req: Request, res: Response) => {
+// 8. Events Service: Create (Admin Only)
+app.post("/api/events", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
   const validation = validateBody(EventCreationSchema, req.body);
   if (!validation.success) {
     res.status(400).json({ error: (validation as any).error });
@@ -1229,7 +1230,7 @@ app.post("/api/events", conditionalAuth, async (req: Request, res: Response) => 
   const data = validation.data;
 
   try {
-    const eventId = `evt_${Date.now()}`;
+    const eventId = data.id || `evt_${Date.now()}`;
     const createdById = data.createdById || req.user?.uid || 'unknown';
 
     const newEvent: GroupEvent = {
@@ -1251,8 +1252,19 @@ app.post("/api/events", conditionalAuth, async (req: Request, res: Response) => 
       maxCapacity: data.maxCapacity || 100,
       createdAt: new Date().toISOString(),
     };
+    if (data.endDate) {
+      newEvent.endDate = data.endDate;
+    }
 
-    await db.collection(COLLECTIONS.events).doc(eventId).set(newEvent);
+    if (isFirestoreAvailable()) {
+      await db.collection(COLLECTIONS.events).doc(eventId).set(newEvent);
+    }
+    
+    // Always update in-memory fallback & invalidate cache
+    const fIdx = fallbackEvents.findIndex((e) => e.id === eventId);
+    if (fIdx >= 0) fallbackEvents[fIdx] = newEvent;
+    else fallbackEvents.unshift(newEvent);
+    _eventsCache = null;
 
     await addActivityLog({
       id: `act_${Date.now()}`,
@@ -1270,7 +1282,7 @@ app.post("/api/events", conditionalAuth, async (req: Request, res: Response) => 
   }
 });
 
-// 8b. Events Service: Update
+// 8b. Events Service: Update (Admin Only)
 app.put("/api/events/:id", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
   const validation = validateBody(EventCreationSchema, req.body);
@@ -1281,30 +1293,50 @@ app.put("/api/events/:id", conditionalAuth, conditionalRequireAdmin, async (req:
   const data = validation.data;
 
   try {
-    const eventRef = db.collection(COLLECTIONS.events).doc(id);
-    const eventDoc = await eventRef.get();
-    if (!eventDoc.exists) {
+    _eventsCache = null;
+    let existing: GroupEvent | null = null;
+    if (isFirestoreAvailable()) {
+      const eventRef = db.collection(COLLECTIONS.events).doc(id);
+      const eventDoc = await eventRef.get();
+      if (eventDoc.exists) {
+        existing = { id: eventDoc.id, ...eventDoc.data() } as GroupEvent;
+      }
+    }
+    if (!existing) {
+      existing = fallbackEvents.find((e) => e.id === id) || null;
+    }
+
+    if (!existing) {
       res.status(404).json({ error: 'Event not found' });
       return;
     }
-    const existing = eventDoc.data() as GroupEvent;
 
     const updatedEvent: GroupEvent = {
       ...existing,
+      id: existing.id || id,
       title: data.title,
       description: data.description || 'Group activity organized by Team Taraba River.',
       date: data.date,
+      endDate: data.endDate || existing.endDate,
       time: data.time || '09:00',
       location: data.location,
       category: data.category || 'meeting',
-      driveImageUrls: data.driveImageUrls || [],
+      driveImageUrls: data.driveImageUrls !== undefined ? data.driveImageUrls : (existing.driveImageUrls || []),
       driveFolderId: data.driveFolderId || existing.driveFolderId,
-      youtubeVideoUrl: data.youtubeVideoUrl || '',
-      youtubeTitle: data.youtubeVideoUrl ? `${data.title} Video Recording` : '',
-      maxCapacity: data.maxCapacity || 100,
+      youtubeVideoUrl: data.youtubeVideoUrl !== undefined ? data.youtubeVideoUrl : (existing.youtubeVideoUrl || ''),
+      youtubeTitle: data.youtubeVideoUrl ? `${data.title} Video Recording` : (existing.youtubeTitle || ''),
+      maxCapacity: data.maxCapacity || existing.maxCapacity || 100,
     };
 
-    await eventRef.update(updatedEvent as any);
+    if (isFirestoreAvailable()) {
+      await db.collection(COLLECTIONS.events).doc(id).set(updatedEvent as any, { merge: true });
+    }
+    
+    // Always update fallback & invalidate cache
+    const fIdx = fallbackEvents.findIndex((e) => e.id === id);
+    if (fIdx >= 0) fallbackEvents[fIdx] = updatedEvent;
+    else fallbackEvents.unshift(updatedEvent);
+    _eventsCache = null;
 
     await addActivityLog({
       id: `act_${Date.now()}`,
@@ -1326,21 +1358,20 @@ app.put("/api/events/:id", conditionalAuth, conditionalRequireAdmin, async (req:
 app.delete("/api/events/:id", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
-    const eventRef = db.collection(COLLECTIONS.events).doc(id);
-    const eventDoc = await eventRef.get();
-    if (!eventDoc.exists) {
-      res.status(404).json({ error: 'Event not found' });
-      return;
+    const existing = fallbackEvents.find((e) => e.id === id);
+    const eventTitle = existing ? existing.title : id;
+    if (isFirestoreAvailable()) {
+      const eventRef = db.collection(COLLECTIONS.events).doc(id);
+      await eventRef.delete();
     }
-    const existing = eventDoc.data() as GroupEvent;
-
-    await eventRef.delete();
+    fallbackEvents = fallbackEvents.filter((e) => e.id !== id);
+    _eventsCache = null;
 
     await addActivityLog({
       id: `act_${Date.now()}`,
       memberId: req.user?.uid || 'local_dev',
       memberName: 'Admin',
-      action: `Deleted event: ${existing.title}`,
+      action: `Deleted event: ${eventTitle}`,
       timestamp: new Date().toISOString(),
       pointsEarned: 0,
     });
@@ -1638,7 +1669,7 @@ app.get("/api/admin/analytics", conditionalAuth, conditionalRequireAdmin, async 
     } else {
       const logsSnapshot = await db.collection(COLLECTIONS.activityLogs)
         .orderBy('timestamp', 'desc').limit(10).get();
-      recentLogs = logsSnapshot.docs.map(d => d.data() as ActivityLog);
+      recentLogs = logsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as ActivityLog));
     }
 
     const topFiveMembers = [...members]

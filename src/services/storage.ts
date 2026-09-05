@@ -99,20 +99,31 @@ export class AppStateManager {
       const cleanPhone = phone?.trim().replace(/\D/g, "");
       const cleanWhatsapp = whatsapp?.trim().replace(/\D/g, "");
 
+      const idVariants = new Set<string>();
+      if (memberId) {
+        idVariants.add(memberId);
+        idVariants.add(`mem_${memberId}`);
+        idVariants.add(`mem_csv_${memberId}`);
+        if (memberId.startsWith("mem_")) {
+          idVariants.add(memberId.slice(4));
+          idVariants.add(memberId.slice(8));
+        }
+        if (memberId.startsWith("mem_csv_")) {
+          idVariants.add(memberId.slice(8));
+        }
+      }
+
       const newSet = new Set<string>();
       for (const item of set) {
-        // Direct ID match
-        if (memberId && (item === memberId || item === `mem_${memberId}` || item === `mem_csv_${memberId}`)) continue;
-        
-        // Email match
+        if (idVariants.has(item)) continue;
+
         if (cleanEmail) {
           const itemEmail = item.startsWith("email:") ? item.slice(6).trim().toLowerCase() : item.trim().toLowerCase();
           if (itemEmail === cleanEmail) continue;
         }
-        
-        // Phone / Whatsapp digits match
+
         const itemDigits = item.replace(/\D/g, "");
-        if (item.startsWith("phone:") || itemDigits.length >= 6) {
+        if (item.startsWith("phone:") || (itemDigits.length >= 6 && !idVariants.has(item))) {
           if (cleanPhone && cleanPhone.length >= 6) {
             const pSuffix = cleanPhone.slice(-7);
             if (itemDigits.endsWith(pSuffix) || cleanPhone.endsWith(itemDigits.slice(-7))) continue;
@@ -131,41 +142,59 @@ export class AppStateManager {
 
   public static getRecycleBin(): DeletedMemberEntry[] {
     try {
-      const raw = localStorage.getItem(LOCAL_STORAGE_KEY_RECYCLE_BIN);
-      let list: DeletedMemberEntry[] = raw ? JSON.parse(raw) : [];
+      const allMembers = this.getRawMembers();
+      const entriesMap = new Map<string, DeletedMemberEntry>();
 
-      // Auto-populate from deleted blacklist & known members if not already present
-      const deletedIds = this.getDeletedMemberIds();
-      const existingIds = new Set(list.map((e) => e.originalId));
-
-      const allKnownCandidates: Member[] = [...INITIAL_MEMBERS];
-      try {
-        const rawMembers = localStorage.getItem(LOCAL_STORAGE_KEY_MEMBERS);
-        if (rawMembers) {
-          const parsed = JSON.parse(rawMembers);
-          if (Array.isArray(parsed)) allKnownCandidates.push(...parsed);
-        }
-      } catch {}
-
-      allKnownCandidates.forEach((m) => {
-        const isBlacklisted =
-          deletedIds.has(m.id) ||
-          (m.email && deletedIds.has(`email:${m.email.toLowerCase()}`)) ||
-          (m.phoneNumber && deletedIds.has(`phone:${m.phoneNumber}`));
-
-        if (isBlacklisted && !existingIds.has(m.id)) {
-          list.push({
+      // 1. All soft-deleted members in raw storage
+      allMembers
+        .filter((m) => m.isDeleted === true)
+        .forEach((m) => {
+          entriesMap.set(m.id, {
             originalId: m.id,
             member: m,
-            deletedAt: new Date().toISOString(),
-            deletedBy: "Admin",
+            deletedAt: m.deletedAt || new Date().toISOString(),
+            deletedBy: m.deletedBy || "Admin",
             originalLocation: "Member Directory",
           });
-          existingIds.add(m.id);
-        }
-      });
+        });
 
-      return list;
+      // 2. Backward compatibility with any staged entries in LOCAL_STORAGE_KEY_RECYCLE_BIN
+      const rawBin = localStorage.getItem(LOCAL_STORAGE_KEY_RECYCLE_BIN);
+      if (rawBin) {
+        try {
+          const legacyEntries: DeletedMemberEntry[] = JSON.parse(rawBin);
+          legacyEntries.forEach((e) => {
+            if (!entriesMap.has(e.originalId) && !entriesMap.has(e.member.id)) {
+              const current = allMembers.find((m) => m.id === e.originalId || m.id === e.member.id);
+              if (!current || current.isDeleted !== false) {
+                entriesMap.set(e.originalId, e);
+              }
+            }
+          });
+        } catch {}
+      }
+
+      // 3. Fallback to deleted blacklist if any candidates are not in the map
+      const deletedIds = this.getDeletedMemberIds();
+      if (deletedIds.size > 0) {
+        allMembers.forEach((m) => {
+          if (m.isDeleted !== false && (deletedIds.has(m.id) || (m.email && deletedIds.has(`email:${m.email.toLowerCase()}`)))) {
+            if (!entriesMap.has(m.id)) {
+              entriesMap.set(m.id, {
+                originalId: m.id,
+                member: m,
+                deletedAt: m.deletedAt || new Date().toISOString(),
+                deletedBy: m.deletedBy || "Admin",
+                originalLocation: "Member Directory",
+              });
+            }
+          }
+        });
+      }
+
+      return Array.from(entriesMap.values()).sort(
+        (a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime()
+      );
     } catch {
       return [];
     }
@@ -173,7 +202,7 @@ export class AppStateManager {
 
   public static addToRecycleBin(entry: DeletedMemberEntry): void {
     try {
-      const current = this.getRecycleBin().filter((e) => e.originalId !== entry.originalId);
+      const current = this.getRecycleBin().filter((e) => e.originalId !== entry.originalId && e.member.id !== entry.member.id);
       current.unshift(entry);
       localStorage.setItem(LOCAL_STORAGE_KEY_RECYCLE_BIN, JSON.stringify(current));
       this.notify();
@@ -182,14 +211,28 @@ export class AppStateManager {
 
   public static removeFromRecycleBin(originalId: string): void {
     try {
-      const current = this.getRecycleBin().filter((e) => e.originalId !== originalId);
+      const current = this.getRecycleBin().filter((e) => e.originalId !== originalId && e.member.id !== originalId);
       localStorage.setItem(LOCAL_STORAGE_KEY_RECYCLE_BIN, JSON.stringify(current));
+      this.notify();
+    } catch {}
+  }
+
+  public static purgeMember(originalId: string): void {
+    try {
+      const allMembers = this.getRawMembers();
+      const filtered = allMembers.filter((m) => m.id !== originalId);
+      localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(filtered));
+      this.removeFromRecycleBin(originalId);
+      this.unmarkMemberAsDeleted(originalId);
       this.notify();
     } catch {}
   }
 
   public static clearRecycleBin(): void {
     try {
+      const allMembers = this.getRawMembers();
+      const filtered = allMembers.filter((m) => m.isDeleted !== true);
+      localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(filtered));
       localStorage.setItem(LOCAL_STORAGE_KEY_RECYCLE_BIN, JSON.stringify([]));
       this.notify();
     } catch {}
@@ -198,6 +241,12 @@ export class AppStateManager {
   public static restoreMember(originalId: string, memberObj?: Member): Member | null {
     try {
       let targetMember: Member | null = memberObj || null;
+      const allMembers = this.getRawMembers();
+
+      if (!targetMember) {
+        const match = allMembers.find((m) => m.id === originalId);
+        if (match) targetMember = match;
+      }
 
       if (!targetMember) {
         const recycleBin = this.getRecycleBin();
@@ -205,7 +254,6 @@ export class AppStateManager {
         if (targetEntry) {
           targetMember = targetEntry.member;
         } else {
-          // Check INITIAL_MEMBERS fallback
           const initialMatch = INITIAL_MEMBERS.find((m) => m.id === originalId);
           if (initialMatch) targetMember = initialMatch;
         }
@@ -213,44 +261,40 @@ export class AppStateManager {
 
       if (!targetMember) return null;
 
+      const restoredMember: Member = {
+        ...targetMember,
+        isDeleted: false,
+        deletedAt: undefined,
+        deletedBy: undefined,
+      };
+
       // 1. Thoroughly remove from deleted blacklist
       this.unmarkMemberAsDeleted(
-        targetMember.id,
-        targetMember.email,
-        targetMember.phoneNumber,
-        targetMember.whatsappNumber
+        restoredMember.id,
+        restoredMember.email,
+        restoredMember.phoneNumber,
+        restoredMember.whatsappNumber
       );
-      if (originalId && originalId !== targetMember.id) {
+      if (originalId && originalId !== restoredMember.id) {
         this.unmarkMemberAsDeleted(
           originalId,
-          targetMember.email,
-          targetMember.phoneNumber,
-          targetMember.whatsappNumber
+          restoredMember.email,
+          restoredMember.phoneNumber,
+          restoredMember.whatsappNumber
         );
       }
 
       // 2. Remove from recycle bin storage
       this.removeFromRecycleBin(originalId);
-      this.removeFromRecycleBin(targetMember.id);
+      this.removeFromRecycleBin(restoredMember.id);
 
-      // 3. Put member back into active members list in localStorage
-      let rawMembers: Member[] = [];
-      try {
-        const raw = localStorage.getItem(LOCAL_STORAGE_KEY_MEMBERS);
-        if (raw) rawMembers = JSON.parse(raw);
-      } catch {}
-      if (!Array.isArray(rawMembers) || rawMembers.length === 0) {
-        rawMembers = [...INITIAL_MEMBERS];
-      }
-
-      const activeMembers = rawMembers.filter(
-        (m) => m.id !== targetMember!.id && (!targetMember!.email || m.email?.toLowerCase() !== targetMember!.email.toLowerCase())
-      );
-      activeMembers.unshift(targetMember);
-      localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(activeMembers));
+      // 3. Update in raw members list with isDeleted: false
+      const updatedAll = allMembers.filter((m) => m.id !== restoredMember.id && m.id !== originalId);
+      updatedAll.unshift(restoredMember);
+      localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(updatedAll));
 
       this.notify();
-      return targetMember;
+      return restoredMember;
     } catch (err) {
       logger.error("Error in AppStateManager.restoreMember:", err);
       return null;
@@ -259,8 +303,13 @@ export class AppStateManager {
 
   public static filterDeleted(members: Member[]): Member[] {
     const deletedIds = this.getDeletedMemberIds();
-    if (deletedIds.size === 0) return members;
     return members.filter((m) => {
+      // 1. First-class soft delete flag
+      if (m.isDeleted === true) return false;
+      if (m.isDeleted === false) return true; // Explicitly active / restored
+
+      // 2. Fallback to legacy blacklist only if isDeleted is not explicitly set
+      if (deletedIds.size === 0) return true;
       if (deletedIds.has(m.id)) return false;
       if (m.email && deletedIds.has(`email:${m.email.toLowerCase()}`)) return false;
       if (m.phoneNumber && deletedIds.has(`phone:${m.phoneNumber}`)) return false;
@@ -288,13 +337,12 @@ export class AppStateManager {
     this.notify();
     return updated;
   }
-  public static getMembers(): Member[] {
+
+  public static getRawMembers(): Member[] {
     const filterAdminAcc = (list: Member[]) =>
-      this.filterDeleted(
-        list
-          .filter((m) => m.email?.toLowerCase() !== clientConfig.ownerEmail.toLowerCase())
-          .map(sanitizeMember)
-      );
+      list
+        .filter((m) => m.email?.toLowerCase() !== clientConfig.ownerEmail.toLowerCase())
+        .map(sanitizeMember);
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY_MEMBERS);
     if (!raw) {
       const clean = filterAdminAcc(INITIAL_MEMBERS);
@@ -303,27 +351,73 @@ export class AppStateManager {
     }
     try {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         return filterAdminAcc(parsed);
       }
-      const clean = filterAdminAcc(INITIAL_MEMBERS);
-      localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(clean));
-      return clean;
+      return filterAdminAcc(INITIAL_MEMBERS);
     } catch {
-      const clean = filterAdminAcc(INITIAL_MEMBERS);
-      return clean;
+      return filterAdminAcc(INITIAL_MEMBERS);
     }
   }
+
+  public static getMembers(): Member[] {
+    return this.filterDeleted(this.getRawMembers());
+  }
+
   public static saveMembers(members: Member[]) {
-    const cleanList = this.filterDeleted(members);
-    localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(cleanList));
+    // Preserve existing soft-deleted members when updating active members
+    const raw = this.getRawMembers();
+    const deletedOnes = raw.filter((m) => m.isDeleted === true);
+    const map = new Map<string, Member>();
+    deletedOnes.forEach((m) => map.set(m.id, m));
+    members.forEach((m) => map.set(m.id, m));
+    const all = Array.from(map.values());
+    localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(all));
     this.notify();
   }
+
   public static deleteMember(memberId: string, email?: string, phone?: string, member?: Member): Member[] {
+    const allMembers = this.getRawMembers();
+    let target = member || allMembers.find((m) => m.id === memberId);
+
+    const deletedAt = new Date().toISOString();
+    const softDeleted: Member = {
+      ...(target || {
+        id: memberId,
+        fullName: "Deleted Member",
+        email: email || "",
+        phoneNumber: phone || "",
+        dateOfBirth: "1990-01-01",
+        occupation: "",
+        skills: [],
+        photoUrl: "",
+        photoStatus: "pending",
+        role: "member",
+        activityPoints: 0,
+        joinedAt: deletedAt,
+        lastActive: deletedAt,
+      }),
+      isDeleted: true,
+      deletedAt,
+      deletedBy: "Admin",
+    };
+
+    const updated = allMembers.filter((m) => m.id !== memberId);
+    updated.unshift(softDeleted);
+    localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(updated));
+
+    const entry: DeletedMemberEntry = {
+      originalId: memberId,
+      member: softDeleted,
+      deletedAt,
+      deletedBy: "Admin",
+      originalLocation: "Member Directory",
+    };
+    this.addToRecycleBin(entry);
     this.markMemberAsDeleted(memberId, email, phone);
-    const list = this.filterDeleted(this.getMembers());
-    this.saveMembers(list);
-    return list;
+
+    this.notify();
+    return this.getMembers();
   }
   public static getEvents(): GroupEvent[] {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY_EVENTS);
@@ -333,7 +427,10 @@ export class AppStateManager {
     }
     try {
       const parsed: GroupEvent[] = JSON.parse(raw);
-      const cleanEvents = parsed.filter((e) => !e.id.startsWith("evt_arch_"));
+      const cleanEvents = parsed.filter((e) => {
+        if (!e || !e.id || typeof e.id !== "string") return false;
+        return !e.id.startsWith("evt_arch_");
+      });
       if (cleanEvents.length !== parsed.length) {
         localStorage.setItem(LOCAL_STORAGE_KEY_EVENTS, JSON.stringify(cleanEvents));
       }

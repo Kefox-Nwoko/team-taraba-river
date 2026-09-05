@@ -28,7 +28,8 @@ import {
   ActivityLog,
   DeletedMemberEntry,
 } from "../types";
-import { sanitizeMemberRecord } from "../utils/nameUtils"; /** * Google Admin Sign-In via OAuth popup. * * SECURITY: If the Google popup fails, we throw an error instead of * falling back to a hardcoded admin session. The backend determines * the actual role via Firebase Custom Claims. */
+import { sanitizeMemberRecord } from "../utils/nameUtils";
+import { sanitizeEventRecord } from "../utils/eventUtils";
 export async function triggerGoogleAdminSignIn(): Promise<Member> {
   try {
     const result = await signInWithPopup(auth, googleProvider);
@@ -181,7 +182,8 @@ export class FirebaseSyncManager {
       const snapshot = await getDocs(colRef);
       const firestoreEvents: GroupEvent[] = [];
       snapshot.forEach((d) => {
-        firestoreEvents.push(d.data() as GroupEvent);
+        const raw = { id: d.id, ...d.data() } as GroupEvent;
+        firestoreEvents.push(sanitizeEventRecord(raw));
       });
       return firestoreEvents;
     } catch (err) {
@@ -196,11 +198,11 @@ export class FirebaseSyncManager {
       return onSnapshot(colRef, (snapshot) => {
         const list: GroupEvent[] = [];
         snapshot.forEach((docSnap) => {
-          list.push(docSnap.data() as GroupEvent);
+          const raw = { id: docSnap.id, ...docSnap.data() } as GroupEvent;
+          list.push(sanitizeEventRecord(raw));
         });
-        if (list.length > 0) {
-          onUpdate(list);
-        }
+        const clean = list.filter((e) => !e.id.startsWith("evt_arch_"));
+        onUpdate(clean);
       });
     } catch (err) {
       logger.warn("Firestore subscribeEvents fallback", { error: err });
@@ -217,48 +219,72 @@ export class FirebaseSyncManager {
     }
   }
 
-  public static async deleteMember(memberId: string, memberEmail?: string, memberPhone?: string): Promise<void> {
+  public static async deleteMember(
+    memberId: string,
+    memberEmail?: string,
+    memberPhone?: string,
+    memberObj?: Member
+  ): Promise<void> {
     if (!memberId && !memberEmail && !memberPhone) return;
 
-    // 1. Direct document deletion by document ID
+    const deletedAt = new Date().toISOString();
+    const softDeleteData = {
+      isDeleted: true,
+      deletedAt,
+      deletedBy: "Admin",
+    };
+
+    // 1. Soft-delete primary document by document ID in "members" collection
     if (memberId) {
       try {
-        await deleteDoc(doc(db, "members", memberId));
+        await setDoc(doc(db, "members", memberId), softDeleteData, { merge: true });
       } catch (err) {
-        logger.warn(`Direct delete of members/${memberId} note:`, err);
+        logger.warn(`Soft delete of members/${memberId} note:`, err);
       }
     }
 
-    // 2. Query-based cleanup to guarantee documents with matching fields are removed
+    // 2. Query-based cleanup to guarantee documents with matching fields are marked soft-deleted
     try {
       const colRef = collection(db, "members");
-      const idsToDelete = new Set<string>();
+      const idsToMark = new Set<string>();
 
       if (memberId) {
         const qId = query(colRef, where("id", "==", memberId));
         const snapId = await getDocs(qId);
-        snapId.forEach((d) => idsToDelete.add(d.id));
+        snapId.forEach((d) => idsToMark.add(d.id));
       }
 
       if (memberEmail && memberEmail.trim()) {
         const qEmail = query(colRef, where("email", "==", memberEmail.trim()));
         const snapEmail = await getDocs(qEmail);
-        snapEmail.forEach((d) => idsToDelete.add(d.id));
+        snapEmail.forEach((d) => idsToMark.add(d.id));
       }
 
       if (memberPhone && memberPhone.trim()) {
         const qPhone = query(colRef, where("phoneNumber", "==", memberPhone.trim()));
         const snapPhone = await getDocs(qPhone);
-        snapPhone.forEach((d) => idsToDelete.add(d.id));
+        snapPhone.forEach((d) => idsToMark.add(d.id));
       }
 
-      for (const dId of idsToDelete) {
+      for (const dId of idsToMark) {
         try {
-          await deleteDoc(doc(db, "members", dId));
+          await setDoc(doc(db, "members", dId), softDeleteData, { merge: true });
         } catch {}
       }
     } catch (queryErr) {
-      logger.warn("Query cleanup during member deletion warning:", queryErr);
+      logger.warn("Query cleanup during member soft-delete warning:", queryErr);
+    }
+
+    // 3. Stage in local storage and legacy recycle bin collection
+    AppStateManager.deleteMember(memberId, memberEmail, memberPhone, memberObj);
+    if (memberObj) {
+      this.addToRecycleBin({
+        originalId: memberId,
+        member: { ...memberObj, isDeleted: true, deletedAt, deletedBy: "Admin" },
+        deletedAt,
+        deletedBy: "Admin",
+        originalLocation: "Member Directory",
+      }).catch(() => {});
     }
   }
 
@@ -355,18 +381,19 @@ export class FirebaseSyncManager {
     return result;
   }
   public static async saveEvent(event: GroupEvent): Promise<void> {
+    const clean = sanitizeEventRecord(event);
     try {
-      await setDoc(doc(db, "events", event.id), event);
+      await setDoc(doc(db, "events", clean.id), clean);
     } catch (err) {
       logger.error("Failed to save event to Firestore", err);
     }
     try {
       const localEvents = AppStateManager.getEvents();
-      const idx = localEvents.findIndex((e) => e.id === event.id);
+      const idx = localEvents.findIndex((e) => e.id === clean.id);
       if (idx >= 0) {
-        localEvents[idx] = event;
+        localEvents[idx] = clean;
       } else {
-        localEvents.unshift(event);
+        localEvents.unshift(clean);
       }
       AppStateManager.saveEvents(localEvents);
     } catch (e) {
@@ -675,73 +702,151 @@ export class FirebaseSyncManager {
 
   /**
    * Retrieves all deleted member entries from Firestore recycle bin.
+   * Reads soft-deleted members directly from the "members" collection (isDeleted == true),
+   * plus legacy staged entries from "deleted_members" collection and local cache.
    */
   public static async getRecycleBin(): Promise<DeletedMemberEntry[]> {
+    const entriesMap = new Map<string, DeletedMemberEntry>();
+
+    // 1. Query soft-deleted members from primary "members" collection
     try {
-      const snap = await getDocs(collection(db, "deleted_members"));
-      if (!snap.empty) {
-        return snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            originalId: data.originalId || d.id,
-            member: data.member,
+      const snap = await getDocs(query(collection(db, "members"), where("isDeleted", "==", true)));
+      snap.forEach((d) => {
+        const data = d.data() as Member;
+        const clean = sanitizeMemberRecord(data);
+        const origId = clean.id || d.id;
+        entriesMap.set(origId, {
+          originalId: origId,
+          member: clean,
+          deletedAt: clean.deletedAt || new Date().toISOString(),
+          deletedBy: clean.deletedBy || "Admin",
+          originalLocation: "Member Directory",
+        });
+      });
+    } catch (err) {
+      logger.warn("Firestore getRecycleBin members query note", err);
+    }
+
+    // 2. Query legacy "deleted_members" collection for backward compatibility
+    try {
+      const legacySnap = await getDocs(collection(db, "deleted_members"));
+      legacySnap.forEach((d) => {
+        const data = d.data();
+        const origId = data.originalId || d.id;
+        if (!entriesMap.has(origId) && data.member) {
+          entriesMap.set(origId, {
+            originalId: origId,
+            member: sanitizeMemberRecord(data.member),
             deletedAt: data.deletedAt || new Date().toISOString(),
             deletedBy: data.deletedBy || "Admin",
             originalLocation: data.originalLocation || "Member Directory",
-          } as DeletedMemberEntry;
-        });
-      }
+          });
+        }
+      });
     } catch (err) {
-      logger.warn("Firestore getRecycleBin fallback", err);
+      logger.warn("Firestore getRecycleBin legacy fallback", err);
     }
-    return AppStateManager.getRecycleBin();
+
+    // 3. Merge with local storage recycle bin
+    const local = AppStateManager.getRecycleBin();
+    local.forEach((e) => {
+      if (!entriesMap.has(e.originalId)) {
+        entriesMap.set(e.originalId, e);
+      }
+    });
+
+    return Array.from(entriesMap.values()).sort(
+      (a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime()
+    );
   }
 
   /**
    * Restores a member from the recycle bin back to the active members collection.
+   * Flips isDeleted to false directly on the primary record.
    */
   public static async restoreMemberFromRecycleBin(originalId: string, memberObj?: Member): Promise<Member | null> {
     try {
       let memberToRestore: Member | null = memberObj || null;
 
-      // 1. Get from Firestore deleted_members if not provided
-      const docRef = doc(db, "deleted_members", originalId);
+      const restoreData = {
+        isDeleted: false,
+        deletedAt: null,
+        deletedBy: null,
+      };
+
+      // 1. If not provided, fetch from members or legacy deleted_members collection
       if (!memberToRestore) {
         try {
-          const snap = await getDoc(docRef);
-          if (snap.exists()) {
-            const data = snap.data() as DeletedMemberEntry;
-            memberToRestore = data.member;
+          const mSnap = await getDoc(doc(db, "members", originalId));
+          if (mSnap.exists()) {
+            memberToRestore = sanitizeMemberRecord(mSnap.data() as Member);
+          }
+        } catch {}
+      }
+      if (!memberToRestore) {
+        try {
+          const dSnap = await getDoc(doc(db, "deleted_members", originalId));
+          if (dSnap.exists()) {
+            const data = dSnap.data() as DeletedMemberEntry;
+            memberToRestore = data.member ? sanitizeMemberRecord(data.member) : null;
           }
         } catch {}
       }
 
-      // 2. Fallback to local recycle bin
+      // 2. Fallback to local storage
       if (!memberToRestore) {
-        const localEntry = AppStateManager.getRecycleBin().find((e) => e.originalId === originalId || e.member.id === originalId);
-        if (localEntry) memberToRestore = localEntry.member;
+        const local = AppStateManager.getRecycleBin().find((e) => e.originalId === originalId || e.member.id === originalId);
+        if (local) memberToRestore = local.member;
       }
 
-      // 3. Update local state and purge blacklist FIRST so UI becomes active immediately
-      const restoredLocal = AppStateManager.restoreMember(originalId, memberToRestore || undefined);
-      if (restoredLocal) memberToRestore = restoredLocal;
+      if (memberToRestore) {
+        memberToRestore = {
+          ...memberToRestore,
+          isDeleted: false,
+          deletedAt: undefined,
+          deletedBy: undefined,
+        };
+      }
 
-      if (!memberToRestore) return null;
+      // 3. Update primary document in Firestore "members"
+      if (originalId) {
+        try {
+          await setDoc(doc(db, "members", originalId), restoreData, { merge: true });
+        } catch {}
+      }
+      if (memberToRestore?.id && memberToRestore.id !== originalId) {
+        try {
+          await setDoc(doc(db, "members", memberToRestore.id), restoreData, { merge: true });
+        } catch {}
+      }
 
-      // 4. Save back to active Firestore members collection
-      await this.saveMember(memberToRestore);
-
-      // 5. Remove from Firestore deleted_members collection
+      // 4. Update any matching documents found by ID query
       try {
-        await deleteDoc(docRef);
+        const qId = query(collection(db, "members"), where("id", "==", originalId));
+        const snap = await getDocs(qId);
+        for (const d of snap.docs) {
+          await setDoc(d.ref, restoreData, { merge: true });
+        }
       } catch {}
-      if (memberToRestore.id && memberToRestore.id !== originalId) {
+
+      // If member object exists, ensure active fields are fully synchronized
+      if (memberToRestore) {
+        await this.saveMember(memberToRestore);
+      }
+
+      // 5. Clean up legacy "deleted_members" collection
+      try {
+        await deleteDoc(doc(db, "deleted_members", originalId));
+      } catch {}
+      if (memberToRestore?.id && memberToRestore.id !== originalId) {
         try {
           await deleteDoc(doc(db, "deleted_members", memberToRestore.id));
         } catch {}
       }
 
-      return memberToRestore;
+      // 6. Update local state
+      const restoredLocal = AppStateManager.restoreMember(originalId, memberToRestore || undefined);
+      return restoredLocal || memberToRestore;
     } catch (err) {
       logger.error("Failed to restore member from recycle bin", err);
       return AppStateManager.restoreMember(originalId, memberObj);
@@ -750,14 +855,29 @@ export class FirebaseSyncManager {
 
   /**
    * Permanently purges a single member from the recycle bin (cannot be recovered).
+   * This performs the permanent hard-delete (deleteDoc) from "members".
    */
   public static async purgeMemberFromRecycleBin(originalId: string): Promise<void> {
     try {
+      // 1. Delete primary doc from "members" collection
+      await deleteDoc(doc(db, "members", originalId));
+      const snap = await getDocs(query(collection(db, "members"), where("id", "==", originalId)));
+      for (const d of snap.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (err) {
+      logger.warn("Firestore purge members doc error", err);
+    }
+
+    // 2. Delete legacy "deleted_members" doc
+    try {
       await deleteDoc(doc(db, "deleted_members", originalId));
     } catch (err) {
-      logger.warn("Firestore purgeMemberFromRecycleBin fallback", err);
+      logger.warn("Firestore purge legacy fallback", err);
     }
-    AppStateManager.removeFromRecycleBin(originalId);
+
+    // 3. Purge from local storage
+    AppStateManager.purgeMember(originalId);
   }
 
   /**
@@ -765,40 +885,61 @@ export class FirebaseSyncManager {
    */
   public static async emptyRecycleBin(): Promise<void> {
     try {
-      const snap = await getDocs(collection(db, "deleted_members"));
+      // 1. Hard-delete all soft-deleted docs from "members"
+      const snap = await getDocs(query(collection(db, "members"), where("isDeleted", "==", true)));
       for (const d of snap.docs) {
         await deleteDoc(d.ref);
       }
     } catch (err) {
-      logger.warn("Firestore emptyRecycleBin fallback", err);
+      logger.warn("Firestore emptyRecycleBin members query fallback", err);
     }
+
+    // 2. Empty legacy "deleted_members"
+    try {
+      const legacySnap = await getDocs(collection(db, "deleted_members"));
+      for (const d of legacySnap.docs) {
+        await deleteDoc(d.ref);
+      }
+    } catch (err) {
+      logger.warn("Firestore emptyRecycleBin legacy fallback", err);
+    }
+
+    // 3. Clear local storage
     AppStateManager.clearRecycleBin();
   }
 
   /**
    * Subscribes to real-time changes in the recycle bin.
+   * Listens to the primary "members" collection for isDeleted == true entries.
    */
   public static subscribeRecycleBin(onUpdate: (entries: DeletedMemberEntry[]) => void): () => void {
     try {
-      return onSnapshot(collection(db, "deleted_members"), (snap) => {
-        const list: DeletedMemberEntry[] = snap.docs.map((d) => {
-          const data = d.data();
-          return {
-            originalId: data.originalId || d.id,
-            member: data.member,
-            deletedAt: data.deletedAt || new Date().toISOString(),
-            deletedBy: data.deletedBy || "Admin",
-            originalLocation: data.originalLocation || "Member Directory",
-          } as DeletedMemberEntry;
+      const qMembers = query(collection(db, "members"), where("isDeleted", "==", true));
+      return onSnapshot(qMembers, (snap) => {
+        const entriesMap = new Map<string, DeletedMemberEntry>();
+
+        snap.docs.forEach((d) => {
+          const data = d.data() as Member;
+          const clean = sanitizeMemberRecord(data);
+          const origId = clean.id || d.id;
+          entriesMap.set(origId, {
+            originalId: origId,
+            member: clean,
+            deletedAt: clean.deletedAt || new Date().toISOString(),
+            deletedBy: clean.deletedBy || "Admin",
+            originalLocation: "Member Directory",
+          });
         });
 
-        // Merge with local recycle bin if any
+        // Merge with local recycle bin
         const local = AppStateManager.getRecycleBin();
-        const map = new Map<string, DeletedMemberEntry>();
-        local.forEach((e) => map.set(e.originalId, e));
-        list.forEach((e) => map.set(e.originalId, e));
+        local.forEach((e) => {
+          if (!entriesMap.has(e.originalId)) {
+            entriesMap.set(e.originalId, e);
+          }
+        });
 
-        const merged = Array.from(map.values()).sort(
+        const merged = Array.from(entriesMap.values()).sort(
           (a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime()
         );
         onUpdate(merged);

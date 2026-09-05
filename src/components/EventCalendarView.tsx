@@ -1,19 +1,11 @@
-import React, { useState, useRef, useEffect } from "react";
-import { DatePicker } from "./DatePicker";
+import React, { useState, useEffect } from "react";
 import { logger } from "../lib/logger";
-import { GroupEvent, Member, PhotoApprovalRequest } from "../types";
-import {
-  createEvent,
-  submitEventRSVP,
-  syncGoogleDriveUrl,
-  parseYouTubeVideoUrl,
-  deleteEvent as deleteEventApi,
-} from "../services/apiClient";
+import { GroupEvent, Member } from "../types";
+import { submitEventRSVP } from "../services/apiClient";
 import { AppStateManager } from "../services/storage";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import { EngagementTracker } from "../services/EngagementTracker";
 import { MemberAvatar } from "./MemberAvatar";
-import { ReturnButton } from "./ReturnButton";
 import { UsosaNewsCard } from "./UsosaNewsCard";
 import { BirthdayCelebrationAnimation } from "./BirthdayCelebrationAnimation";
 import { isOfficialFutureEvent, getDaysUntilEvent, isEventOngoing, getEventDurationInfo } from "../utils/eventUtils";
@@ -21,106 +13,34 @@ import {
   Calendar as CalendarIcon,
   MapPin,
   Clock,
-   Users,
-   CheckCircle2,
-  X,
-  Upload,
-  Folder,
-  Video,
-  ImageIcon,
-  ArrowLeft,
-  Edit3,
-  Trash2,
-  Flame,
-  ChevronRight,
-  ChevronDown,
   Cake,
-  Loader2,
-  Sparkles,
 } from "lucide-react";
 
 interface EventCalendarViewProps {
   events: GroupEvent[];
   members: Member[];
   currentUser: Member | null;
-  onRefreshEvents: () => void;
+  onRefreshEvents: (event?: GroupEvent) => void | Promise<void>;
   originatingPageName?: string;
   defaultSubTab?: "media" | "calendar";
   onSubViewChange?: (isOpen: boolean) => void;
 }
 
 export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
-  events,
+  events: propEvents,
   members,
   currentUser,
   onRefreshEvents,
   defaultSubTab = "calendar",
   onSubViewChange,
 }) => {
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [isCreatingEventView, setIsCreatingEventView] = useState(false);
-  const [selectedPreviewImage, setSelectedPreviewImage] = useState<string | null>(null);
-
-  // Form State
-  const [eventTitle, setEventTitle] = useState("");
-  const [eventDate, setEventDate] = useState(() => new Date().toISOString().split("T")[0]);
-  const [eventEndDate, setEventEndDate] = useState("");
-  const [eventTime, setEventTime] = useState("09:00");
-  const [eventLocation, setEventLocation] = useState("");
-  const [eventCategory, setEventCategory] = useState<string>("meeting");
-  const [eventDescription, setEventDescription] = useState("");
-  const [driveUrlInput, setDriveUrlInput] = useState("");
-  const [youtubeUrlInput, setYoutubeUrlInput] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // File upload state
-  const imageFileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadedImageUrls, setUploadedImageUrls] = useState<string[]>([]);
-  const [uploadingStatusText, setUploadingStatusText] = useState<string>("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [events, setEvents] = useState<GroupEvent[]>(propEvents);
 
   useEffect(() => {
-    if (onSubViewChange) {
-      onSubViewChange(isCreatingEventView);
-    }
-  }, [isCreatingEventView, onSubViewChange]);
-
-  const handleImageFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    setUploadingStatusText("⚡ Uploading to Firestore...");
-    const newUrls: string[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const dataUrl = await new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (event) => resolve(event.target?.result as string);
-        reader.readAsDataURL(file);
-      });
-      newUrls.push(dataUrl);
-
-      const photoReq: PhotoApprovalRequest = {
-        id: `req_fb_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        memberId: currentUser?.id || "mem_1",
-        memberName: currentUser?.fullName || "Community Member",
-        memberEmail: currentUser?.email || "member@tarabateam.org",
-        photoUrl: dataUrl,
-        uploadedAt: new Date().toISOString(),
-        status: "approved",
-        adminNotes: `Media upload for ${eventTitle || "Community Event"}`,
-        type: "photo",
-      };
-      try {
-        await FirebaseSyncManager.saveApproval(photoReq);
-      } catch (err) {
-        logger.warn("Firebase photo save notice", { error: err });
-      }
-    }
-    setUploadedImageUrls((prev) => [...prev, ...newUrls]);
-    setUploadingStatusText("✅ Media saved to Firestore!");
-    setTimeout(() => setUploadingStatusText(""), 3500);
-    if (e.target) e.target.value = "";
-  };
+    setEvents(propEvents);
+  }, [propEvents]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const isAdmin = currentUser?.role === "admin";
 
   const formatDateLabel = (dateStr?: string) => {
     if (!dateStr || typeof dateStr !== "string") return "";
@@ -162,7 +82,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
         return (days !== null && days >= 0 && days <= 7) || isEventOngoing(e);
       }
       if (selectedCategory === "all") return true;
-      return e.category === selectedCategory;
+      return (e.category || "").toLowerCase().includes(selectedCategory.toLowerCase());
     })
     .sort((a, b) => {
       // 1. Ongoing events always come first
@@ -177,8 +97,15 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
     });
 
   const dynamicCategories = Array.from(
-    new Set(officialUpcomingEvents.map((e) => e.category))
-  ).filter(Boolean).sort();
+    new Set(
+      officialUpcomingEvents.flatMap((e) =>
+        (e.category || "General")
+          .split(/[,/]/)
+          .map((c) => c.trim())
+          .filter(Boolean)
+      )
+    )
+  ).sort();
 
   // BIRTHDAYS FILTER: Current month, and next month's birthdays starting from the 25th of the current month
   const todayObj = new Date();
@@ -264,54 +191,6 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
       return a.bMonth - b.bMonth;
     });
 
-  const handleCreateEvent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!eventTitle.trim() || !eventDate || !eventLocation.trim()) return;
-    setIsSubmitting(true);
-    try {
-      let driveImageUrls: string[] = [...uploadedImageUrls];
-      let driveFolderId = undefined;
-      if (driveUrlInput.trim()) {
-        const driveData = await syncGoogleDriveUrl(driveUrlInput.trim());
-        driveImageUrls = [...driveImageUrls, ...driveData.syncedImages];
-        driveFolderId = driveData.folderId;
-      }
-      let youtubeEmbed = "";
-      if (youtubeUrlInput.trim()) {
-        const ytData = await parseYouTubeVideoUrl(youtubeUrlInput.trim());
-        youtubeEmbed = ytData.embedUrl;
-      }
-      const newEvt = await createEvent({
-        title: eventTitle,
-        date: eventDate,
-        endDate: eventEndDate && eventEndDate !== eventDate ? eventEndDate : undefined,
-        time: eventTime,
-        location: eventLocation,
-        category: eventCategory,
-        description: eventDescription,
-        driveImageUrls,
-        driveFolderId,
-        youtubeVideoUrl: youtubeEmbed || youtubeUrlInput,
-        createdBy: currentUser ? currentUser.fullName : "Team Member",
-        createdById: currentUser ? currentUser.id : "mem_1",
-      });
-
-      const currentEvents = AppStateManager.getEvents();
-      currentEvents.unshift(newEvt);
-      AppStateManager.saveEvents(currentEvents);
-      onRefreshEvents();
-      setIsCreatingEventView(false);
-      setEventTitle("");
-      setEventDescription("");
-      setDriveUrlInput("");
-      setYoutubeUrlInput("");
-    } catch (err) {
-      logger.error("Event create error", err);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const handleRSVP = async (eventId: string, status: "attending" | "maybe" | "declined") => {
     if (!currentUser) return;
     const memberId = currentUser.id;
@@ -342,6 +221,9 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
 
       currentEvents[evtIndex] = updatedEvt;
       AppStateManager.saveEvents(currentEvents);
+      // Directly update local events state for optimistic UI
+      setEvents((prev) => prev.map((e) => (e.id === updatedEvt.id ? updatedEvt : e)));
+
       try {
         await FirebaseSyncManager.saveEvent(updatedEvt);
       } catch (e) {
@@ -357,235 +239,24 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
       logger.error("Event RSVP API sync", err);
     }
 
-    onRefreshEvents();
-  };
-  const handleStartEditEvent = (evt: GroupEvent) => {
-    setEventTitle(evt.title);
-    setEventDate(evt.date);
-    setEventTime(evt.time);
-    setEventLocation(evt.location);
-    setEventCategory(evt.category as any);
-    setEventDescription(evt.description);
-    setUploadedImageUrls(evt.driveImageUrls || []);
-    setIsCreatingEventView(true);
-  };
-
-  const handleDeleteEvent = async (eventId: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    if (!window.confirm("Are you sure you want to permanently delete this media event upload?")) return;
-    try {
-      await FirebaseSyncManager.deleteEvent(eventId);
-      await deleteEventApi(eventId);
-    } catch (err) {
-      logger.warn("Delete event notice", { error: err });
-    }
-    const current = AppStateManager.getEvents();
-    const clean = current.filter((evt) => evt.id !== eventId);
-    AppStateManager.saveEvents(clean);
-    onRefreshEvents();
+    await Promise.resolve(onRefreshEvents());
   };
 
   return (
     <div className="space-y-8 font-sans font-normal">
-      {/* 1. CREATE EVENT VIEW */}
-      {isCreatingEventView ? (
-        <div className="space-y-8 animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-8 shadow-sm flex flex-row items-center justify-between gap-4">
-            <div className="flex items-center space-x-4">
-              <div>
-                <h1 className="text-sm text-slate-900 dark:text-white tracking-tight font-normal">
-                  Create Group Event
-                </h1>
-                <p className="text-xl text-teal-700 dark:text-teal-400 mt-1 font-normal">
-                  Publish community cleanups, workshops, or celebrations
-                </p>
-              </div>
-            </div>
-            <div className="shrink-0">
-              <ReturnButton onClick={() => setIsCreatingEventView(false)} />
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-8 sm:p-10 shadow-sm space-y-8 font-normal">
-            <form onSubmit={handleCreateEvent} className="space-y-8 max-w-5xl mx-auto font-normal">
-              <div className="space-y-6 bg-slate-50 dark:bg-slate-950 p-8 rounded-3xl border border-slate-200 dark:border-slate-800">
-                <h2 className="text-2xl uppercase text-teal-800 dark:text-teal-400 border-b border-slate-200 dark:border-slate-800 pb-3 font-normal">
-                  1. Basic Event Details
-                </h2>
-                <div>
-                  <label className="block text-xl text-slate-700 dark:text-slate-300 mb-2 font-normal">
-                    Event Title *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Taraba Riverbank Community Clean-up"
-                    value={eventTitle}
-                    onChange={(e) => setEventTitle(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-5 py-3.5 text-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-normal"
-                  />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm text-slate-700 dark:text-slate-300 mb-1.5 font-normal">
-                      Start Date *
-                    </label>
-                    <div className="relative w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-5 py-3.5 flex items-center justify-between text-base sm:text-xl font-normal text-slate-900 dark:text-white cursor-pointer select-none">
-                      <span className="truncate">{formatDateLabel(eventDate)}</span>
-                      <div className="flex items-center space-x-1 text-slate-400 dark:text-slate-500 shrink-0">
-                        <CalendarIcon className="w-4 h-4" />
-                        <ChevronDown className="w-4 h-4 text-cyan-500" />
-                      </div>
-                      <DatePicker
-                        value={eventDate}
-                        onChange={(val) => {
-                          setEventDate(val);
-                          if (eventEndDate && val > eventEndDate) {
-                            setEventEndDate(val);
-                          }
-                        }}
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-sm text-slate-700 dark:text-slate-300 font-normal">
-                        End Date (Optional)
-                      </label>
-                      {eventEndDate && eventEndDate !== eventDate && (
-                        <button
-                          type="button"
-                          onClick={() => setEventEndDate("")}
-                          className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline cursor-pointer"
-                        >
-                          Single Day
-                        </button>
-                      )}
-                    </div>
-                    <div className="relative w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-5 py-3.5 flex items-center justify-between text-base sm:text-xl font-normal text-slate-900 dark:text-white cursor-pointer select-none">
-                      <span className={`truncate ${!eventEndDate || eventEndDate === eventDate ? "text-slate-400 dark:text-slate-500" : "text-cyan-600 dark:text-cyan-400 font-semibold"}`}>
-                        {eventEndDate && eventEndDate !== eventDate ? formatDateLabel(eventEndDate) : "Same Day (1-Day Event)"}
-                      </span>
-                      <div className="flex items-center space-x-1 text-slate-400 dark:text-slate-500 shrink-0">
-                        <CalendarIcon className="w-4 h-4" />
-                        <ChevronDown className="w-4 h-4 text-cyan-500" />
-                      </div>
-                      <DatePicker
-                        value={eventEndDate || eventDate}
-                        minDate={eventDate}
-                        onChange={(val) => {
-                          if (val && val >= eventDate) {
-                            setEventEndDate(val);
-                          } else {
-                            setEventEndDate(eventDate);
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Multi-day duration banner */}
-                {eventEndDate && eventEndDate > eventDate && (
-                  <div className="p-3.5 bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800/70 rounded-2xl flex items-center justify-between text-xs sm:text-sm text-cyan-900 dark:text-cyan-200">
-                    <span className="font-bold flex items-center gap-1.5">
-                      <span>📅</span>
-                      <span>
-                        Multi-Day Activity: {Math.max(1, Math.round((new Date(eventEndDate).getTime() - new Date(eventDate).getTime()) / (1000 * 60 * 60 * 24)) + 1)} Days Duration
-                      </span>
-                    </span>
-                    <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                      {formatDateLabel(eventDate)} ➔ {formatDateLabel(eventEndDate)}
-                    </span>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-xl text-slate-700 dark:text-slate-300 mb-2 font-normal">
-                      Event Time
-                    </label>
-                    <input
-                      type="time"
-                      value={eventTime}
-                      onChange={(e) => setEventTime(e.target.value)}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-5 py-3.5 text-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-normal"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xl text-slate-700 dark:text-slate-300 mb-2 font-normal">
-                      Category
-                    </label>
-                    <select
-                      value={eventCategory}
-                      onChange={(e) => setEventCategory(e.target.value as any)}
-                      className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-5 py-3.5 text-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-normal"
-                    >
-                      <option value="cleanup">Cleanup & Environmental</option>
-                      <option value="workshop">Workshop & Education</option>
-                      <option value="celebration">Celebration & Reunion</option>
-                      <option value="meeting">General Assembly Meeting</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xl text-slate-700 dark:text-slate-300 mb-2 font-normal">
-                    Location / Venue *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Jalingo Town Hall"
-                    value={eventLocation}
-                    onChange={(e) => setEventLocation(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-5 py-3.5 text-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-normal"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xl text-slate-700 dark:text-slate-300 mb-2 font-normal">
-                    Description & Agenda
-                  </label>
-                  <textarea
-                    rows={4}
-                    placeholder="Detailed outline of event goals and logistics..."
-                    value={eventDescription}
-                    onChange={(e) => setEventDescription(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl px-5 py-3.5 text-xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none font-normal"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end pt-6 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-8 py-3.5 bg-teal-700 hover:bg-teal-800 text-white text-xl font-normal rounded-2xl transition shadow-sm flex items-center space-x-2.5 disabled:opacity-50 cursor-pointer"
-                >
-                  <CheckCircle2 className="w-6 h-6" />
-                  <span>{isSubmitting ? "Publishing..." : "Publish Event Now"}</span>
-                </button>
-              </div>
-            </form>
+      {/* MAIN CALENDAR VIEW CONTAINER */}
+      <div className="space-y-3 sm:space-y-4 font-normal">
+        {/* Header Section */}
+        <div className="border-b border-slate-200 dark:border-slate-800 pb-3 mb-3">
+          <div className="space-y-1">
+            <h1 className="text-xl sm:text-2xl font-normal tracking-tight text-slate-900 dark:text-white leading-tight">
+              Updates
+            </h1>
+            <p className="text-sm font-normal text-slate-600 dark:text-slate-300 leading-relaxed w-full">
+              Community Gatherings, Activities & Member Birthdays
+            </p>
           </div>
         </div>
-      ) : (
-        /* 3. MAIN CALENDAR VIEW CONTAINER - No background blocks */
-        <div className="space-y-3 sm:space-y-4 font-normal">
-          {/* Header Section */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-slate-200 dark:border-slate-800 pb-3 mb-3">
-            <div className="space-y-3">
-              <h1 className="text-xl sm:text-2xl font-normal tracking-tight text-slate-900 dark:text-white leading-tight">
-                Updates
-              </h1>
-              <p className="text-sm sm:text-sm font-normal text-slate-600 dark:text-slate-300 leading-relaxed w-full">
-                Community Gatherings, Activities & Member Birthdays
-              </p>
-            </div>
-            <div className="flex items-center gap-3 shrink-0 flex-wrap">
-            </div>
-          </div>
 
           {/* USOSA News Update Card — full width above events */}
           <div className="pt-1 font-normal">
@@ -677,16 +348,20 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                               <h3 className={`text-sm sm:text-base font-semibold truncate transition ${
                                 isOngoing
                                   ? "text-emerald-700 dark:text-emerald-300 font-bold"
-                                  : "text-slate-900 dark:text-white group-hover:text-cyan-600 dark:group-hover:text-cyan-400"
+                                  : "text-slate-900 dark:text-white"
                               }`}>
                                 {event.title}
                               </h3>
                             </BirthdayCelebrationAnimation>
 
                             {event.category && (
-                              <span className="px-2 py-0.5 rounded-md bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/40 text-[11px] font-medium shrink-0">
-                                {event.category}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-1 shrink-0">
+                                {event.category.split(/[,/]/).map((c) => c.trim()).filter(Boolean).map((catName) => (
+                                  <span key={catName} className="px-2 py-0.5 rounded-md bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800/40 text-[11px] font-medium shrink-0">
+                                    {catName}
+                                  </span>
+                                ))}
+                              </div>
                             )}
 
                             {durationInfo.isMultiDay && !isOngoing && (
@@ -720,9 +395,8 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                         </div>
                       </div>
 
-                      {/* Right: Inline RSVP Buttons (Members Only) & Admin Edit/Delete Controls */}
+                      {/* Right: Inline RSVP Buttons (Members Only) */}
                       <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-800/60">
-                        {/* Member RSVP Buttons (Shown ONLY to regular members, hidden for Admin) */}
                         {currentUser && !isAdmin && (
                           <div className="flex items-center bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl gap-1">
                             <button
@@ -757,28 +431,6 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                               }`}
                             >
                               No
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Admin Event Controls */}
-                        {isAdmin && (
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => handleStartEditEvent(event)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                              title="Edit Event"
-                            >
-                              <Edit3 className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => handleDeleteEvent(event.id, e)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                              title="Delete Event"
-                            >
-                              <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
                         )}
@@ -866,7 +518,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
 
           </div>
         </div>
-      )}
-    </div>
-  );
+
+      </div>
+    );
 };
