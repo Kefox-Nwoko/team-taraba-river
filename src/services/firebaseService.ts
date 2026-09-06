@@ -16,7 +16,10 @@ import {
 } from "firebase/firestore";
 import {
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithCustomToken as firebaseSignInWithCustomToken,
+  User,
 } from "firebase/auth";
 import { db, auth, googleProvider } from "../lib/firebase";
 import { AppStateManager } from "./storage";
@@ -28,64 +31,108 @@ import {
   ActivityLog,
   DeletedMemberEntry,
 } from "../types";
+import { isAdminEmailClient } from "../lib/config";
 import { sanitizeMemberRecord } from "../utils/nameUtils";
 import { sanitizeEventRecord, parseEventDateObj } from "../utils/eventUtils";
-export async function triggerGoogleAdminSignIn(): Promise<Member> {
+
+export function mapFirebaseUserToMember(user: User): Member {
+  const googleEmail = user.email || "";
+  const googleName = user.displayName || googleEmail.split("@")[0] || "Admin";
+  const googlePhoto = user.photoURL || "";
+
+  return {
+    id: user.uid,
+    title: "",
+    firstName: googleName.split(" ")[0] || "Admin",
+    surname: googleName.split(" ").slice(1).join(" ") || "",
+    fullName: googleName,
+    email: googleEmail,
+    phoneNumber: "",
+    whatsappNumber: "",
+    dateOfBirth: "",
+    maritalStatus: "",
+    schoolName: "",
+    gradYear: "",
+    jerseySize: "",
+    nextOfKinName: "",
+    nextOfKinPhone: "",
+    closestNeighborName: "",
+    closestNeighborPhone: "",
+    occupation: "",
+    skills: [],
+    photoUrl: googlePhoto,
+    photoStatus: "approved",
+    role: isAdminEmailClient(googleEmail) ? "admin" : "member",
+    isGoogleAuth: true,
+    activityPoints: 0,
+    joinedAt: new Date().toISOString(),
+    lastActive: new Date().toISOString(),
+  };
+}
+
+export async function checkGoogleRedirectResult(): Promise<Member | null> {
+  try {
+    const result = await getRedirectResult(auth);
+    if (result && result.user) {
+      return mapFirebaseUserToMember(result.user);
+    }
+    return null;
+  } catch (error: any) {
+    logger.warn("checkGoogleRedirectResult notification:", error);
+    return null;
+  }
+}
+
+export async function triggerGoogleAdminSignIn(forceRedirect = false): Promise<Member> {
+  if (forceRedirect) {
+    await signInWithRedirect(auth, googleProvider);
+    return new Promise(() => {});
+  }
+
   try {
     const result = await signInWithPopup(auth, googleProvider);
-    const googleEmail = result.user.email || "";
-    const googleName = result.user.displayName || googleEmail.split("@")[0] || "Admin";
-    const googlePhoto = result.user.photoURL || "";
+    return mapFirebaseUserToMember(result.user);
+  } catch (error: any) {
+    const code = error?.code || "";
+    const rawMessage = error instanceof Error ? error.message : String(error);
 
-    const adminMember: Member = {
-      id: result.user.uid,
-      title: "",
-      firstName: googleName.split(" ")[0] || "Admin",
-      surname: googleName.split(" ").slice(1).join(" ") || "",
-      fullName: googleName,
-      email: googleEmail,
-      phoneNumber: "",
-      whatsappNumber: "",
-      dateOfBirth: "",
-      maritalStatus: "",
-      schoolName: "",
-      gradYear: "",
-      jerseySize: "",
-      nextOfKinName: "",
-      nextOfKinPhone: "",
-      closestNeighborName: "",
-      closestNeighborPhone: "",
-      occupation: "",
-      skills: [],
-      photoUrl: googlePhoto,
-      photoStatus: "approved",
-      role: "admin",
-      isGoogleAuth: true,
-      activityPoints: 0,
-      joinedAt: new Date().toISOString(),
-      lastActive: new Date().toISOString(),
-    };
+    // If popup was blocked by browser, attempt seamless redirect fallback
+    if (code === "auth/popup-blocked" || rawMessage.includes("popup-blocked")) {
+      try {
+        await signInWithRedirect(auth, googleProvider);
+        return new Promise(() => {});
+      } catch {
+        throw new Error("Google sign-in popup was blocked by your browser. Please allow popups or try again.");
+      }
+    }
 
-    return adminMember;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-
-    if (message.includes("popup-blocked") || message.includes("auth/popup-blocked")) {
-      throw new Error("Google sign-in popup was blocked. Please allow popups and try again.");
+    // If popup was closed or cancelled by the user
+    if (
+      code === "auth/popup-closed-by-user" ||
+      code === "auth/cancelled-popup-request" ||
+      rawMessage.includes("popup-closed-by-user") ||
+      rawMessage.includes("cancelled-popup-request")
+    ) {
+      const cancelErr = new Error("Google sign-in was closed before completing. Click Google to try again or sign in with your email/phone.");
+      (cancelErr as any).isCancellation = true;
+      throw cancelErr;
     }
 
     if (
-      message.includes("unauthorized-domain") ||
-      message.includes("auth/unauthorized-domain") ||
-      message.includes("redirect_uri_mismatch") ||
-      message.includes("auth/configuration-not-found")
+      code === "auth/unauthorized-domain" ||
+      rawMessage.includes("unauthorized-domain") ||
+      rawMessage.includes("auth/unauthorized-domain") ||
+      rawMessage.includes("redirect_uri_mismatch") ||
+      rawMessage.includes("auth/configuration-not-found")
     ) {
       throw new Error(
-        "Google sign-in is not authorized for this domain. Use the local dev localhost domain or configure the Firebase auth domain correctly.",
+        "Google sign-in is not authorized for this domain. Please ensure this domain is added to authorized domains in Firebase Console.",
       );
     }
 
-    throw new Error(`Google authentication failed: ${message}`);
+    // Clean up any ugly "Firebase: Error (...)" raw string wrapper
+    const cleanMsg = rawMessage.replace(/^Firebase:\s*Error\s*\((.*?)\)\.?/i, "$1").trim();
+    throw new Error(`Google authentication failed: ${cleanMsg || rawMessage}`);
   }
 }
 
