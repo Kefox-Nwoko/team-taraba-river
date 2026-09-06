@@ -11,12 +11,24 @@ async function cleanEventLocations() {
   console.log(`Found ${snap.size} events to audit.`);
 
   let updatedCount = 0;
+  let purgedCount = 0;
 
   for (const doc of snap.docs) {
     const data = doc.data();
     const docId = doc.id;
     const currentLoc = (data.location || '').trim();
     const currentCat = (data.category || '').trim();
+    const photoCount = Array.isArray(data.driveImageUrls) ? data.driveImageUrls.length : 0;
+    const vidCount = (Array.isArray(data.youtubeVideoUrls) ? data.youtubeVideoUrls.length : 0) + (data.youtubeVideoUrl ? 1 : 0);
+    const hasMedia = photoCount > 0 || vidCount > 0;
+
+    // Purge fake event folders created by announcements that have zero media assets
+    if (!hasMedia && (docId.startsWith('evt_') || !docId.startsWith('gdrive_'))) {
+      console.log(`Purging fake event folder [${docId}] "${data.title}" (0 photos, 0 videos)`);
+      await doc.ref.delete();
+      purgedCount++;
+      continue;
+    }
 
     let newLoc = currentLoc;
     let newCat = currentCat;
@@ -53,7 +65,7 @@ async function cleanEventLocations() {
     }
   }
 
-  console.log(`\n--- Migration Complete: ${updatedCount} of ${snap.size} events updated. ---`);
+  console.log(`\n--- Migration Complete: ${updatedCount} updated, ${purgedCount} fake announcement folders purged out of ${snap.size} total docs. ---`);
 }
 
 cleanEventLocations().catch(console.error);

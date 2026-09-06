@@ -480,8 +480,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       }
       const hasVideos = (event.youtubeVideoUrls && event.youtubeVideoUrls.length > 0) || !!event.youtubeVideoUrl;
       const hasMedia = (event.driveImageUrls && event.driveImageUrls.length > 0) || hasVideos;
-      // All folders are independent top-level entries directly on the media page representing distinct events
-      if (hasMedia || event.date <= currentDateStr) {
+      // All folders on the media page must strictly contain media assets (announcements without media are excluded)
+      if (hasMedia) {
         completed.push(event);
       }
     });
