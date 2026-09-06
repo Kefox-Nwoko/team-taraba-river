@@ -13,7 +13,7 @@ import url from 'url';
 import fs from 'fs';
 import path from 'path';
 
-const CLIENT_ID = process.env.YOUTUBE_CLIENT_ID || '459096517410-6biibehstofnaai4g7r7on5m55mtmitd.apps.googleusercontent.com';
+const CLIENT_ID = process.env.YOUTUBE_CLIENT_ID || '';
 const CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET || '';
 const REDIRECT_URI = 'http://localhost:3000/oauth2callback';
 

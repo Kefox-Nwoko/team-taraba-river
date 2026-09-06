@@ -1,13 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { Member } from "../types";
 import { loginMember } from "../services/apiClient";
-import { signInWithCustomToken, triggerGoogleAdminSignIn, FirebaseSyncManager } from "../services/firebaseService";
+import {
+  signInWithCustomToken,
+  triggerGoogleAdminSignIn,
+  checkGoogleRedirectResult,
+  FirebaseSyncManager,
+} from "../services/firebaseService";
 import { AppStateManager } from "../services/storage";
 import { isMemberCredentialMatch } from "../lib/authMatching";
 import { INITIAL_MEMBERS } from "../data/seedData";
-import { LogIn, UserPlus, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck, BookOpen } from "lucide-react";
+import { LogIn, UserPlus, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck, BookOpen, X } from "lucide-react";
 import { BRAND_LOGO, LOGIN_WALL_BG } from "../constants/assets";
 import { clientConfig, isAdminEmailClient } from "../lib/config";
+import { logger } from "../lib/logger";
+
 interface LoginGateProps {
   onLoginSuccess: (member: Member) => void;
   onOpenRegister: () => void;
@@ -15,6 +22,7 @@ interface LoginGateProps {
   onExploreGuest?: () => void;
   onOpenManual?: () => void;
 }
+
 export const LoginGate: React.FC<LoginGateProps> = ({
   onLoginSuccess,
   onOpenRegister,
@@ -26,6 +34,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
   // Load the heavy login wallpaper after first paint so it never blocks the
   // initial render on slow connections — a cheap gradient shows instantly.
   const [wallLoaded, setWallLoaded] = useState(false);
@@ -34,20 +43,104 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     img.src = LOGIN_WALL_BG;
     img.onload = () => setWallLoaded(true);
   }, []);
+
+  const processGoogleUser = async (googleMember: Member) => {
+    const userEmail = (googleMember.email || "").toLowerCase().trim();
+    if (!userEmail) {
+      throw new Error("No email address was returned by Google authentication.");
+    }
+
+    const isAdmin = isAdminEmailClient(userEmail);
+    let memberSession: Member | undefined;
+
+    if (isAdmin) {
+      const cached = AppStateManager.getMembers();
+      const pool = availableMembers.length > 0 ? availableMembers : (cached.length > 0 ? cached : INITIAL_MEMBERS);
+      const match = pool.find((m) => m.email?.toLowerCase().trim() === userEmail);
+      memberSession = {
+        ...(match || googleMember),
+        role: "admin",
+        isGoogleAuth: true,
+        photoUrl: googleMember.photoUrl || match?.photoUrl || "",
+        photoStatus: "approved",
+      };
+    } else {
+      const cached = AppStateManager.getMembers();
+      const pool = availableMembers.length > 0 ? availableMembers : (cached.length > 0 ? cached : INITIAL_MEMBERS);
+      let match = pool.find((m) => isMemberCredentialMatch(m, userEmail));
+
+      if (!match) {
+        try {
+          const live = await FirebaseSyncManager.seedCSVDataIfNeeded();
+          match = live.find((m) => isMemberCredentialMatch(m, userEmail));
+        } catch {}
+      }
+
+      if (match) {
+        memberSession = {
+          ...match,
+          isGoogleAuth: true,
+          photoUrl: match.photoUrl || googleMember.photoUrl || "",
+        };
+      }
+    }
+
+    if (memberSession) {
+      if (!memberSession.photoUrl) {
+        const matchedPhoto = AppStateManager.findMatchingMember(memberSession);
+        if (matchedPhoto && matchedPhoto.photoUrl) {
+          memberSession.photoUrl = matchedPhoto.photoUrl;
+          memberSession.photoStatus = matchedPhoto.photoStatus || "approved";
+        }
+      }
+      AppStateManager.setCurrentUser(memberSession);
+      onLoginSuccess(memberSession);
+    } else {
+      throw new Error(
+        `Google account (${userEmail}) is not recognized. Please sign in with your registered email or phone number, or register your profile below.`
+      );
+    }
+  };
+
+  // Check if returning from a mobile redirect authentication flow
+  useEffect(() => {
+    let active = true;
+    checkGoogleRedirectResult()
+      .then(async (googleUser) => {
+        if (!active || !googleUser) return;
+        setIsAdminLoading(true);
+        try {
+          await processGoogleUser(googleUser);
+        } catch (err) {
+          if (active) {
+            setError(err instanceof Error ? err.message : "Google authentication failed.");
+          }
+        } finally {
+          if (active) setIsAdminLoading(false);
+        }
+      })
+      .catch((err) => {
+        logger.warn("Redirect check notification:", err);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleAdminLogin = async () => {
     setIsAdminLoading(true);
     setError(null);
     try {
-      const adminMember = await triggerGoogleAdminSignIn();
-      if (!adminMember.email || !clientConfig.adminEmails.includes(adminMember.email.toLowerCase())) {
-        throw new Error("Access Denied: Account not permitted.");
+      const googleUser = await triggerGoogleAdminSignIn();
+      await processGoogleUser(googleUser);
+    } catch (err: any) {
+      if (err?.isCancellation || err?.message?.includes("closed before completing")) {
+        setError("Google sign-in was closed before completing. Click Google to try again or enter your email or phone number above.");
+      } else {
+        setError(
+          err instanceof Error ? err.message : "Authentication failed. Please try again."
+        );
       }
-      AppStateManager.setCurrentUser(adminMember);
-      onLoginSuccess(adminMember);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Admin authentication failed. Please try again."
-      );
     } finally {
       setIsAdminLoading(false);
     }
@@ -171,29 +264,38 @@ export const LoginGate: React.FC<LoginGateProps> = ({
           </div>{" "}
         </div>{" "}
         {error && (
-          <div className="p-3 bg-red-950/80 border border-red-800/80 text-red-200 text-sm rounded-xl flex items-center space-x-2">
-            {" "}
-            <AlertCircle className="w-4 h-4 text-red-400 shrink-0" /> <span>{error}</span>{" "}
+          <div className="p-3 bg-red-950/80 border border-red-800/80 text-red-200 text-xs sm:text-sm rounded-xl flex items-start justify-between gap-2 animate-fadeIn">
+            <div className="flex items-start space-x-2">
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <span className="leading-snug">{error}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              className="text-red-400 hover:text-red-200 p-0.5 rounded cursor-pointer transition shrink-0"
+              title="Dismiss"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
-        )}{" "}
-        {/* Form */}{" "}
+        )}
+        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          {" "}
           <div>
-            {" "}
             <label className="block text-center text-sm text-slate-300 uppercase tracking-wider mb-1.5">
-              {" "}
-              Email or Phone Number{" "}
-            </label>{" "}
+              Email or Phone Number
+            </label>
             <input
               type="text"
               required
               placeholder="e.g. 'member@domain.com/08023456789'"
               value={credential}
-              onChange={(e) => setCredential(e.target.value)}
+              onChange={(e) => {
+                setCredential(e.target.value);
+                if (error) setError(null);
+              }}
               className="w-full block bg-slate-950/90 border border-slate-700/80 focus:border-cyan-400 rounded-2xl px-3 sm:px-4 py-3 text-xs sm:text-sm text-white focus:outline-none transition placeholder:text-slate-500 placeholder:text-[11px] sm:placeholder:text-xs text-center"
-            />{" "}
-
+            />
           </div>{" "}
           <div className="flex justify-center">
             <button type="submit" disabled={isLoading || !credential.trim()} className="w-3/4 py-2 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white text-sm rounded-xl transition shadow-md shadow-cyan-600/30 flex items-center justify-center space-x-1.5 disabled:opacity-50 cursor-pointer" >

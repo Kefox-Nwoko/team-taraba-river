@@ -26,8 +26,12 @@ export const SignInModal: React.FC<SignInModalProps> = ({
       const adminMember = await triggerGoogleAdminSignIn();
       onSuccess(adminMember);
       onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Google Auth sign-in failed");
+    } catch (err: any) {
+      if (err?.isCancellation || err?.message?.includes("closed before completing")) {
+        setError("Sign-in was cancelled. Click to try again.");
+      } else {
+        setError(err instanceof Error ? err.message : "Google Auth sign-in failed");
+      }
     } finally {
       setIsLoading(false);
     }

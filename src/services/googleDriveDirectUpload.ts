@@ -9,6 +9,7 @@
 import { logger } from "../lib/logger";
 
 // Vite statically replaces these at build time with values from .env
+// Credentials MUST come from .env (gitignored). Never hardcode secrets in source.
 const DRIVE_CLIENT_ID =
   import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID ||
   import.meta.env.VITE_YOUTUBE_CLIENT_ID ||

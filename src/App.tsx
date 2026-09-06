@@ -488,7 +488,8 @@ export default function App() {
       setCurrentUser(adminMember);
       setActiveTab("events");
       try { localStorage.setItem("taraba_active_tab", "events"); } catch {}
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.isCancellation) return;
       logger.error("Google Admin Sign In error", err);
     }
   };

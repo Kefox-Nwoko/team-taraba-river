@@ -10,6 +10,7 @@
 import { logger } from "../lib/logger";
 
 // Vite statically replaces these at build time with the literal values from .env
+// Credentials MUST come from .env (gitignored). Never hardcode secrets in source.
 const YT_CLIENT_ID = import.meta.env.VITE_YOUTUBE_CLIENT_ID ?? "";
 const YT_CLIENT_SECRET = import.meta.env.VITE_YOUTUBE_CLIENT_SECRET ?? "";
 const YT_REFRESH_TOKEN = import.meta.env.VITE_YOUTUBE_REFRESH_TOKEN ?? "";
