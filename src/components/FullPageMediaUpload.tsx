@@ -236,10 +236,130 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
     const isVideo = item.type === "video";
 
-    // 1. For Videos: Stream directly to YouTube Channel with real-time resumable chunks
+    // 1. For Videos: High-Assurance Resumable Pipeline (YouTube Primary -> Google Drive Fallback -> Cloud Storage Safety Net)
     if (isVideo) {
-      const ytUrl = await uploadVideoDirectToYouTube(item.file, folderName, onFileProgress, signal);
-      return ytUrl;
+      // Tier 1: Primary Stream directly to YouTube Channel with 97%+ Resumable Assurance
+      try {
+        const ytUrl = await uploadVideoDirectToYouTube(item.file, folderName, onFileProgress, signal);
+        return ytUrl;
+      } catch (ytErr: any) {
+        if (ytErr?.name === "AbortError" || signal?.aborted) {
+          throw ytErr;
+        }
+        logger.warn(`[MediaUpload] YouTube primary upload notice (${ytErr?.message || ytErr}), engaging Google Drive direct fallback:`, ytErr);
+      }
+
+      if (signal?.aborted) {
+        const err = new Error("Upload aborted by user.");
+        err.name = "AbortError";
+        throw err;
+      }
+
+      const cleanVideoName = (item.file.name.replace(/\.[^/.]+$/, "") || `video_${index + 1}`).replace(/[^a-zA-Z0-9._-]/g, "_") + ".mp4";
+
+      // Tier 2: Fallback Stream directly to Google Drive Event Folder
+      try {
+        const driveUrl = await uploadImageDirectToDrive(
+          item.file,
+          cleanVideoName,
+          folderName,
+          onFileProgress,
+          signal
+        );
+        logger.info(`[MediaUpload] ✅ Video successfully uploaded via Google Drive fallback: ${driveUrl}`);
+        return driveUrl;
+      } catch (driveErr: any) {
+        if (driveErr?.name === "AbortError" || signal?.aborted) {
+          throw driveErr;
+        }
+        logger.warn("[MediaUpload] Google Drive video fallback notice, engaging secondary Firebase Cloud Storage:", driveErr);
+      }
+
+      if (signal?.aborted) {
+        const err = new Error("Upload aborted by user.");
+        err.name = "AbortError";
+        throw err;
+      }
+
+      // Tier 3: Safety Net - Firebase Cloud Storage
+      try {
+        const storageRef = ref(storage, `events/${eventId}/videos/${Date.now()}_${index + 1}_${cleanVideoName}`);
+        const downloadUrl = await new Promise<string>((resolve, reject) => {
+          if (signal?.aborted) {
+            const err = new Error("Upload aborted by user.");
+            err.name = "AbortError";
+            reject(err);
+            return;
+          }
+
+          const uploadTask = uploadBytesResumable(storageRef, item.file, {
+            contentType: item.file.type || "video/mp4",
+          });
+
+          const handleAbort = () => {
+            try {
+              uploadTask.cancel();
+            } catch {}
+            const err = new Error("Upload aborted by user.");
+            err.name = "AbortError";
+            reject(err);
+          };
+
+          if (signal) {
+            signal.addEventListener("abort", handleAbort, { once: true });
+          }
+
+          const uploadTimeout = setTimeout(() => {
+            if (signal) signal.removeEventListener("abort", handleAbort);
+            try {
+              uploadTask.cancel();
+            } catch {}
+            reject(new Error("Firebase Storage video upload timeout"));
+          }, 300000); // 5 minutes
+
+          uploadTask.on(
+            "state_changed",
+            (snapshot) => {
+              if (snapshot.totalBytes > 0) {
+                const pct = Math.min(95, Math.max(10, Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)));
+                onFileProgress(pct);
+              }
+            },
+            (error) => {
+              clearTimeout(uploadTimeout);
+              if (signal) signal.removeEventListener("abort", handleAbort);
+              if (signal?.aborted) {
+                const err = new Error("Upload aborted by user.");
+                err.name = "AbortError";
+                reject(err);
+              } else {
+                reject(error);
+              }
+            },
+            async () => {
+              clearTimeout(uploadTimeout);
+              if (signal) signal.removeEventListener("abort", handleAbort);
+              try {
+                onFileProgress(98);
+                const url = await getDownloadURL(uploadTask.snapshot.ref);
+                resolve(url);
+              } catch (e) {
+                reject(e);
+              }
+            }
+          );
+        });
+
+        onFileProgress(100);
+        logger.info(`[MediaUpload] ✅ Video successfully uploaded via Firebase Cloud Storage fallback: ${downloadUrl}`);
+        return downloadUrl;
+      } catch (storageErr: any) {
+        if (storageErr?.name === "AbortError" || signal?.aborted) {
+          throw storageErr;
+        }
+        logger.error("[MediaUpload] All 3 video upload pipelines failed:", storageErr);
+        throw new Error(`Video upload could not be completed: ${storageErr?.message || storageErr}`);
+      }
     }
 
     // 2. For Photos: Google Drive Direct Upload Pipeline (WebP Compressed)

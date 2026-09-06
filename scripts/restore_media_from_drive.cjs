@@ -96,6 +96,12 @@ async function restoreMedia() {
       : new Date().toISOString().split('T')[0]);
 
     const eventId = `gdrive_${folder.id}`;
+    // Preserve existing YouTube video URLs if already attached to this folder
+    const existingSnap = await db.collection('events').doc(eventId).get();
+    const existingData = existingSnap.exists ? existingSnap.data() : null;
+    const preservedYtUrls = existingData?.youtubeVideoUrls || (existingData?.youtubeVideoUrl ? [existingData.youtubeVideoUrl] : []);
+    const preservedMainYt = existingData?.youtubeVideoUrl || preservedYtUrls[0] || '';
+
     const eventDoc = {
       id: eventId,
       title: folder.name || 'Untitled Folder',
@@ -106,8 +112,8 @@ async function restoreMedia() {
       category: 'General',
       driveImageUrls: allMediaUrls,
       driveFolderId: folder.id || '',
-      youtubeVideoUrl: '',
-      youtubeVideoUrls: [],
+      youtubeVideoUrl: preservedMainYt,
+      youtubeVideoUrls: preservedYtUrls,
       createdBy: 'Official Cloud Pipeline',
       createdById: 'tarabateam_admin',
       attendeeIds: [],

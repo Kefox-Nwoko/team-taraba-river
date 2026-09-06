@@ -151,64 +151,138 @@ const VideoHoverCard: React.FC<{
   forcePlay?: boolean;
 }> = ({ videoUrl, title, className = "w-full h-full object-cover", aspectClass = "w-full h-full", showPlayBadge = true, forcePlay }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const hoverTimeoutRef = useRef<any>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isYtPreviewActive, setIsYtPreviewActive] = useState(false);
+  const [isYtLoaded, setIsYtLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
 
   const isYt = videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be");
+  const ytId = isYt ? extractYouTubeId(videoUrl) : null;
   const ytThumb = isYt ? getYouTubeThumbnail(videoUrl) : null;
 
   const videoSrc = videoUrl.includes("#t=") ? videoUrl : `${videoUrl}#t=0.5`;
 
-  const playVideo = () => {
-    if (isYt || hasError || !videoRef.current) return;
-    videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+  // Start video playback
+  const startPlayback = () => {
+    if (hasError) return;
+    setIsHovered(true);
+
+    if (isYt && ytId) {
+      setIsYtPreviewActive(true);
+      return;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.muted = true;
+      videoRef.current
+        .play()
+        .then(() => setIsPlaying(true))
+        .catch(() => {});
+    }
   };
 
-  const pauseVideo = () => {
-    if (isYt || hasError || !videoRef.current) return;
-    videoRef.current.pause();
-    try {
-      videoRef.current.currentTime = 0.5;
-    } catch {}
-    setIsPlaying(false);
+  // Stop video playback
+  const stopPlayback = () => {
+    setIsHovered(false);
+    clearTimeout(hoverTimeoutRef.current);
+
+    if (isYt) {
+      setIsYtPreviewActive(false);
+      setIsYtLoaded(false);
+      return;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.pause();
+      try {
+        videoRef.current.currentTime = 0.5;
+      } catch {}
+      setIsPlaying(false);
+    }
   };
 
   const handleMouseEnter = () => {
-    playVideo();
+    clearTimeout(hoverTimeoutRef.current);
+    hoverTimeoutRef.current = setTimeout(() => {
+      startPlayback();
+    }, 60);
   };
 
   const handleMouseLeave = () => {
-    pauseVideo();
+    clearTimeout(hoverTimeoutRef.current);
+    stopPlayback();
   };
 
   const handleTouchStart = () => {
-    if (videoRef.current?.paused) {
-      playVideo();
+    if (isPlaying || isYtPreviewActive) {
+      stopPlayback();
     } else {
-      pauseVideo();
+      startPlayback();
     }
   };
 
   useEffect(() => {
     if (forcePlay === undefined) return;
     if (forcePlay) {
-      playVideo();
+      startPlayback();
     } else {
-      pauseVideo();
+      stopPlayback();
     }
   }, [forcePlay]);
 
+  useEffect(() => {
+    return () => {
+      clearTimeout(hoverTimeoutRef.current);
+    };
+  }, []);
+
+  // 1. YouTube Video Preview Card
   if (isYt && ytThumb) {
     return (
-      <div className={`relative ${aspectClass} overflow-hidden bg-slate-950`}>
+      <div
+        className={`relative ${aspectClass} overflow-hidden bg-slate-950 select-none group`}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onTouchStart={handleTouchStart}
+      >
+        {/* High-res Static Poster */}
         <img
           src={ytThumb}
           alt={title}
-          className={`${className} transition-transform duration-300 group-hover:scale-105`}
+          className={`${className} transition-all duration-500 ${isHovered ? "scale-105" : "scale-100"}`}
           loading="lazy"
           onError={handleGoogleDriveImageError}
         />
-        {showPlayBadge && (
+
+        {/* Fluid Muted YouTube Autoplay Preview Overlay */}
+        {isYtPreviewActive && ytId && (
+          <div
+            className={`absolute inset-0 z-10 overflow-hidden bg-black transition-opacity duration-300 pointer-events-none ${
+              isYtLoaded ? "opacity-100" : "opacity-0"
+            }`}
+          >
+            <iframe
+              src={`https://www.youtube.com/embed/${ytId}?autoplay=1&mute=1&controls=0&modestbranding=1&loop=1&playlist=${ytId}&playsinline=1&rel=0&showinfo=0&disablekb=1`}
+              title={`${title} preview`}
+              className="w-[140%] h-[140%] -top-[20%] -left-[20%] relative pointer-events-none scale-100 border-0"
+              onLoad={() => setIsYtLoaded(true)}
+              allow="autoplay; encrypted-media"
+            />
+          </div>
+        )}
+
+        {/* Silicon Valley Live Preview Badge */}
+        {isYtPreviewActive && isYtLoaded && (
+          <div className="absolute top-2 left-2 z-20 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-xs text-[10px] font-bold tracking-wide uppercase text-white flex items-center gap-1 shadow-md border border-white/10 animate-fadeIn">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+            <span>Preview</span>
+          </div>
+        )}
+
+        {/* Play Icon Badge */}
+        {showPlayBadge && !isYtPreviewActive && (
           <div className="absolute inset-0 bg-black/25 flex items-center justify-center pointer-events-none group-hover:bg-black/15 transition-colors">
             <div className="w-8 h-8 rounded-full bg-red-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
               <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
@@ -219,24 +293,35 @@ const VideoHoverCard: React.FC<{
     );
   }
 
+  // 2. Direct HTML5 / Cloud Storage Video Card
   return (
     <div
-      className={`relative ${aspectClass} overflow-hidden bg-slate-950 select-none`}
+      className={`relative ${aspectClass} overflow-hidden bg-slate-950 select-none group`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onTouchStart={handleTouchStart}
     >
       {!hasError ? (
-        <video
-          ref={videoRef}
-          src={videoSrc}
-          className={`${className} transition-transform duration-300 ${isPlaying ? "scale-100" : "group-hover:scale-105"}`}
-          muted
-          playsInline
-          loop
-          preload="metadata"
-          onError={() => setHasError(true)}
-        />
+        <>
+          <video
+            ref={videoRef}
+            src={videoSrc}
+            className={`${className} transition-all duration-500 ${isPlaying ? "scale-100 opacity-100" : "group-hover:scale-105 opacity-90"}`}
+            muted
+            playsInline
+            loop
+            preload="auto"
+            onError={() => setHasError(true)}
+          />
+
+          {/* Active Preview Badge */}
+          {isPlaying && (
+            <div className="absolute top-2 left-2 z-20 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-xs text-[10px] font-bold tracking-wide uppercase text-white flex items-center gap-1 shadow-md border border-white/10 animate-fadeIn">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              <span>Playing</span>
+            </div>
+          )}
+        </>
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-slate-400 p-2">
           <Play className="w-6 h-6 text-slate-500 mb-1" />
@@ -244,8 +329,8 @@ const VideoHoverCard: React.FC<{
         </div>
       )}
 
-      {showPlayBadge && !hasError && (
-        <div className={`absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none transition-opacity duration-300 ${isPlaying ? "opacity-0" : "opacity-100"}`}>
+      {showPlayBadge && !hasError && !isPlaying && (
+        <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none transition-opacity duration-300">
           <div className="w-8 h-8 rounded-full bg-black/60 backdrop-blur-xs text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
             <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
           </div>
@@ -262,7 +347,7 @@ const MediaPreviewItem: React.FC<{
   loading?: "lazy" | "eager";
   forcePlay?: boolean;
 }> = ({ item, alt, className = "w-full h-full object-cover", loading = "lazy", forcePlay }) => {
-  if (item.isVideo && item.videoUrl && !item.videoUrl.includes("youtube.com") && !item.videoUrl.includes("youtu.be")) {
+  if (item.isVideo && item.videoUrl) {
     return (
       <VideoHoverCard
         videoUrl={item.videoUrl}
@@ -321,7 +406,16 @@ const FolderCollagePreview: React.FC<{
   const mediaList: Array<{ src: string; isVideo?: boolean; videoUrl?: string }> = [];
 
   allYtUrls.forEach((ytUrl) => {
-    const videoThumb = getYouTubeThumbnail(ytUrl) || "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80";
+    const isDirect =
+      ytUrl.startsWith("data:video") ||
+      ytUrl.toLowerCase().includes(".mp4") ||
+      ytUrl.toLowerCase().includes(".webm") ||
+      ytUrl.toLowerCase().includes(".mov") ||
+      ytUrl.includes("firebasestorage.googleapis.com") ||
+      ytUrl.includes("googleusercontent.com");
+    const videoThumb = !isDirect
+      ? (getYouTubeThumbnail(ytUrl) || "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80")
+      : (ytUrl.includes("lh3.googleusercontent.com") ? ytUrl : "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80");
     mediaList.push({ src: videoThumb, videoUrl: ytUrl, isVideo: true });
   });
 
