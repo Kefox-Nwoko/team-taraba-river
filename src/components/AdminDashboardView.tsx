@@ -723,7 +723,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         date: req.date || req.uploadedAt?.split("T")[0] || new Date().toISOString().split("T")[0],
         time: "09:00",
         location: req.location || "",
-        category: req.category || "cleanup",
+        category: req.category || "General",
         description: req.description || `Archival media collection for ${req.folderName || "Community Event"}.`,
         driveImageUrls: req.type === "photo" ? [req.photoUrl] : [],
         driveFolderId: `drive_folder_${Date.now()}`,

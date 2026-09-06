@@ -44,7 +44,7 @@ export const EventDetailView: React.FC<EventDetailViewProps> = ({ event, onRetur
             </div>
             <div>
               <span className="text-xs font-medium text-slate-500 dark:text-slate-400 block mb-0.5">Location</span>
-              <span className="text-xs sm:text-sm text-slate-900 dark:text-white font-semibold leading-tight line-clamp-2 break-words">{event.location}</span>
+              <span className="text-xs sm:text-sm text-slate-900 dark:text-white font-semibold leading-tight line-clamp-2 break-words">{event.location || "Venue TBA"}</span>
             </div>
           </div>
           <div className="flex flex-col items-center text-center gap-2">

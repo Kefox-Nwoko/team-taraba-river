@@ -122,6 +122,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                 <li>You must be at least <strong className="text-slate-700 dark:text-slate-200">18 years of age</strong> to register an account. By registering, you warrant that you meet this age requirement under Nigerian law.</li>
                 <li>Profile photos and media assets undergo administrative moderation to ensure decency before public display. Photographs deemed vulgar, offensive, or misleading will be rejected without prior notice.</li>
                 <li>By registering, you affirm that you are a person of good character and commit to upholding the values of unity, integrity, and fraternity.</li>
+                <li><strong>Clarification of Group Identity:</strong> "Team Taraba River" is strictly the organizational group name representing this alumni fellowship cohort under URIP / USOSA. It does not denote, reference, or link to any physical geographic river or location. The group's activities take place at specified venues in Rivers State and other designated locations.</li>
               </ul>
             </section>
 

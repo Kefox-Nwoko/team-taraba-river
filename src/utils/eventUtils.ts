@@ -70,7 +70,7 @@ export function sanitizeEventRecord(event: Partial<GroupEvent>): GroupEvent {
     title: (event.title || "").trim() || "Community Event",
     date: (event.date || "").trim() || new Date().toISOString().split("T")[0],
     time: (event.time || "").trim() || "09:00",
-    location: (event.location || "").trim() || "Taraba River",
+    location: (event.location || "").trim().toLowerCase().includes("taraba river") ? "" : (event.location || "").trim(),
     category: (event.category || "").trim() || "General",
     description: (event.description || "").trim(),
     driveImageUrls: Array.isArray(event.driveImageUrls) ? event.driveImageUrls.filter(Boolean) : [],

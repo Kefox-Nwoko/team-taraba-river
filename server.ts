@@ -449,8 +449,8 @@ async function getEvents(): Promise<GroupEvent[]> {
       if (parsedDate) {
         e.date = parsedDate;
       }
-      if (e.location === 'Google Drive (tarabateam@gmail.com)') {
-        e.location = 'Taraba River';
+      if (e.location && (e.location.toLowerCase().includes('taraba river') || e.location.includes('Google Drive') || e.location.includes('YouTube Hub'))) {
+        e.location = '';
       }
       if (e.createdBy === 'Google Drive Sync (tarabateam@gmail.com)') {
         e.createdBy = 'Official Cloud Pipeline';
@@ -1761,7 +1761,7 @@ app.get("/api/admin/analytics", conditionalAuth, conditionalRequireAdmin, async 
       .slice(0, 5);
 
     const categoryBreakdown = [
-      { category: 'Cleanups & Ecology', count: events.filter(e => e.category === 'cleanup').length },
+      { category: 'Community & Fellowship', count: events.filter(e => e.category === 'social' || e.category === 'meeting' || e.category === 'sports' || e.category === 'general' || e.category === 'General').length },
       { category: 'Workshops & Training', count: events.filter(e => e.category === 'workshop').length },
       { category: 'Celebrations & Cultural', count: events.filter(e => e.category === 'celebration').length },
       { category: 'Meetings & Outreaches', count: events.filter(e => e.category === 'meeting' || e.category === 'outreach').length },
@@ -2061,8 +2061,8 @@ app.post("/api/media/cloud-sync-all", conditionalAuth, async (req: Request, res:
           description: `Synced event media folder. Contains ${images.length} photos${videos.length > 0 ? ` and ${videos.length} videos` : ''}.`,
           date: folderDate,
           time: '09:00',
-          location: 'Taraba River',
-          category: 'cleanup',
+          location: '',
+          category: 'General',
           driveImageUrls: allMediaUrls,
           driveFolderId: folder.id || '',
           youtubeVideoUrl: '',
@@ -2389,7 +2389,7 @@ app.post("/api/media/youtube-back-sync", conditionalAuth, async (req: Request, r
           title: vid.title,
           date: vid.published,
           time: "10:00",
-          location: "Taraba State / YouTube Hub",
+          location: "",
           category: "celebration",
           description: `Short video clip back-synced automatically from YouTube.`,
           driveImageUrls: [],
@@ -2701,7 +2701,7 @@ app.post("/api/ai/stats-insights", conditionalAuth, async (req: Request, res: Re
           `Most Interactive Contributor: ${mostInteractive} actively sharing photo and video assets.`,
           `Unique Sessions Tracked: ${sessionCount} completed user sessions with latest visitor ${latestUser}.`
         ],
-        trendAnalysis: "Community engagement has shown steady growth across environmental cleanups and workshops.",
+        trendAnalysis: "Community engagement has shown steady growth across alumni gatherings, health walks, and fellowship events.",
         aiConfidence: 0.95
       });
       return;

@@ -86,7 +86,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   );
   const [newFolderTitle, setNewFolderTitle] = useState("");
   const [newDate, setNewDate] = useState(() => new Date().toISOString().split("T")[0]);
-  const [newCategory, setNewCategory] = useState<GroupEvent["category"]>("cleanup");
+  const [newCategory, setNewCategory] = useState<GroupEvent["category"]>("general");
   const [newLocation, setNewLocation] = useState("");
   const [newDescription, setNewDescription] = useState("");
 
@@ -738,7 +738,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     const eventId = folderMode === "new" ? `folder_${Date.now()}` : selectedFolderId;
     const folderEventDate = folderMode === "new" ? newDate : (events.find((e) => e.id === selectedFolderId)?.date || newDate);
     const folderLocation = folderMode === "new" ? newLocation.trim() : (events.find((e) => e.id === selectedFolderId)?.location || "");
-    const folderCategory = folderMode === "new" ? newCategory : (events.find((e) => e.id === selectedFolderId)?.category || "cleanup");
+    const folderCategory = folderMode === "new" ? newCategory : (events.find((e) => e.id === selectedFolderId)?.category || "general");
     const folderDescription = folderMode === "new" ? newDescription.trim() : (events.find((e) => e.id === selectedFolderId)?.description || "");
     const isAdmin = currentUser?.role === "admin";
 
@@ -1171,7 +1171,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. Jalingo / Abuja / Port Harcourt"
+                      placeholder="e.g. Port Harcourt Club, Old GRA (optional)"
                       value={newLocation}
                       onChange={(e) => setNewLocation(e.target.value)}
                       className="w-full px-3.5 py-2.5 text-sm rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"

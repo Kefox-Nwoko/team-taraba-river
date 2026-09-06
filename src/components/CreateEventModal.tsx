@@ -301,7 +301,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Jalingo Town Hall / Port Harcourt Venue"
+                  placeholder="e.g. Port Harcourt Club / Unity Lounge"
                   value={eventLocation}
                   onChange={(e) => setEventLocation(e.target.value)}
                   className="w-full bg-slate-50 dark:bg-[#2A2A2A] border-none rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm"

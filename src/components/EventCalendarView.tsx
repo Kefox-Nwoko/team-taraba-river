@@ -382,10 +382,12 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                               <Clock className="w-3.5 h-3.5 text-slate-400" />
                               <span>{event.time}</span>
                             </span>
-                              <span className="flex items-center gap-1 break-all">
-                                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span>{event.location}</span>
-                              </span>
+                              {event.location?.trim() ? (
+                                <span className="flex items-center gap-1 break-all">
+                                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                  <span>{event.location}</span>
+                                </span>
+                              ) : null}
                               {event.description && (
                                 <span className="text-slate-400 dark:text-slate-500 break-words">
                                   • {event.description}

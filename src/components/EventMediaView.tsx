@@ -129,8 +129,15 @@ function sanitizeUIField(val: string | undefined): string {
   // Remove trailing/leading bullet points or punctuation
   clean = clean.replace(/^[•\s,\-\|]+|[•\s,\-\|]+$/g, "").trim();
   const lower = clean.toLowerCase();
-  if (!clean || lower === "sync" || lower === "official pipeline" || lower === "official cloud pipeline" || lower === "taraba river") {
-    return clean;
+  if (
+    !clean ||
+    lower === "sync" ||
+    lower.includes("official pipeline") ||
+    lower.includes("taraba river") ||
+    lower.includes("google drive") ||
+    lower.includes("youtube hub")
+  ) {
+    return "";
   }
   return clean;
 }
@@ -1026,7 +1033,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     if (!selectedFolder) return;
     setEditTitle(selectedFolder.title);
     setEditDate(selectedFolder.date);
-    setEditLocation(selectedFolder.location || "");
+    setEditLocation(sanitizeUIField(selectedFolder.location));
     setIsEditingFolderInfo(true);
   };
 
@@ -1045,7 +1052,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       ...selectedFolder,
       title: editTitle.trim(),
       date: editDate,
-      location: editLocation.trim(),
+      location: sanitizeUIField(editLocation),
     };
 
     try {
@@ -1131,7 +1138,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search event albums by title, location, or keyword..."
+                placeholder="Search event albums by title, venue, or keyword..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-12 pr-10 py-3 text-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-cyan-500 text-slate-900 dark:text-white"
@@ -1290,7 +1297,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                       value={editLocation}
                       onChange={(e) => setEditLocation(e.target.value)}
                       className="w-full mt-1 px-3 py-1.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-                      placeholder="Event location"
+                      placeholder="e.g. Port Harcourt Club, Old GRA (optional)"
                     />
                   </div>
                   <div className="sm:col-span-2">

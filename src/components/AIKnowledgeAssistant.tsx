@@ -94,7 +94,7 @@ export const AIKnowledgeAssistant: React.FC<AIKnowledgeAssistantProps> = ({
   };
   const samplePrompts = [
     "Who has birthdays coming up in July or August?",
-    "Show me upcoming river cleanup events and location",
+    "Show me upcoming chapter events and schedules",
     "Where can I view event media albums and videos?",
   ];
   return (
@@ -237,7 +237,7 @@ export const AIKnowledgeAssistant: React.FC<AIKnowledgeAssistantProps> = ({
           {" "}
           <input
             type="text"
-            placeholder="Ask AI Assistant about members, cleanups, birthdays..."
+            placeholder="Ask AI Assistant about members, events, birthdays..."
             value={inputQuery}
             onChange={(e) => setInputQuery(e.target.value)}
             className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-3 text-sm sm:text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
