@@ -16,6 +16,9 @@ import {
   Sparkles,
   Cake,
   HardDrive,
+  MapPin,
+  FolderCheck,
+  PlayCircle,
 } from "lucide-react";
 
 interface TermsAndConditionsModalProps {
@@ -51,7 +54,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                 Terms and Conditions
               </h2>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Team Taraba River · Master Member Agreement &amp; Privacy Policy · v2.1 (August 2026)
+                Team Taraba River · Master Member Agreement &amp; Privacy Policy · v2.2 (September 2026)
               </p>
             </div>
           </div>
@@ -73,16 +76,19 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                 <BookOpen className="w-5 h-5 text-teal-600 dark:text-teal-400 mt-0.5 shrink-0" />
                 <div className="space-y-3 text-sm leading-relaxed">
                   <p>
-                    Welcome to the <strong className="text-slate-800 dark:text-white">Team Taraba River Portal</strong> — the official digital community platform of <strong className="text-slate-800 dark:text-white">Team Taraba River</strong>, a fellowship group under the umbrella of <strong className="text-slate-800 dark:text-white">URIP (Usosans Resident in Port Harcourt)</strong>, a recognized chapter of the <strong className="text-slate-800 dark:text-white">Unity Schools Old Students Association (USOSA)</strong>.
+                    Welcome to the <strong className="text-slate-800 dark:text-white">Team Taraba River Portal</strong> — the official digital community platform of <strong className="text-slate-800 dark:text-white">Team Taraba River</strong>, a chapter fellowship cohort operating under the umbrella of <strong className="text-slate-800 dark:text-white">URIP (Usosans Resident in Port Harcourt)</strong>, an accredited chapter of the <strong className="text-slate-800 dark:text-white">Unity Schools Old Students Association (USOSA)</strong>.
                   </p>
                   <p>
-                    USOSA is the umbrella alumni body for all 115 Federal Unity Colleges across Nigeria — institutions founded to foster national integration, moral and academic excellence, and detribalized citizenship. Operating within this proud tradition, Team Taraba River unites members for community fellowship, professional networking, social outings, mutual support, and civic impact in Rivers State and across the diaspora.
+                    USOSA represents alumni from all 115 Federal Unity Colleges across Nigeria — institutions established to foster national cohesion, detribalized fraternity, leadership excellence, and civic responsibility. Operating in this proud tradition, Team Taraba River brings together alumni resident in and around Port Harcourt, Rivers State, for chapter fellowship, sports and fitness, health walks, professional networking, social gatherings, and mutual welfare.
+                  </p>
+                  <p className="bg-teal-50 dark:bg-teal-950/40 p-3 rounded-xl border border-teal-200/70 dark:border-teal-800/60 text-teal-950 dark:text-teal-200 text-xs">
+                    <strong>Official Group Identity &amp; Non-Geographic Classification:</strong> &quot;Team Taraba River&quot; is strictly and solely the organizational name of this alumni cohort. It has <strong>no connection to any physical river, body of water, or geographic territory</strong>, and is never a venue or location entry. All chapter activities and gatherings occur at designated facilities in Port Harcourt, Rivers State, or other formally scheduled event venues.
                   </p>
                   <p>
-                    This platform is <strong className="text-slate-800 dark:text-white">owned and managed exclusively by Team Taraba River</strong>. By registering, signing in, or accessing this portal in any capacity, you enter into a legally binding agreement under the <strong>Nigeria Data Protection Act (NDPA) 2023</strong>, the <strong>Cybercrimes (Prohibition, Prevention, etc.) Act 2015 (as amended 2024)</strong>, and applicable international data governance standards.
+                    This platform is <strong className="text-slate-800 dark:text-white">owned and administered exclusively by Team Taraba River</strong>. By registering, authenticating, or accessing this portal, you enter into a legally binding contract under the <strong>Nigeria Data Protection Act (NDPA) 2023</strong>, the <strong>Cybercrimes (Prohibition, Prevention, etc.) Act 2015 (as amended 2024)</strong>, and applicable Nigerian laws.
                   </p>
                   <div className="p-3.5 rounded-xl bg-teal-100/60 dark:bg-teal-900/40 border border-teal-200 dark:border-teal-800 text-xs text-teal-900 dark:text-teal-200 font-medium">
-                    💡 <strong>Plain English Summary:</strong> This portal is an exclusive, secure space for verified members of Team Taraba River. By using it, you agree to treat fellow members with dignity, safeguard community privacy, uphold our shared values of unity and integrity, and comply with Nigerian law.
+                    💡 <strong>Plain English Summary:</strong> This portal is an exclusive, safe haven for verified members of Team Taraba River under URIP/USOSA. By using it, you agree to treat fellow members with dignity, safeguard community privacy, uphold our shared values of unity and integrity, and comply with all community policies.
                   </div>
                 </div>
               </div>
@@ -92,17 +98,19 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
             <section className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 p-5 rounded-2xl">
               <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2 mb-3">
                 <AlertTriangle className="w-4 h-4" />
-                Document Revision History &amp; Modifications
+                Document Revision History &amp; Current Outlook
               </h3>
               <div className="text-xs text-amber-900 dark:text-amber-200 space-y-2 leading-relaxed">
                 <p>
-                  <strong>v2.1 — August 2026 (Current):</strong> Comprehensive technical &amp; legal update. Added explicit disclosures for:
-                  (1) Automated Birthday Reminders &amp; Backend Scheduler Engine;
-                  (2) Cloud Media Pipeline with YouTube Transcoding &amp; Google Drive Synchronization;
-                  (3) AI Knowledge Assistant (AI Xplora) Terms &amp; Advisory Disclaimers;
-                  (4) Privacy-First 30-Minute Deduplication Analytics;
-                  (5) Nigeria Data Protection Act (NDPA) 2023 Statutory Rights &amp; Cross-Border Cloud Processing Guarantees; and
-                  (6) Binding Dispute Resolution seated in Port Harcourt, Rivers State under the Arbitration and Mediation Act 2023.
+                  <strong>v2.2 — September 2026 (Current Outlook Update):</strong> Comprehensive alignment with current operational architecture:
+                  <br />(1) <strong>Group Identity &amp; Location Field Standards:</strong> Formalized strict non-geographic status of &quot;Team Taraba River&quot;; established mandatory blank default (<code>&quot;&quot;</code>) for event folder location fields, restricted exclusively to user-driven creation/editing workflows;
+                  <br />(2) <strong>Prohibition of Misleading Themes:</strong> Codified absolute prohibition of associating the group with river cleanups, environmental sanitation, or ecological campaigns; affirmed chapter focus on alumni fellowship, sports/fitness, health walks, and community networking;
+                  <br />(3) <strong>Top-Level Event-Based Media Architecture:</strong> Restructured media archive so all folders are independent top-level entries directly on the media page representing distinct historical events (eliminating nested subfolders and catch-all albums);
+                  <br />(4) <strong>Event Announcement vs. Media Album Preservation:</strong> Delineated temporary calendar announcements from permanent media albums, guaranteeing that media albums containing uploaded photos/videos are never purged by expiration routines;
+                  <br />(5) <strong>Interactive Video Clip Streaming:</strong> Added operational guidelines for inline video preview playback and mobile touch-to-play across Google Drive and YouTube repositories.
+                </p>
+                <p className="text-slate-500 dark:text-slate-400">
+                  <em>v2.1 — August 2026:</em> Automated Birthday Engine, Cloud Media Pipeline, AI Xplora Vector Assistant, NDPA 2023 Statutory Rights &amp; Breach Notification SLA.
                 </p>
                 <p className="text-slate-500 dark:text-slate-400">
                   <em>v2.0 — August 2026:</em> Initial comprehensive Master Member Agreement review.
@@ -114,7 +122,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
             <section className="space-y-3">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
-                1. Membership Eligibility, Registration &amp; Verification
+                1. Membership Eligibility, Registration &amp; Group Identity
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
                 <li>Membership on this portal is restricted to verified alumni of Federal Unity Colleges resident in Port Harcourt (URIP) and accredited members of Team Taraba River.</li>
@@ -122,7 +130,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                 <li>You must be at least <strong className="text-slate-700 dark:text-slate-200">18 years of age</strong> to register an account. By registering, you warrant that you meet this age requirement under Nigerian law.</li>
                 <li>Profile photos and media assets undergo administrative moderation to ensure decency before public display. Photographs deemed vulgar, offensive, or misleading will be rejected without prior notice.</li>
                 <li>By registering, you affirm that you are a person of good character and commit to upholding the values of unity, integrity, and fraternity.</li>
-                <li><strong>Clarification of Group Identity:</strong> "Team Taraba River" is strictly the organizational group name representing this alumni fellowship cohort under URIP / USOSA. It does not denote, reference, or link to any physical geographic river or location. The group's activities take place at specified venues in Rivers State and other designated locations.</li>
+                <li><strong>Strict Group Identity Policy:</strong> &quot;Team Taraba River&quot; is strictly an organizational group name representing this alumni fellowship cohort under URIP / USOSA. It does not denote, reference, or link to any physical geographic river or location. The group is prohibited from being entered or treated as a geographic location anywhere in the app.</li>
               </ul>
             </section>
 
@@ -130,12 +138,13 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
             <section className="space-y-3">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <Star className="w-4 h-4 text-teal-600 shrink-0" />
-                2. Code of Conduct &amp; USOSA Values
+                2. Code of Conduct, USOSA Values &amp; Narrative Integrity
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
                 <li>All members must embody the core values of USOSA and Team Taraba River: mutual respect, detribalized brotherhood, zero discrimination (ethnic, religious, gender, or social), and active community support.</li>
                 <li>All content shared on the platform (comments, photos, announcements) must be constructive, decent, and free from inflammatory, defamatory, or offensive rhetoric.</li>
                 <li>Any conduct that brings Team Taraba River, URIP, or USOSA into disrepute — online or at in-person events — may result in administrative sanction or removal.</li>
+                <li><strong>Narrative Integrity:</strong> Members and administrators must preserve truthful representations of the chapter. Fabricating false campaigns (such as river cleanup or sanitation drives) or misrepresenting chapter gatherings is strictly prohibited.</li>
               </ul>
 
               {/* 2.1 Prohibited Activities */}
@@ -153,6 +162,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                   <li>Commercial spamming, unsolicited financial solicitations, pyramid schemes, or fraudulent activities.</li>
                   <li>Doxing or unauthorized sharing of another member's confidential residential or personal information.</li>
                   <li>Interfering with, hacking, or attempting to breach the security tokens or infrastructure of the portal.</li>
+                  <li>Assigning false geographic locations or fabricating unauthorized campaign narratives under the Team Taraba River name.</li>
                 </ul>
               </div>
 
@@ -172,19 +182,35 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
             <section className="space-y-3">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <Users className="w-4 h-4 text-teal-600 shrink-0" />
-                3. Event Participation, Safety &amp; Community Rules
+                3. Event Participation, Calendar Notices &amp; Community Rules
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                <li>Team Taraba River gatherings are organized for fellowship, recreational sports, professional development, and community impact. Members are encouraged to attend regularly and in good spirit.</li>
+                <li>Team Taraba River gatherings are organized for fellowship, recreational sports, health aerobics, health walks, bi-annual meetings, reunions, and professional development. Members are encouraged to attend regularly and in good spirit.</li>
                 <li><strong>RSVP Commitment:</strong> An event RSVP represents a binding logistical commitment. Excessive no-shows without timely prior notification disrupt planning and may result in activity point deductions.</li>
                 <li>Members are expected to uphold standards of safety and decency at all physical events. Endangering others or causing disruption will result in immediate event ejection.</li>
               </ul>
 
-              {/* 3.1 Event Safety & Media Consent */}
+              {/* 3.1 Event Announcements vs. Media Albums */}
               <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl">
                 <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-2">
+                  <FolderCheck className="w-4 h-4 text-teal-600" />
+                  3.1 Calendar Event Announcements vs. Permanent Media Folders
+                </h4>
+                <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed mb-2">
+                  To ensure community clarity, the portal enforces a strict technical and legal distinction between event notices and historical media albums:
+                </p>
+                <ul className="list-disc pl-5 space-y-1.5 text-xs text-slate-700 dark:text-slate-300 marker:text-slate-400">
+                  <li><strong>Temporary Calendar Announcements:</strong> Notices published solely to announce upcoming meetings, plenaries, or sports sessions that contain zero media assets are temporary and are subject to automated post-event expiration cleanup.</li>
+                  <li><strong>Permanent Media Archives:</strong> Any event containing uploaded photographs, video clips, or synced cloud albums represents a permanent chapter archive. Media folders are strictly exempt from expiration or purge logic and remain permanently accessible on the Media Hub.</li>
+                  <li><strong>Post-Event Upload Rights:</strong> Event date rules do not prevent uploading media after an event has concluded. Uploading photos or videos to any event automatically preserves it directly on the Media page.</li>
+                </ul>
+              </div>
+
+              {/* 3.2 Event Safety & Media Consent */}
+              <div className="mt-3 p-4 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl">
+                <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-2">
                   <Heart className="w-4 h-4 text-teal-600" />
-                  3.1 Safety, Emergency Care &amp; General Media Consent
+                  3.2 Safety, Emergency Care &amp; General Media Consent
                 </h4>
                 <ul className="list-disc pl-5 space-y-1.5 text-xs text-slate-700 dark:text-slate-300 marker:text-slate-400">
                   <li>By attending physical events, members acknowledge inherent physical risks associated with sports or outdoor activities and agree to abide by safety directives.</li>
@@ -192,30 +218,20 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                   <li>Attendance at official events constitutes permission for official photographers to capture images and video footage for community archives and recaps, unless a member submits a prior written objection.</li>
                 </ul>
               </div>
-
-              {/* 3.2 Media Review Timeline */}
-              <div className="mt-3 p-4 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl">
-                <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-2">
-                  <FileText className="w-4 h-4 text-teal-600" />
-                  3.2 Media Submission &amp; Moderation Timeline
-                </h4>
-                <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                  Member-submitted media albums and video clips undergo administrative review within <strong>5 business days</strong>. If rejected, a brief constructive rationale is provided. Approved media is published to official event galleries.
-                </p>
-              </div>
             </section>
 
             {/* Section 4 */}
             <section className="space-y-3">
               <h3 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                 <HardDrive className="w-4 h-4 text-teal-600 shrink-0" />
-                4. Content, Media Pipeline &amp; YouTube Integration
+                4. Media Hub Architecture, Cloud Pipeline &amp; YouTube Integration
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                <li><strong>Ownership:</strong> Members retain full copyright and ownership in original photographs and video clips they upload to the portal.</li>
-                <li><strong>Community Media License:</strong> By uploading media to event albums or video repositories, you grant Team Taraba River a <strong className="text-slate-700 dark:text-slate-200">non-exclusive, royalty-free, worldwide, transferable license</strong> to host, transcode, display, and publish the media for community archives, event recaps, and video streaming on official YouTube and Google Drive repositories.</li>
-                <li><strong>Content Representations:</strong> You warrant that all media you submit is your original creation or that you possess all necessary releases and permissions, and that the content does not infringe on third-party intellectual property or privacy rights.</li>
-                <li><strong>Takedown Procedure (Copyright Compliance):</strong> Any party asserting copyright infringement may submit a formal takedown request containing: (a) proof of copyrighted ownership, (b) specific link/URL to the infringing material, and (c) full contact information. Valid takedown notices are processed within <strong>48 hours</strong>.</li>
+                <li><strong>Independent Top-Level Media Folders:</strong> In accordance with our media architecture, all albums are presented as independent, top-level event albums directly on the media page. Each folder represents a distinct historical chapter gathering, with nested parent-child hierarchies eliminated for maximum accessibility.</li>
+                <li><strong>Ownership &amp; Community License:</strong> Members retain full copyright in original photos and video clips they upload. By uploading, you grant Team Taraba River a <strong className="text-slate-700 dark:text-slate-200">non-exclusive, royalty-free, worldwide license</strong> to host, display, and publish the media for chapter archives, recaps, and video streaming across official Google Drive and YouTube repositories.</li>
+                <li><strong>Video Clips &amp; Interactive Playback:</strong> The portal features an integrated video clips pipeline enabling inline video previews on desktop hover and touch-to-play on mobile devices. Videos are transcoded and delivered via enterprise YouTube infrastructure.</li>
+                <li><strong>Location Field Policy:</strong> The location field in all media folders defaults to blank (<code>&quot;&quot;</code>). Venue information can only be populated or modified through authenticated, user-initiated workflows (creating a new folder or editing folder metadata). Background syncs, cloud pipelines, and AI engines are prohibited from applying default geographic values.</li>
+                <li><strong>Takedown Procedure (Copyright &amp; Privacy Compliance):</strong> Any party asserting copyright infringement or privacy violations may submit a formal takedown notice with proof of ownership and asset link. Valid requests are reviewed and processed within <strong>48 hours</strong>.</li>
               </ul>
             </section>
 
@@ -229,7 +245,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                 <li><strong>Data Controller:</strong> Team Taraba River acts as the Data Controller under the <strong>Nigeria Data Protection Act (NDPA) 2023</strong>.</li>
                 <li><strong>Public Member Directory:</strong> Only authenticated, verified members of Team Taraba River can view directory profiles (Full Name, Unity School, Graduation Year, Occupation, Skills, and Photo).</li>
                 <li><strong>Protected Administrative Data:</strong> Sensitive records (Phone Number, Email, Residential Address, Next of Kin, and Birth Dates) are encrypted and restricted strictly to authorized administrative workflows.</li>
-                <li><strong>Zero-Sale Guarantee:</strong> Member data is <strong className="text-slate-700 dark:text-slate-200">never sold, leased, rented, or commercialized</strong> to third-party advertisers, data brokers, or political organizations.</li>
+                <li><strong>Zero-Sale Guarantee:</strong> Member data is <strong className="text-slate-700 dark:text-slate-200">never sold, leased, rented, or commercialized</strong> to third-party advertisers, data brokers, or external entities.</li>
               </ul>
 
               {/* 5.1 Automated Birthday Reminder Processing */}
@@ -247,7 +263,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
               <div className="mt-3 p-4 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl">
                 <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2 mb-2">
                   <Lock className="w-4 h-4 text-teal-600" />
-                  5.2 Statutory Rights, Cross-Border Transfers &amp; Breach SLA
+                  5.2 Statutory Rights, Cross-Border Cloud Processing &amp; Breach SLA
                 </h4>
                 <ul className="list-disc pl-5 space-y-1.5 text-xs text-slate-700 dark:text-slate-300 marker:text-slate-400">
                   <li><strong>Cross-Border Cloud Infrastructure:</strong> In compliance with Sections 41–43 of the NDPA 2023, data stored on Google Cloud Firebase and associated infrastructure is protected by enterprise AES-256 encryption at rest and TLS 1.3 in transit within ISO 27001 certified data centers.</li>
@@ -269,7 +285,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                   (a) maintaining secure authenticated member sessions,
                   (b) storing Light/Dark theme preferences,
                   (c) local directory caching for low-bandwidth resilience, and
-                  (d) executing the 30-minute anti-spam deduplication gate for authentic community metrics (as documented in our Analytics Methodology).</li>
+                  (d) executing the 30-minute anti-spam deduplication gate for authentic community metrics.</li>
               </ul>
             </section>
 
@@ -280,7 +296,8 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                 7. AI Knowledge Assistant (AI Xplora)
               </h3>
               <ul className="list-disc pl-6 space-y-2 text-sm leading-relaxed marker:text-slate-400">
-                <li><strong>Informational &amp; Search Purpose:</strong> The AI Xplora assistant processes public community archives, USOSA school histories, and member professional skills to facilitate search, knowledge retrieval, and alumni discovery.</li>
+                <li><strong>Informational &amp; Search Purpose:</strong> The AI Xplora assistant processes chapter archives, USOSA school histories, and member professional skills to facilitate search, knowledge retrieval, and alumni discovery.</li>
+                <li><strong>Content Scope:</strong> AI query synthesis is focused strictly on alumni fellowship, chapter activities, school history, and member directories. The assistant is programmed to reject false environmental or river cleanup narratives.</li>
                 <li><strong>Disclaimer of Professional Warranty:</strong> AI-generated suggestions, summaries, and search matches are advisory. Members are responsible for conducting independent due diligence before entering into professional or commercial agreements.</li>
               </ul>
             </section>
@@ -412,7 +429,7 @@ export const TermsAndConditionsModal: React.FC<TermsAndConditionsModalProps> = (
                     11 August 2026 (Original)
                   </p>
                   <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
-                    Updated: August 2026 (Version 2.1 Technical &amp; Legal Review)
+                    Updated: September 2026 (Version 2.2 Current Outlook Review)
                   </p>
                 </div>
               </div>
