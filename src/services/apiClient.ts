@@ -11,7 +11,7 @@ import { FirebaseSyncManager } from "./firebaseService";
 import { AppStateManager } from "./storage";
 import { isMemberCredentialMatch } from "../lib/authMatching";
 import { sanitizeMemberRecord } from "../utils/nameUtils";
-import { sanitizeEventRecord } from "../utils/eventUtils";
+import { sanitizeEventRecord, parseEventDateObj, isChapterEvent } from "../utils/eventUtils";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
@@ -309,13 +309,17 @@ export async function fetchEvents(): Promise<GroupEvent[]> {
     }
   }
 
-  const merged = Array.from(eventMap.values()).filter((e) => !e.id.startsWith("evt_arch_"));
-  if (merged.length > 0) {
-    AppStateManager.saveEvents(merged);
-    return merged;
-  }
+  const merged = Array.from(eventMap.values()).filter((e) => {
+    if (!e || !e.id) return false;
+    if (e.id.startsWith("evt_arch_")) return false;
+    if (e.id.startsWith("gdrive_root_") || e.id === "evt_taraba_gdrive" || e.title === "Team Taraba Official Photo Album") return false;
+    if (e.id.startsWith("folder_")) return false;
+    return true;
+  });
 
-  return AppStateManager.getEvents();
+  // Return sanitized events; date rules strictly do not delete or purge media events uploaded after the action
+  AppStateManager.saveEvents(merged);
+  return merged;
 }
 
 export async function createEvent(eventData: Partial<GroupEvent>): Promise<GroupEvent> {
@@ -329,7 +333,7 @@ export async function createEvent(eventData: Partial<GroupEvent>): Promise<Group
     category: eventData.category || "meeting",
     description: eventData.description || "",
     driveImageUrls: eventData.driveImageUrls || [],
-    driveFolderId: eventData.driveFolderId || `drive_folder_${Date.now()}`,
+    driveFolderId: eventData.driveFolderId || "",
     youtubeVideoUrl: eventData.youtubeVideoUrl || "",
     createdBy: eventData.createdBy || "Community Member",
     createdById: eventData.createdById || "mem_guest",
@@ -674,6 +678,8 @@ export interface UsosaNewsResponse {
   message?: string;
 }
 
+const DEFAULT_GEMINI_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
+
 // Canonical list of major Unity Schools for auto-tagging
 const UNITY_SCHOOL_TAGS: { pattern: RegExp; tag: string }[] = [
   { pattern: /king['’]?s\s*college/i, tag: "King's College Lagos" },
@@ -710,7 +716,7 @@ function detectSchoolTag(text: string): string {
 function stripPublisherNames(text: string): string {
   if (!text) return "";
   return text
-    .replace(/\b(vanguard\s*news|vanguard|punch\s*newspapers|punch|the\s*guardian\s*nigeria|the\s*guardian|daily\s*trust|premium\s*times|leadership\s*newspapers|leadership|thecable|thisday\s*live|thisday|the\s*sun\s*nigeria|the\s*sun|sun\s*news|nigerian\s*tribune|tribune|businessday|daily\s*post\s*nigeria|daily\s*post|channels\s*tv|channels\s*television|arise\s*news|radio\s*nigeria|news\s*agency\s*of\s*nigeria|nan|google\s*news|rss\s*feed)\b/gi, "")
+    .replace(/\b(vanguard\s*news|vanguard|punch\s*newspapers|punch|the\s*guardian\s*nigeria\s*news|the\s*guardian\s*nigeria|the\s*guardian|daily\s*trust|premium\s*times\s*nigeria|premium\s*times|leadership\s*newspapers|leadership|thecable|thisday\s*live|thisday|the\s*sun\s*nigeria|the\s*sun|sun\s*news|nigerian\s*tribune|tribune\s*online|tribune|businessday|daily\s*post\s*nigeria|daily\s*post|channels\s*tv|channels\s*television|arise\s*news|radio\s*nigeria|news\s*agency\s*of\s*nigeria|nan|google\s*news|rss\s*feed|independent\s*newspaper|independent|the\s*nation\s*newspaper|the\s*nation)\b/gi, "")
     .replace(/\s*[-|–—•]\s*$/, "")
     .replace(/^\s*[-|–—•]\s*/, "")
     .replace(/\s{2,}/g, " ")
@@ -859,6 +865,155 @@ function buildComprehensiveSummary(title: string, rawSnippet: string, sources: N
   return `${p1}\n\n${p2}\n\n${p3}`;
 }
 
+/**
+ * Safeguard Clustering & Deduplication:
+ * Combines similar news headlines into ONE major overarching headline with multi-outlet attribution.
+ * Guarantees zero boring repetition on the UI even if the backend or feeds returned duplicate reports.
+ */
+export function safeguardClusterHeadlines(rawHeadlines: NewsHeadline[]): NewsHeadline[] {
+  if (!Array.isArray(rawHeadlines) || rawHeadlines.length <= 1) return rawHeadlines || [];
+
+  interface ClusteredItem {
+    headline: NewsHeadline;
+    keywords: Set<string>;
+    numbers: Set<string>;
+    normTitle: string;
+    sourcesMap: Map<string, NewsSourceCoverage>;
+    timestamp: number;
+  }
+
+  const clusters: ClusteredItem[] = [];
+
+  for (const h of rawHeadlines) {
+    const { cleanTitle, extractedSource } = cleanStoryTitle(h.title);
+    const sourceName = stripPublisherNames(extractedSource || h.source || "News Outlet") || "News Outlet";
+    const keywords = extractKeywords(cleanTitle + " " + (h.summary || ""));
+    const titleNumbers = new Set(
+      (cleanTitle.match(/\d[\d,]+/g) || [])
+        .map(n => n.replace(/,/g, ''))
+        .filter(n => parseInt(n, 10) >= 100)
+    );
+    const normTitle = cleanTitle.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+    const itemDate = h.publishedAt ? new Date(h.publishedAt).getTime() : Date.now();
+    const itemTimestamp = !isNaN(itemDate) ? itemDate : Date.now();
+
+    let matched: ClusteredItem | null = null;
+    for (const cluster of clusters) {
+      const similarity = calculateSimilarity(keywords, cluster.keywords);
+      const isKeywordMatch = similarity > 0.22;
+
+      let sharedNumber = false;
+      for (const num of titleNumbers) {
+        if (cluster.numbers.has(num)) { sharedNumber = true; break; }
+      }
+      const isNumberMatch = sharedNumber && similarity > 0.15;
+
+      const topicPhrases = [
+        ["admission", "list"],
+        ["pta", "teachers"],
+        ["concession", "schools"],
+        ["privatiz", "schools"],
+        ["inter", "house", "sports"],
+        ["speech", "day"],
+        ["infrastructure", "upgrades"],
+      ];
+      let sharedPhrase = false;
+      for (const phrase of topicPhrases) {
+        const itemHas = phrase.every(p => normTitle.includes(p) || (h.summary || "").toLowerCase().includes(p));
+        const clusterHas = phrase.every(p => cluster.normTitle.includes(p) || (cluster.headline.summary || "").toLowerCase().includes(p));
+        if (itemHas && clusterHas) {
+          sharedPhrase = true;
+          break;
+        }
+      }
+
+      const shorter = normTitle.length < cluster.normTitle.length ? normTitle : cluster.normTitle;
+      const longer = normTitle.length < cluster.normTitle.length ? cluster.normTitle : normTitle;
+      const isSubstringMatch = shorter.length > 20 && longer.includes(shorter.slice(0, Math.floor(shorter.length * 0.6)));
+
+      if (isKeywordMatch || isNumberMatch || sharedPhrase || isSubstringMatch) {
+        matched = cluster;
+        break;
+      }
+    }
+
+    const coverage: NewsSourceCoverage = {
+      sourceName,
+      title: cleanTitle,
+      url: h.url,
+    };
+
+    if (matched) {
+      // Merge sources
+      matched.sourcesMap.set(sourceName.toLowerCase(), coverage);
+      if (h.otherSources && Array.isArray(h.otherSources)) {
+        for (const os of h.otherSources) {
+          if (os && os.sourceName) {
+            matched.sourcesMap.set(os.sourceName.toLowerCase(), os);
+          }
+        }
+      }
+      for (const k of keywords) matched.keywords.add(k);
+      for (const n of titleNumbers) matched.numbers.add(n);
+      matched.timestamp = Math.max(matched.timestamp, itemTimestamp);
+
+      // Prefer authoritative headline over "How to check..."
+      if (
+        cleanTitle.toLowerCase().startsWith("fg releases") ||
+        cleanTitle.toLowerCase().startsWith("federal government") ||
+        cleanTitle.toLowerCase().startsWith("ministry of education") ||
+        (cleanTitle.length > matched.headline.title.length && !cleanTitle.toLowerCase().startsWith("how to"))
+      ) {
+        matched.headline.title = cleanTitle;
+      }
+
+      // If existing summary is short and incoming is longer, use longer
+      if ((h.summary || "").length > (matched.headline.summary || "").length) {
+        matched.headline.summary = h.summary;
+      }
+    } else {
+      const sourcesMap = new Map<string, NewsSourceCoverage>();
+      sourcesMap.set(sourceName.toLowerCase(), coverage);
+      if (h.otherSources && Array.isArray(h.otherSources)) {
+        for (const os of h.otherSources) {
+          if (os && os.sourceName) {
+            sourcesMap.set(os.sourceName.toLowerCase(), os);
+          }
+        }
+      }
+
+      clusters.push({
+        headline: {
+          ...h,
+          title: cleanTitle,
+        },
+        keywords,
+        numbers: new Set(titleNumbers),
+        normTitle,
+        sourcesMap,
+        timestamp: itemTimestamp,
+      });
+    }
+  }
+
+  // Format final sources and return
+  return clusters.map(c => {
+    const sourcesList = Array.from(c.sourcesMap.values());
+    let displaySource = c.headline.source;
+    if (sourcesList.length === 2) {
+      displaySource = `${sourcesList[0].sourceName} & ${sourcesList[1].sourceName}`;
+    } else if (sourcesList.length > 2) {
+      displaySource = `${sourcesList[0].sourceName}, ${sourcesList[1].sourceName} & ${sourcesList.length - 2} other outlets`;
+    }
+
+    return {
+      ...c.headline,
+      source: displaySource,
+      otherSources: sourcesList,
+    };
+  });
+}
+
 const DEFAULT_USOSA_HEADLINES: NewsHeadline[] = [
   {
     title: "FG Approves Absorption of 3,252 PTA Teachers into Federal Unity Colleges",
@@ -929,37 +1084,19 @@ Collegiate administrators and QCOGA executives reiterated their dedication to up
  * USOSA, FGCs, FGGCs, FSTCs, King's College, Queen's College, and Suleja Academy
  * is admitted to the news feed.
  */
-function isRelevantToNigerianUnityColleges(title: string, snippet: string, sourceName: string = ""): boolean {
-  const combined = `${title} ${snippet} ${sourceName}`.toLowerCase();
+/**
+ * Global Relevance Filter:
+ * Ensures news bearing USOSA or related Unity Colleges alumni news from ALL countries
+ * (Nigeria, UK, USA, Canada, Europe, global diaspora chapters) is accepted as agreed.
+ */
+function isRelevantToUsosaAndUnityColleges(title: string, snippet: string, sourceName: string = ""): boolean {
+  const combined = `${title} ${snippet}`.toLowerCase();
 
-  // 1. Negative Exclusion Filters: Reject foreign/unrelated education policy or non-Nigerian news
-  const foreignPolicyBlacklist = [
-    /\bschool choice\b/i,
-    /\bcharter school[s]?\b/i,
-    /\bpublic school monopoly\b/i,
-    /\bschool voucher[s]?\b/i,
-    /\bdistrict superintendent\b/i,
-    /\bking['’]?s college london\b/i,
-    /\bqueen['’]?s college oxford\b/i,
-    /\bqueen['’]?s college cambridge\b/i,
-    /\bqueen['’]?s college melbourne\b/i,
-    /\bflorida student\b/i,
-    /\bfutures and options\b/i,
-    /\bforeign security\b/i,
-  ];
-
-  for (const regex of foreignPolicyBlacklist) {
-    if (regex.test(combined)) {
-      // Immediate rejection of foreign policy / foreign university articles
-      return false;
-    }
-  }
-
-  // 2. High-Confidence Direct Entity Matches (Always relevant)
+  // 1. Direct USOSA & Alumni Entities: Always accepted from ALL countries worldwide
   const directEntities = [
     /\busosa\b/i,
-    /\bunity school[s]?\b/i,
-    /\bunity college[s]?\b/i,
+    /\busosan[s]?\b/i,
+    /\bunity schools? old students\b/i,
     /\bfederal unity college[s]?\b/i,
     /\bfederal government college[s]?\b/i,
     /\bfederal government girls['’]? college[s]?\b/i,
@@ -967,40 +1104,48 @@ function isRelevantToNigerianUnityColleges(title: string, snippet: string, sourc
     /\bfederal science & technical college[s]?\b/i,
     /\bfederal academy suleja\b/i,
     /\bsuleja academy\b/i,
-    /\bking['’]?s college\b/i,
-    /\bqueen['’]?s college\b/i,
+    /\bking['’]?s college lagos\b/i,
+    /\bqueen['’]?s college lagos\b/i,
     /\bkcoba\b/i,
     /\bqcoga\b/i,
     /\bfegowoco\b/i,
+    /\btaraba\b/i,
+    /\bteam taraba\b/i,
   ];
 
   for (const regex of directEntities) {
     if (regex.test(combined)) {
-      return true;
+      return true; // Accepted from all countries without restriction!
     }
   }
 
-  // 3. Specific Unity College Campus Patterns: e.g. "FGGC Bwari", "FGC Idoani", "FSTC Yaba", "FGC Warri"
+  // 2. Specific Unity College Campus Patterns: e.g. "FGGC Bwari", "FGC Idoani", "FSTC Yaba", "FGC Warri"
   const campusPattern = /\b(fgc|fggc|fstc)\s+(bwari|yaba|usi|otukpo|uromi|ilesa|shiroro|zuru|ohanso|jalingo|orozo|doma|michika|kafanchan|dayi|hadejia|lassa|tungbo|uyo|ahoada|kano|kaduna|warri|enugu|okigwe|ugwolawo|ijanikin|oyo|sagamu|onitsha|kazaure|odogbolu|ikot\s*ekpene|ilorin|sokoto|maiduguri|buni\s*yadi|keffi|azare|biliri|gwarzo|tambuwal|wukari|potiskum|vandeikya|rubochi|keana|kiyawa|daura|birnin\s*kebbi|gwandu|minna|kontagora|new\s*bussa|bida|malumfashi|dutse|gumel|langtang|pankshin|mangu|shendam|bokkos|yawuri|anza|zaria|ebonyi|abakaliki|afikpo|isenya|ogidi|nnewi|awka|umuahia|owerri|abaji|kwali|gwagwalada)\b/i;
 
   if (campusPattern.test(combined)) {
     return true;
   }
 
-  // 4. Secondary Context Filter: Acronym (FGC/FGGC/FSTC) + Nigerian Unity Schools Anchor
-  const hasAcronym = /\b(fgc|fggc|fstc)\b/i.test(combined);
-  const hasNigerianAnchor = /\b(nigeria|nigerian|lagos|abuja|federal ministry of education|minister of education|tahir mamman|tinubu|pta|old students|alumni|inter-house sports|concession|privatisation|privatize)\b/i.test(combined);
-
-  if (hasAcronym && hasNigerianAnchor) {
+  // 3. Unity Schools + Alumni / Chapter / Diaspora / Global context
+  const isUnitySchool = /\bunity school[s]?\b/i.test(combined) || /\bunity college[s]?\b/i.test(combined);
+  const isAlumniOrGlobal = /\b(alumni|old students|diaspora|chapter|branch|association|convention|reunion|pta|admission|nigeria|uk|usa|america|london|canada|global|international)\b/i.test(combined);
+  if (isUnitySchool && isAlumniOrGlobal) {
     return true;
   }
 
-  // Exclude everything else (Default Deny - zero false positives)
+  // 4. Secondary Context Filter: Acronym (FGC/FGGC/FSTC) + Unity / Alumni / Global context
+  const hasAcronym = /\b(fgc|fggc|fstc)\b/i.test(combined);
+  const hasContext = /\b(alumni|old students|diaspora|chapter|branch|convention|reunion|inter-house sports|concession|privatisation|privatize|pta|education|scholarship|fundraiser|nigeria|uk|usa|america|london|canada)\b/i.test(combined);
+
+  if (hasAcronym && hasContext) {
+    return true;
+  }
+
   return false;
 }
 
-const USOSA_NEWS_CACHE_KEY = "taraba_usosa_news_cache_v2";
-const USOSA_NEWS_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const USOSA_NEWS_CACHE_KEY = "taraba_usosa_news_cache_v3";
+const USOSA_NEWS_CACHE_TTL_MS = 60 * 1000; // 1 minute for freshest headlines
 let inMemoryUsosaNews: UsosaNewsResponse | null = null;
 let inMemoryUsosaNewsTimestamp = 0;
 
@@ -1023,45 +1168,52 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
     } catch {}
   }
 
-  // Step 1: Try backend endpoint first if available with short 3s timeout
+  // Step 1: Try backend endpoint first if available with adaptive timeout
   try {
     const url = force ? apiUrl("/api/usosa-news?force=true") : apiUrl("/api/usosa-news");
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3000);
+    const timer = setTimeout(() => controller.abort(), force ? 10000 : 5000);
     const res = await fetch(url, { cache: "no-store", signal: controller.signal });
     clearTimeout(timer);
     const contentType = res.headers.get("content-type") || "";
     if (res.ok && contentType.includes("application/json")) {
       const data = await res.json();
       if (data && Array.isArray(data.headlines) && data.headlines.length > 0) {
-        inMemoryUsosaNews = data;
+        const cleanHeadlines = safeguardClusterHeadlines(data.headlines);
+        const cleanData = {
+          ...data,
+          headlines: cleanHeadlines,
+        };
+        inMemoryUsosaNews = cleanData;
         inMemoryUsosaNewsTimestamp = Date.now();
         try {
-          localStorage.setItem(USOSA_NEWS_CACHE_KEY, JSON.stringify({ data, timestamp: Date.now() }));
+          localStorage.setItem(USOSA_NEWS_CACHE_KEY, JSON.stringify({ data: cleanData, timestamp: Date.now() }));
         } catch {}
-        return data;
+        return cleanData;
       }
     }
   } catch {}
 
-  // Step 2: Live Multi-Stream Search strictly across USOSA, Unity Colleges, FGCs, FGGCs, FSTCs, King's & Queen's
+  // Step 2: Live Multi-Stream Search strictly across exact recommended Unity Colleges, USOSA, FGCs, FGGCs, FSTCs, King's & Queen's across ALL COUNTRIES
   try {
     const queryStreams = [
-      'USOSA Nigeria',
-      'Unity Schools Nigeria',
-      'Federal Unity Colleges Nigeria',
-      'Federal Government College Nigeria',
-      'Kings College Lagos',
-      'Queens College Lagos',
-      'FGGC Nigeria',
-      'FSTC Nigeria',
-      'Federal Science and Technical College Nigeria'
+      '"USOSA"',
+      '"USOSA" diaspora OR UK OR USA OR America OR Canada OR global',
+      '"KCOBA" OR "QCOGA" OR "FEGOWOCO"',
+      '"Unity Schools" Old Students',
+      '"Federal Unity Colleges" OR "Federal Unity College"',
+      '"Federal Government College"',
+      '"Federal Government Girls College" OR "FGGC"',
+      '"Federal Science and Technical College" OR "FSTC"',
+      '"Kings College Lagos" OR "Queens College Lagos"',
+      '"Team Taraba" OR "USOSA Taraba"',
+      '"Suleja Academy" OR "Federal Academy Suleja"',
     ];
 
     const fetchPromises = queryStreams.map(async (queryStr) => {
       try {
         const query = encodeURIComponent(queryStr);
-        const rssUrl = `https://news.google.com/rss/search?q=${query}&hl=en-NG&gl=NG&ceid=NG:en`;
+        const rssUrl = `https://news.google.com/rss/search?q=${query}`;
         const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 3500);
@@ -1106,13 +1258,13 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
         const { cleanTitle, extractedSource } = cleanStoryTitle(item.title || "");
         if (cleanTitle.length < 10) continue;
 
-        const sourceName = extractedSource || item.author || "Google News Nigeria";
+        const sourceName = extractedSource || item.author || "Google News";
         const link = item.link || "https://news.google.com";
         const cleanDesc = (item.description || item.content || "").replace(/<[^>]*>?/gm, "").trim();
 
-        // ── STRICT UNITY COLLEGES RELEVANCE GATE ──
-        if (!isRelevantToNigerianUnityColleges(cleanTitle, cleanDesc, sourceName)) {
-          continue; // Drop irrelevant / foreign news immediately
+        // ── ALL COUNTRIES BEARING USOSA OR RELATED NEWS ACCEPTED ──
+        if (!isRelevantToUsosaAndUnityColleges(cleanTitle, cleanDesc, sourceName)) {
+          continue;
         }
 
         const itemDate = item.pubDate ? new Date(item.pubDate) : new Date();
@@ -1277,8 +1429,6 @@ export interface AiXploraResponse {
   sources: { title: string; url: string }[];
   fallback: boolean;
 }
-
-const DEFAULT_GEMINI_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
 
 export const USOSA_KNOWLEDGE_SYSTEM_INSTRUCTION = `You are Gemini AI Xplora — an intelligent, highly knowledgeable, and conversational AI assistant for USOSA and URIP (Unity Schools Revitalisation Initiative / Regional Integration Programs).
 

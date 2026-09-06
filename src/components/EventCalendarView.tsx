@@ -284,22 +284,22 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                   const durationInfo = getEventDurationInfo(event);
 
                   return (
-                    <div
-                      key={event.id}
-                      className={`group relative bg-white dark:bg-slate-900 rounded-2xl p-3.5 sm:p-4 border shadow-xs hover:shadow-md transition-all duration-200 flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 overflow-hidden font-normal ${
-                        isOngoing
-                          ? "border-emerald-500/80 ring-2 ring-emerald-400/60 dark:ring-emerald-500/50 shadow-lg shadow-emerald-500/15 bg-gradient-to-r from-emerald-500/[0.04] via-teal-500/[0.03] to-cyan-500/[0.04]"
-                          : isPastWithin7Days
-                          ? "border-slate-200/90 dark:border-slate-800 opacity-90"
-                          : "border-slate-200/90 dark:border-slate-800 hover:border-cyan-500/60"
-                      }`}
-                    >
-                      {/* Left Accent Bar: Vibrant gradient when ongoing, amber when within 7 days */}
-                      {isOngoing ? (
-                        <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-emerald-400 via-teal-500 to-cyan-500 animate-pulse" />
-                      ) : isWithin7Days ? (
-                        <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-amber-400 to-orange-500" />
-                      ) : null}
+                      <div
+                        key={event.id}
+                        className={`group relative bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border shadow-xs hover:shadow-md transition-all duration-200 flex flex-col gap-3 sm:gap-4 font-normal ${
+                          isOngoing
+                            ? "border-emerald-500/80 ring-2 ring-emerald-400/60 dark:ring-emerald-500/50 shadow-lg shadow-emerald-500/15 bg-gradient-to-r from-emerald-500/[0.04] via-teal-500/[0.03] to-cyan-500/[0.04]"
+                            : isPastWithin7Days
+                            ? "border-slate-200/90 dark:border-slate-800 opacity-90"
+                            : "border-slate-200/90 dark:border-slate-800 hover:border-cyan-500/60"
+                        }`}
+                      >
+                        {/* Left Accent Bar: Vibrant gradient when ongoing, amber when within 7 days */}
+                        {isOngoing ? (
+                          <div className="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-emerald-400 via-teal-500 to-cyan-500 animate-pulse" />
+                        ) : isWithin7Days ? (
+                          <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-amber-400 to-orange-500" />
+                        ) : null}
 
                       {/* Left: Compact Date Tag & Event Details */}
                       <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 pl-1">
@@ -345,7 +345,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
 
                             {/* Event Title with Celebratory Animation Effect when Ongoing */}
                             <BirthdayCelebrationAnimation autoPlay={isOngoing} continuous={isOngoing} durationMs={10000}>
-                              <h3 className={`text-sm sm:text-base font-semibold truncate transition ${
+                              <h3 className={`text-sm sm:text-base font-semibold transition break-words ${
                                 isOngoing
                                   ? "text-emerald-700 dark:text-emerald-300 font-bold"
                                   : "text-slate-900 dark:text-white"
@@ -382,15 +382,15 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                               <Clock className="w-3.5 h-3.5 text-slate-400" />
                               <span>{event.time}</span>
                             </span>
-                            <span className="flex items-center gap-1 truncate">
-                              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                              <span className="truncate">{event.location}</span>
-                            </span>
-                            {event.description && (
-                              <span className="hidden xl:inline text-slate-400 dark:text-slate-500 truncate max-w-xs">
-                                • {event.description}
+                              <span className="flex items-center gap-1 break-all">
+                                <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <span>{event.location}</span>
                               </span>
-                            )}
+                              {event.description && (
+                                <span className="text-slate-400 dark:text-slate-500 break-words">
+                                  • {event.description}
+                                </span>
+                              )}
                           </div>
                         </div>
                       </div>

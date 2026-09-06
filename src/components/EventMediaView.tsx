@@ -130,10 +130,147 @@ function sanitizeUIField(val: string | undefined): string {
   clean = clean.replace(/^[•\s,\-\|]+|[•\s,\-\|]+$/g, "").trim();
   const lower = clean.toLowerCase();
   if (!clean || lower === "sync" || lower === "official pipeline" || lower === "official cloud pipeline" || lower === "taraba river") {
-    return "";
+    return clean;
   }
   return clean;
 }
+
+const VideoHoverCard: React.FC<{
+  videoUrl: string;
+  title: string;
+  className?: string;
+  aspectClass?: string;
+  showPlayBadge?: boolean;
+}> = ({ videoUrl, title, className = "w-full h-full object-cover", aspectClass = "w-full h-full", showPlayBadge = true }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [hasError, setHasError] = useState(false);
+
+  const isYt = videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be");
+  const ytThumb = isYt ? getYouTubeThumbnail(videoUrl) : null;
+
+  // Append #t=0.5 to direct video URLs so browsers extract and render the first frame as the poster/image
+  const videoSrc = videoUrl.includes("#t=") ? videoUrl : `${videoUrl}#t=0.5`;
+
+  const handleMouseEnter = () => {
+    if (isYt || hasError || !videoRef.current) return;
+    videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+  };
+
+  const handleMouseLeave = () => {
+    if (isYt || hasError || !videoRef.current) return;
+    videoRef.current.pause();
+    try {
+      videoRef.current.currentTime = 0.5;
+    } catch {}
+    setIsPlaying(false);
+  };
+
+  const handleTouchStart = () => {
+    if (isYt || hasError || !videoRef.current) return;
+    if (videoRef.current.paused) {
+      videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+    } else {
+      videoRef.current.pause();
+      setIsPlaying(false);
+    }
+  };
+
+  if (isYt && ytThumb) {
+    return (
+      <div className={`relative ${aspectClass} overflow-hidden bg-slate-950`}>
+        <img
+          src={ytThumb}
+          alt={title}
+          className={`${className} transition-transform duration-300 group-hover:scale-105`}
+          loading="lazy"
+          onError={handleGoogleDriveImageError}
+        />
+        {showPlayBadge && (
+          <div className="absolute inset-0 bg-black/25 flex items-center justify-center pointer-events-none group-hover:bg-black/15 transition-colors">
+            <div className="w-8 h-8 rounded-full bg-red-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+              <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`relative ${aspectClass} overflow-hidden bg-slate-950 select-none`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+    >
+      {!hasError ? (
+        <video
+          ref={videoRef}
+          src={videoSrc}
+          className={`${className} transition-transform duration-300 ${isPlaying ? "scale-100" : "group-hover:scale-105"}`}
+          muted
+          playsInline
+          loop
+          preload="metadata"
+          onError={() => setHasError(true)}
+        />
+      ) : (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-slate-400 p-2">
+          <Play className="w-6 h-6 text-slate-500 mb-1" />
+          <span className="text-[10px] text-slate-400 truncate max-w-full">{title}</span>
+        </div>
+      )}
+
+      {showPlayBadge && !hasError && (
+        <div className={`absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none transition-opacity duration-300 ${isPlaying ? "opacity-0" : "opacity-100"}`}>
+          <div className="w-8 h-8 rounded-full bg-black/60 backdrop-blur-xs text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+            <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MediaPreviewItem: React.FC<{
+  item: { src: string; isVideo?: boolean; videoUrl?: string };
+  alt: string;
+  className?: string;
+  loading?: "lazy" | "eager";
+}> = ({ item, alt, className = "w-full h-full object-cover", loading = "lazy" }) => {
+  if (item.isVideo && item.videoUrl && !item.videoUrl.includes("youtube.com") && !item.videoUrl.includes("youtu.be")) {
+    return (
+      <VideoHoverCard
+        videoUrl={item.videoUrl}
+        title={alt}
+        className={className}
+        aspectClass="w-full h-full"
+        showPlayBadge={true}
+      />
+    );
+  }
+
+  return (
+    <div className="relative w-full h-full overflow-hidden">
+      <img
+        src={item.src}
+        alt={alt}
+        className={className}
+        onError={handleGoogleDriveImageError}
+        loading={loading}
+        decoding="async"
+      />
+      {item.isVideo && (
+        <div className="absolute inset-0 bg-black/30 flex items-center justify-center pointer-events-none">
+          <div className="w-5 h-5 rounded-full bg-black/60 text-white opacity-60 flex items-center justify-center shadow-md">
+            <Play className="w-2.5 h-2.5 fill-current ml-0.5" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 const FolderCollagePreview: React.FC<{
   images: string[];
@@ -157,18 +294,18 @@ const FolderCollagePreview: React.FC<{
     )
   );
 
-  const mediaList: Array<{ src: string; isVideo?: boolean }> = [];
+  const mediaList: Array<{ src: string; isVideo?: boolean; videoUrl?: string }> = [];
 
   allYtUrls.forEach((ytUrl) => {
     const videoThumb = getYouTubeThumbnail(ytUrl) || "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80";
-    mediaList.push({ src: videoThumb, isVideo: true });
+    mediaList.push({ src: videoThumb, videoUrl: ytUrl, isVideo: true });
   });
 
   (images || []).forEach((img) => {
     if (!img || typeof img !== "string") return;
-    const isDirectVideo = img.startsWith("data:video") || img.endsWith(".mp4") || img.endsWith(".webm") || (img.includes("/events%2F") && img.includes(".mp4"));
+    const isDirectVideo = img.startsWith("data:video") || img.toLowerCase().includes(".mp4") || img.toLowerCase().includes(".webm") || img.toLowerCase().includes(".mov") || (img.includes("/events%2F") && img.includes(".mp4"));
     if (isDirectVideo) {
-      mediaList.push({ src: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80", isVideo: true });
+      mediaList.push({ src: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80", videoUrl: img, isVideo: true });
     } else {
       mediaList.push({ src: img, isVideo: false });
     }
@@ -188,23 +325,7 @@ const FolderCollagePreview: React.FC<{
   if (previewItems.length === 1) {
     return (
       <div className={`w-full ${heightClass} rounded-xl overflow-hidden bg-slate-900 relative`}>
-        <div className="relative w-full h-full">
-          <img
-            src={previewItems[0].src}
-            alt={`${eventTitle} preview 1`}
-            className="w-full h-full object-cover"
-            onError={handleGoogleDriveImageError}
-            loading="lazy"
-            decoding="async"
-          />
-          {previewItems[0].isVideo && (
-            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-              <div className="w-5 h-5 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md">
-                <Play className="w-2.5 h-2.5 fill-current ml-0.5" />
-              </div>
-            </div>
-          )}
-        </div>
+        <MediaPreviewItem item={previewItems[0]} alt={`${eventTitle} preview 1`} />
       </div>
     );
   }
@@ -214,22 +335,7 @@ const FolderCollagePreview: React.FC<{
     return (
       <div className={`w-full ${heightClass} rounded-xl overflow-hidden grid grid-cols-2 gap-0.5 bg-slate-900 relative`}>
         {previewItems.map((item, i) => (
-          <div key={i} className="relative w-full h-full overflow-hidden">
-            <img
-              src={item.src}
-              alt={`${eventTitle} preview ${i + 1}`}
-              className="w-full h-full object-cover"
-              onError={handleGoogleDriveImageError}
-              loading="lazy"
-            />
-            {item.isVideo && (
-              <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                <div className="w-5 h-5 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md">
-                  <Play className="w-2.5 h-2.5 fill-current ml-0.5" />
-                </div>
-              </div>
-            )}
-          </div>
+          <MediaPreviewItem key={i} item={item} alt={`${eventTitle} preview ${i + 1}`} />
         ))}
       </div>
     );
@@ -239,61 +345,14 @@ const FolderCollagePreview: React.FC<{
   if (previewItems.length === 3) {
     return (
       <div className={`w-full ${heightClass} rounded-xl overflow-hidden grid grid-cols-2 grid-rows-2 gap-0.5 bg-slate-900 relative`}>
-        {/* Left Column, Row 1 */}
         <div className="relative w-full h-full overflow-hidden col-start-1 row-start-1">
-          <img
-            src={previewItems[0].src}
-            alt={`${eventTitle} preview 1`}
-            className="w-full h-full object-cover"
-            onError={handleGoogleDriveImageError}
-            loading="lazy"
-            decoding="async"
-          />
-          {previewItems[0].isVideo && (
-            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-              <div className="w-4 h-4 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md">
-                <Play className="w-2 h-2 fill-current ml-0.5" />
-              </div>
-            </div>
-          )}
+          <MediaPreviewItem item={previewItems[0]} alt={`${eventTitle} preview 1`} />
         </div>
-
-        {/* Right Column, spanning both rows (stretched vertically) */}
         <div className="relative w-full h-full overflow-hidden col-start-2 row-start-1 row-span-2">
-          <img
-            src={previewItems[1].src}
-            alt={`${eventTitle} preview 2`}
-            className="w-full h-full object-cover"
-            onError={handleGoogleDriveImageError}
-            loading="lazy"
-            decoding="async"
-          />
-          {previewItems[1].isVideo && (
-            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-              <div className="w-4 h-4 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md">
-                <Play className="w-2 h-2 fill-current ml-0.5" />
-              </div>
-            </div>
-          )}
+          <MediaPreviewItem item={previewItems[1]} alt={`${eventTitle} preview 2`} />
         </div>
-
-        {/* Left Column, Row 2 */}
         <div className="relative w-full h-full overflow-hidden col-start-1 row-start-2">
-          <img
-            src={previewItems[2].src}
-            alt={`${eventTitle} preview 3`}
-            className="w-full h-full object-cover"
-            onError={handleGoogleDriveImageError}
-            loading="lazy"
-            decoding="async"
-          />
-          {previewItems[2].isVideo && (
-            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-              <div className="w-4 h-4 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md">
-                <Play className="w-2 h-2 fill-current ml-0.5" />
-              </div>
-            </div>
-          )}
+          <MediaPreviewItem item={previewItems[2]} alt={`${eventTitle} preview 3`} />
         </div>
       </div>
     );
@@ -303,23 +362,7 @@ const FolderCollagePreview: React.FC<{
   return (
     <div className={`w-full ${heightClass} rounded-xl overflow-hidden grid grid-cols-2 grid-rows-2 gap-0.5 bg-slate-905 relative`}>
       {previewItems.map((item, i) => (
-        <div key={i} className="relative w-full h-full overflow-hidden">
-          <img
-            src={item.src}
-            alt={`${eventTitle} preview ${i + 1}`}
-            className="w-full h-full object-cover"
-            onError={handleGoogleDriveImageError}
-            loading="lazy"
-            decoding="async"
-          />
-          {item.isVideo && (
-            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-              <div className="w-4 h-4 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md">
-                <Play className="w-2 h-2 fill-current ml-0.5" />
-              </div>
-            </div>
-          )}
-        </div>
+        <MediaPreviewItem key={i} item={item} alt={`${eventTitle} preview ${i + 1}`} />
       ))}
     </div>
   );
@@ -339,9 +382,17 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
   const mappedEvents = useMemo(() => {
     return (events || []).map((event) => {
       if (!event) return event;
+      const originalDate = (event.date || "").trim();
+      const hasValidOriginalDate = /^\d{4}-\d{2}-\d{2}$/.test(originalDate);
+      if (hasValidOriginalDate) {
+        return event;
+      }
       const parsedDate = parseDateFromTitle(event.title);
       if (parsedDate) {
-        return { ...event, date: parsedDate };
+        if (originalDate && originalDate !== parsedDate) {
+          logger.warn(`[EventMediaView] Date mismatch for event ${event.id}: original="${originalDate}", title-parsed="${parsedDate}". Using original.`);
+        }
+        return event;
       }
       return event;
     });
@@ -411,10 +462,19 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     const currentDateStr = new Date().toISOString().split("T")[0];
     const completed: GroupEvent[] = [];
     mappedEvents.forEach((event) => {
-      if (!event) return;
+      if (!event || !event.id) return;
+      // Requirement 3: Filter out any catch-all parent folder (e.g. gdrive_root_ or Team Taraba Official Photo Album)
+      if (
+        event.id.startsWith("gdrive_root_") ||
+        event.id === "evt_taraba_gdrive" ||
+        event.title === "Team Taraba Official Photo Album"
+      ) {
+        return;
+      }
       const hasVideos = (event.youtubeVideoUrls && event.youtubeVideoUrls.length > 0) || !!event.youtubeVideoUrl;
       const hasMedia = (event.driveImageUrls && event.driveImageUrls.length > 0) || hasVideos;
-      if (event.date <= currentDateStr || hasMedia) {
+      // All folders are independent top-level entries directly on the media page representing distinct events
+      if (hasMedia || event.date <= currentDateStr) {
         completed.push(event);
       }
     });
@@ -485,11 +545,16 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
 
     (activeFolder.driveImageUrls || []).forEach((imgUrl, i) => {
       if (!imgUrl || typeof imgUrl !== "string") return;
-      const isDirectVideo = imgUrl.startsWith("data:video") || imgUrl.endsWith(".mp4") || imgUrl.endsWith(".webm") || (imgUrl.includes("/events%2F") && imgUrl.includes(".mp4"));
+      const isDirectVideo =
+        imgUrl.startsWith("data:video") ||
+        imgUrl.toLowerCase().includes(".mp4") ||
+        imgUrl.toLowerCase().includes(".webm") ||
+        imgUrl.toLowerCase().includes(".mov") ||
+        (imgUrl.includes("/events%2F") && imgUrl.includes(".mp4"));
       if (isDirectVideo) {
         items.push({
           type: "video",
-          url: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80",
+          url: imgUrl,
           videoUrl: imgUrl,
           title: `${activeFolder.title} Video ${allVideoUrls.length + i + 1}`,
         });
@@ -1023,8 +1088,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                 <FolderOpen className="w-7 h-7" />
               </div>
               <div>
-                <h1 className="text-sm sm:text-sm font-normal text-slate-900 dark:text-white">Media Hub</h1>
-                <p className="text-sm sm:text-sm text-slate-600 dark:text-slate-300">Media Management</p>
+                <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">Event Media Gallery</h1>
+                <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400">Independent event albums & media archives</p>
               </div>
             </div>
             
@@ -1054,7 +1119,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                 </div>
               )}
               {onBackToDashboard && (
-                <button onClick={onBackToDashboard} className="p-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-full transition shadow-sm flex items-center justify-center cursor-pointer">
+                <button onClick={onBackToDashboard} className="p-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-full transition shadow-sm flex items-center justify-center cursor-pointer" title="Return to Dashboard">
                   <ChevronLeft className="w-5 h-5" />
                 </button>
               )}
@@ -1066,7 +1131,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search event folders..."
+                placeholder="Search event albums by title, location, or keyword..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-12 pr-10 py-3 text-sm rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-cyan-500 text-slate-900 dark:text-white"
@@ -1078,15 +1143,43 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               )}
             </div>
             <div className="flex items-center gap-3 shrink-0 flex-wrap">
+              {/* Sort Selector */}
+              <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 text-xs">
+                <span className="text-slate-400 text-[11px] font-medium hidden sm:inline">Sort:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="bg-transparent border-0 text-slate-700 dark:text-slate-300 font-medium focus:ring-0 cursor-pointer outline-none text-xs"
+                >
+                  <option value="newest" className="dark:bg-slate-900">Newest</option>
+                  <option value="oldest" className="dark:bg-slate-900">Oldest</option>
+                  <option value="name" className="dark:bg-slate-900">Event Name</option>
+                  <option value="mediaCount" className="dark:bg-slate-900">Most Assets</option>
+                </select>
+              </div>
+
+              {/* Upload Media to Top-Level Folder */}
+              <button
+                onClick={() => {
+                  setUploadFolderId(undefined);
+                  setIsFullPageUploadOpen(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-medium text-xs sm:text-sm shadow-sm transition active:scale-95 cursor-pointer"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Upload Media</span>
+              </button>
+
+              {/* Grid / List Switcher */}
               <div className="flex items-center bg-slate-200/60 dark:bg-slate-800/60 p-1 rounded-2xl">
-                <button onClick={() => setViewMode("grid")} className={`p-2 rounded-xl transition ${viewMode === "grid" ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" : "text-slate-600 dark:text-slate-400"}`}><Grid className="w-5 h-5" /></button>
-                <button onClick={() => setViewMode("list")} className={`p-2 rounded-xl transition ${viewMode === "list" ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" : "text-slate-600 dark:text-slate-400"}`}><List className="w-5 h-5" /></button>
+                <button onClick={() => setViewMode("grid")} className={`p-2 rounded-xl transition ${viewMode === "grid" ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" : "text-slate-600 dark:text-slate-400"}`} title="Grid View"><Grid className="w-5 h-5" /></button>
+                <button onClick={() => setViewMode("list")} className={`p-2 rounded-xl transition ${viewMode === "list" ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs" : "text-slate-600 dark:text-slate-400"}`} title="List View"><List className="w-5 h-5" /></button>
               </div>
             </div>
           </div>
 
           {filteredFolders.length === 0 ? (
-            <div className="py-16 text-center text-slate-500 dark:text-slate-400 text-sm">No completed event folders match your search filter.</div>
+            <div className="py-16 text-center text-slate-500 dark:text-slate-400 text-sm">No event media folders match your search filter.</div>
           ) : viewMode === "grid" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredFolders.map((folder) => {
@@ -1408,18 +1501,22 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                           : "border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-600"
                       }`}
                     >
-                      <img
-                        src={item.url}
-                        alt={item.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        onError={handleGoogleDriveImageError}
-                      />
-                      {item.type === "video" && (
-                        <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors flex items-center justify-center pointer-events-none">
-                          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-black/60 text-white opacity-50 flex items-center justify-center shadow-md group-hover:opacity-75 group-hover:scale-105 transition-all">
-                            <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-current ml-0.5" />
-                          </div>
-                        </div>
+                      {item.type === "video" ? (
+                        <VideoHoverCard
+                          videoUrl={item.videoUrl || item.url}
+                          title={item.title}
+                          className="w-full h-full object-cover"
+                          aspectClass="w-full h-full"
+                          showPlayBadge={!isSelectionMode}
+                        />
+                      ) : (
+                        <img
+                          src={item.url}
+                          alt={item.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onError={handleGoogleDriveImageError}
+                          loading="lazy"
+                        />
                       )}
 
                       {/* Selection Checkbox Badge */}

@@ -29,7 +29,7 @@ import {
   DeletedMemberEntry,
 } from "../types";
 import { sanitizeMemberRecord } from "../utils/nameUtils";
-import { sanitizeEventRecord } from "../utils/eventUtils";
+import { sanitizeEventRecord, parseEventDateObj } from "../utils/eventUtils";
 export async function triggerGoogleAdminSignIn(): Promise<Member> {
   try {
     const result = await signInWithPopup(auth, googleProvider);
@@ -185,7 +185,8 @@ export class FirebaseSyncManager {
         const raw = { id: d.id, ...d.data() } as GroupEvent;
         firestoreEvents.push(sanitizeEventRecord(raw));
       });
-      return firestoreEvents;
+
+      return firestoreEvents.filter((e) => !e.id.startsWith("evt_arch_") && !e.id.startsWith("folder_"));
     } catch (err) {
       logger.warn("Firestore events fetch fallback", { error: err });
       return [];
@@ -201,7 +202,7 @@ export class FirebaseSyncManager {
           const raw = { id: docSnap.id, ...docSnap.data() } as GroupEvent;
           list.push(sanitizeEventRecord(raw));
         });
-        const clean = list.filter((e) => !e.id.startsWith("evt_arch_"));
+        const clean = list.filter((e) => !e.id.startsWith("evt_arch_") && !e.id.startsWith("folder_"));
         onUpdate(clean);
       });
     } catch (err) {

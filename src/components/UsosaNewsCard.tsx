@@ -239,26 +239,52 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
     }
   };
 
-  // Fetch news on mount & pre-load members for instantaneous search
+  // Hands-free automated RSS news update:
+  // Automatically search and fetch the latest exact recommended headlines every 5 minutes in the background,
+  // and whenever the user returns to the portal tab, without requiring any manual input.
   useEffect(() => {
     loadNews();
     fetchMembers().catch(() => {});
+
+    // Periodic auto-refresh every 5 minutes
+    const autoRefreshInterval = setInterval(() => {
+      loadNews(true, true);
+    }, 5 * 60 * 1000);
+
+    // Auto-refresh on tab visibility change (user comes back to window)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        loadNews(true, true);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(autoRefreshInterval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
-  async function loadNews(force = false) {
+  async function loadNews(force = false, silent = false) {
     if (newsLoading) return;
     if (newsFetched && !force) return;
-    setNewsLoading(true);
+    if (!silent) {
+      setNewsLoading(true);
+    }
     setNewsError(null);
     try {
       const data = await fetchUsosaNews(force);
-      setHeadlines(data.headlines);
-      setFetchedAt(data.fetchedAt);
-      if (data.fallback && data.message) {
+      if (data && Array.isArray(data.headlines) && data.headlines.length > 0) {
+        setHeadlines(data.headlines);
+        setFetchedAt(data.fetchedAt);
+      }
+      if (data.fallback && data.message && (!headlines || headlines.length === 0)) {
         setNewsError(data.message);
       }
     } catch {
-      setNewsError("Failed to load news. Please try again.");
+      if (!headlines || headlines.length === 0) {
+        setNewsError("Failed to load news. Please try again.");
+      }
     } finally {
       setNewsLoading(false);
       setNewsFetched(true);
@@ -539,6 +565,12 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                         >
                           {h.title}
                         </p>
+                        {h.otherSources && h.otherSources.length > 1 && (
+                          <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100/90 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300/70 dark:border-amber-800/70 shrink-0">
+                            <Newspaper className="w-3 h-3" />
+                            {h.otherSources.length} Outlets Combined
+                          </span>
+                        )}
                       </div>
                       {h.publishedAt && (
                         <span
@@ -925,6 +957,11 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                     {selectedHeadline.schoolTag && (
                       <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-teal-100 dark:bg-teal-950 text-teal-800 dark:text-teal-300 border border-teal-200 dark:border-teal-800/60">
                         🏷️ {selectedHeadline.schoolTag}
+                      </span>
+                    )}
+                    {selectedHeadline.otherSources && selectedHeadline.otherSources.length > 1 && (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300/80 dark:border-amber-800/80">
+                        📰 {selectedHeadline.otherSources.length} Outlets Combined
                       </span>
                     )}
                     <span className="text-xs uppercase tracking-wider text-amber-700 dark:text-amber-400 font-medium">

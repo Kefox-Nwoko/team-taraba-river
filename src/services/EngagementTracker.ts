@@ -13,6 +13,16 @@ const COOLDOWNS = {
   RSVP: 0, // No cooldown
 };
 
+const POINTS = {
+  VISIT: 30,
+  SEARCH: 25,
+  PROFILE: 15,
+  AI: 25,
+  NEWS: 10,
+  MEDIA: 20,
+  RSVP: 20,
+};
+
 export class EngagementTracker {
   private static checkCooldown(actionKey: string, cooldownMs: number): boolean {
     const lastTimeStr = localStorage.getItem(`engagement_last_${actionKey}`);
@@ -62,45 +72,45 @@ export class EngagementTracker {
   static async trackVisit(memberId?: string) {
     if (!memberId) return;
     if (this.checkCooldown('visit', COOLDOWNS.VISIT)) {
-      await this.awardPoints(memberId, 5, 'App Visits');
+      await this.awardPoints(memberId, POINTS.VISIT, 'App Visits');
     }
   }
 
   static async trackSearch(memberId?: string) {
     if (!memberId) return;
     if (this.checkCooldown('search', COOLDOWNS.SEARCH)) {
-      await this.awardPoints(memberId, 10, 'Search Directories');
+      await this.awardPoints(memberId, POINTS.SEARCH, 'Search Directories');
     }
   }
 
   static async trackProfileUpdate(memberId?: string) {
     if (!memberId) return;
     if (this.checkCooldown('profile', COOLDOWNS.PROFILE)) {
-      await this.awardPoints(memberId, 50, 'Profile Updates');
+      await this.awardPoints(memberId, POINTS.PROFILE, 'Profile Updates');
     }
   }
 
   static async trackAiResearch(memberId?: string) {
     if (!memberId) return;
     if (this.checkCooldown('ai', COOLDOWNS.AI)) {
-      await this.awardPoints(memberId, 10, 'AI Research');
+      await this.awardPoints(memberId, POINTS.AI, 'AI Research');
     }
   }
 
   static async trackMediaUpload(memberId?: string) {
     if (!memberId) return;
-    await this.awardPoints(memberId, 20, 'Media Uploads');
+    await this.awardPoints(memberId, POINTS.MEDIA, 'Media Uploads');
   }
 
   static async trackNewsRead(memberId?: string) {
     if (!memberId) return;
     if (this.checkCooldown('news', COOLDOWNS.NEWS)) {
-      await this.awardPoints(memberId, 10, 'Reading News');
+      await this.awardPoints(memberId, POINTS.NEWS, 'Reading News');
     }
   }
 
   static async trackRsvp(memberId?: string) {
     if (!memberId) return;
-    await this.awardPoints(memberId, 20, 'RSVPs');
+    await this.awardPoints(memberId, POINTS.RSVP, 'RSVPs');
   }
 }

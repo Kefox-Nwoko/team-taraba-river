@@ -429,7 +429,16 @@ export class AppStateManager {
       const parsed: GroupEvent[] = JSON.parse(raw);
       const cleanEvents = parsed.filter((e) => {
         if (!e || !e.id || typeof e.id !== "string") return false;
-        return !e.id.startsWith("evt_arch_");
+        if (
+          e.id.startsWith("evt_arch_") ||
+          e.id.startsWith("gdrive_root_") ||
+          e.id === "evt_taraba_gdrive" ||
+          e.title === "Team Taraba Official Photo Album" ||
+          e.id.startsWith("folder_")
+        ) {
+          return false;
+        }
+        return true;
       });
       if (cleanEvents.length !== parsed.length) {
         localStorage.setItem(LOCAL_STORAGE_KEY_EVENTS, JSON.stringify(cleanEvents));

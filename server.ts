@@ -35,6 +35,7 @@ import { CSV_SEED_MEMBERS } from "./src/data/csvMembers";
 import { getUpcomingNextMonthCelebrants, getTomorrowCelebrants, getWATDate } from "./server/birthdayService";
 import { buildMonthlyDigestEmailHtml, buildDailyEveAlertEmailHtml, buildTestEmailHtml } from "./server/emailTemplates";
 import { getEmailConfig, updateEmailConfig, sendEmail } from "./server/emailService";
+import { parseEventDateObj } from "./src/utils/eventUtils";
 
 dotenv.config();
 
@@ -236,6 +237,19 @@ setInterval(async () => {
   }
 }, 15 * 60 * 1000); // Runs every 15 minutes
 
+// --- Daily Midnight Event Purge Cron ---
+// Completely removes expired events from Firestore and fallback stores so they never reappear.
+setInterval(async () => {
+  try {
+    const result = await purgeExpiredEvents();
+    if (result.deletedCount > 0) {
+      serverLogger.info(`[Cron] Midnight purge removed ${result.deletedCount} expired event(s)`);
+    }
+  } catch (err) {
+    serverLogger.warn("[Cron] Midnight event purge notice", { error: (err as Error).message });
+  }
+}, 24 * 60 * 60 * 1000); // Runs every 24 hours
+
 // --- In-Memory Fallback Stores (used when Firestore Admin SDK is not available) ---
 let fallbackMembers: Member[] = [...(CSV_SEED_MEMBERS as Member[])];
 let fallbackEvents: GroupEvent[] = [];
@@ -340,7 +354,78 @@ function parseDateFromTitle(title: string): string | null {
   return null;
 }
 
+function hasMediaAssets(e: GroupEvent): boolean {
+  if (!e) return false;
+  const id = (e.id || "").toLowerCase();
+  if (
+    id.startsWith("gdrive_") ||
+    id.startsWith("yt_") ||
+    id.startsWith("folder_") ||
+    id.startsWith("media_") ||
+    id.startsWith("album_") ||
+    id === "evt_taraba_gdrive"
+  ) {
+    return true;
+  }
+  if (Array.isArray(e.driveImageUrls) && e.driveImageUrls.length > 0) return true;
+  if (Array.isArray(e.youtubeVideoUrls) && e.youtubeVideoUrls.length > 0) return true;
+  if (e.youtubeVideoUrl && e.youtubeVideoUrl.trim().length > 0) return true;
+  if (e.driveFolderId && !e.driveFolderId.startsWith("drive_folder_") && e.driveFolderId.trim().length > 0) return true;
+  return false;
+}
+
+async function purgeExpiredEvents(): Promise<{ deletedCount: number }> {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let list: GroupEvent[] = [];
+  if (isFirestoreAvailable()) {
+    try {
+      const snapshot = await db.collection(COLLECTIONS.events).get();
+      list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GroupEvent));
+    } catch {
+      list = [...fallbackEvents];
+    }
+  } else {
+    list = [...fallbackEvents];
+  }
+
+  const expiredIds = new Set<string>();
+  for (const e of list) {
+    // CRITICAL: NEVER delete or purge any event that contains media or is an album folder
+    if (hasMediaAssets(e)) {
+      continue;
+    }
+
+    const effectiveEndStr = e.endDate && e.endDate.trim() ? e.endDate.trim() : e.date;
+    let parsed: Date | null = parseEventDateObj(effectiveEndStr);
+    if (!parsed) {
+      const fromTitle = parseDateFromTitle(e.title);
+      if (fromTitle) parsed = new Date(fromTitle);
+    }
+    if (!parsed) continue;
+    if (parsed.getTime() < today.getTime()) {
+      expiredIds.add(e.id);
+    }
+  }
+
+  if (expiredIds.size > 0 && isFirestoreAvailable()) {
+    const deletePromises = Array.from(expiredIds).map((id) => {
+      return db.collection(COLLECTIONS.events).doc(id).delete().catch((err) => {
+        serverLogger.warn(`[AutoDelete] Failed to delete expired event ${id}:`, err);
+      });
+    });
+    await Promise.all(deletePromises);
+  }
+
+  fallbackEvents = fallbackEvents.filter((e) => !expiredIds.has(e.id));
+  _eventsCache = null;
+
+  return { deletedCount: expiredIds.size };
+}
+
 async function getEvents(): Promise<GroupEvent[]> {
+
   if (isFirestoreAvailable() && _eventsCache && Date.now() - _eventsCache.ts < DATA_CACHE_TTL) {
     return _eventsCache.data;
   }
@@ -356,15 +441,14 @@ async function getEvents(): Promise<GroupEvent[]> {
       list = [...fallbackEvents];
     }
   }
+
   const data = list
-    .filter((e) => !e.id.startsWith("evt_arch_"))
+    .filter((e) => !e.id.startsWith("evt_arch_") && !e.id.startsWith("folder_"))
     .map((e) => {
-      // Parse date of event from title if it's a synced event folder
       const parsedDate = parseDateFromTitle(e.title);
       if (parsedDate) {
         e.date = parsedDate;
       }
-      // Sanitize Google Drive & email mentions
       if (e.location === 'Google Drive (tarabateam@gmail.com)') {
         e.location = 'Taraba River';
       }
@@ -1241,9 +1325,9 @@ app.post("/api/events", conditionalAuth, conditionalRequireAdmin, async (req: Re
       time: data.time || '09:00',
       location: data.location,
       category: data.category || 'meeting',
-      driveImageUrls: data.driveImageUrls || [],
-      driveFolderId: data.driveFolderId || `drive_folder_${Date.now()}`,
-      youtubeVideoUrl: data.youtubeVideoUrl || '',
+    driveImageUrls: data.driveImageUrls || [],
+    driveFolderId: data.driveFolderId || "",
+    youtubeVideoUrl: data.youtubeVideoUrl || '',
       youtubeTitle: data.youtubeVideoUrl ? `${data.title} Video Recording` : '',
       createdBy: data.createdBy || req.user?.email || 'Team Member',
       createdById,
@@ -1843,11 +1927,17 @@ app.post("/api/media/cloud-sync-all", conditionalAuth, async (req: Request, res:
 
         let folderId = event.driveFolderId;
 
-        // 1. Create folder if missing
-        if (!folderId) {
+        // Safeguard: Log any calendar-only event being considered for folder linkage
+        if (!folderId && !hasMediaAssets(event)) {
+          serverLogger.warn(`[Decouple Safeguard] Calendar-only event "${event.title}" (${event.id}) has no media but was considered for Drive folder linkage. Skipping.`);
+        }
+
+        // CRITICAL: Only auto-create folders for events that already have media assets.
+        // Calendar-only announcements must never trigger folder creation.
+        if (!folderId && hasMediaAssets(event)) {
           const folderName = `${event.date} - ${event.title}`;
-              serverLogger.info(`[Drive Sync] Creating Drive folder for event: ${folderName}`);
-          
+          serverLogger.info(`[Drive Sync] Creating Drive folder for media event: ${folderName}`);
+        
           try {
             // Search if folder already exists on Drive under rootFolderId to avoid duplicates
             const searchRes = await drive.files.list({
@@ -1953,9 +2043,11 @@ app.post("/api/media/cloud-sync-all", conditionalAuth, async (req: Request, res:
         const videosRes = await drive.files.list({
           q: `'${folder.id}' in parents and mimeType contains 'video/' and trashed = false`,
           fields: 'files(id, name, mimeType)',
-          pageSize: 10,
+          pageSize: 20,
         });
         const videos = videosRes.data.files || [];
+        const videoUrls = videos.map((vid: any) => `/api/media/image/${vid.id}#${vid.name || 'video.mp4'}`);
+        const allMediaUrls = [...imageUrls, ...videoUrls];
 
         const folderParsedDate = folder.name ? parseDateFromTitle(folder.name) : null;
         const folderDate = folderParsedDate || (folder.createdTime
@@ -1971,7 +2063,7 @@ app.post("/api/media/cloud-sync-all", conditionalAuth, async (req: Request, res:
           time: '09:00',
           location: 'Taraba River',
           category: 'cleanup',
-          driveImageUrls: imageUrls,
+          driveImageUrls: allMediaUrls,
           driveFolderId: folder.id || '',
           youtubeVideoUrl: '',
           createdBy: 'Official Cloud Pipeline',
@@ -1992,37 +2084,12 @@ app.post("/api/media/cloud-sync-all", conditionalAuth, async (req: Request, res:
         syncedEvents.push(event);
       }
 
-      // Step 4: If there are images directly in the root folder, create a root album event
-      if (rootImages.length > 0) {
-        const rootImageUrls = rootImages.map((img: any) => `https://lh3.googleusercontent.com/d/${img.id}`);
-        const rootEventId = `gdrive_root_${rootFolderId}`;
-        const rootEvent: GroupEvent = {
-          id: rootEventId,
-          title: 'Team Taraba Official Photo Album',
-          description: `${rootImages.length} photos synced directly from the root folder.`,
-          date: new Date().toISOString().split('T')[0],
-          time: '09:00',
-          location: 'Taraba River',
-          category: 'celebration',
-          driveImageUrls: rootImageUrls,
-          driveFolderId: rootFolderId,
-          youtubeVideoUrl: '',
-          createdBy: 'Official Cloud Pipeline',
-          createdById: 'tarabateam_admin',
-          attendeeIds: [],
-          maxCapacity: 1000,
-          createdAt: new Date().toISOString(),
-        };
-
-        if (isFirestoreAvailable()) {
-          await db.collection(COLLECTIONS.events).doc(rootEventId).set(rootEvent, { merge: true });
-        } else {
-          const idx = fallbackEvents.findIndex((e) => e.id === rootEventId);
-          if (idx >= 0) fallbackEvents[idx] = rootEvent;
-          else fallbackEvents.unshift(rootEvent);
-        }
-        syncedEvents.push(rootEvent);
+      // Ensure any legacy root parent placeholder is removed from Firestore and memory
+      const rootEventId = `gdrive_root_${rootFolderId}`;
+      if (isFirestoreAvailable()) {
+        await db.collection(COLLECTIONS.events).doc(rootEventId).delete().catch(() => {});
       }
+      fallbackEvents = fallbackEvents.filter((e) => !e.id.startsWith("gdrive_root_"));
 
       // Update sync timestamp
       if (isFirestoreAvailable()) {
@@ -2418,13 +2485,28 @@ app.get("/api/media/image/:fileId", async (req: Request, res: Response) => {
       });
       const drive = google.drive({ version: 'v3', auth });
 
+      const streamHeaders: Record<string, string> = {};
+      if (req.headers.range) {
+        streamHeaders['Range'] = req.headers.range;
+      }
       const driveRes = await drive.files.get(
         { fileId, alt: 'media' },
-        { responseType: 'stream' }
+        { responseType: 'stream', headers: Object.keys(streamHeaders).length > 0 ? streamHeaders : undefined }
       );
 
-      res.setHeader('Content-Type', 'image/webp');
+      const contentType = (driveRes.headers && (driveRes.headers['content-type'] || driveRes.headers['Content-Type'])) || 'image/webp';
+      res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=43200');
+      res.setHeader('Accept-Ranges', 'bytes');
+      if (driveRes.headers['content-range']) {
+        res.setHeader('Content-Range', driveRes.headers['content-range']);
+      }
+      if (driveRes.headers['content-length']) {
+        res.setHeader('Content-Length', driveRes.headers['content-length']);
+      }
+      if (driveRes.status === 206) {
+        res.status(206);
+      }
       driveRes.data.pipe(res);
       return;
     }
@@ -2679,30 +2761,87 @@ Provide a JSON object with:
 });
 
 // 16. USOSA News Update — 100% Automated Live AI Journalism Bureau Agent
-// Powered by Live External Feeds (Google News RSS + Nigerian Outlets) + Gemini AI Chief Editor
+// Powered by Live External Feeds (Google News RSS with exact recommended search terms) + Gemini AI Chief Editor
 let newsCache: { data: any; fetchedAt: number } | null = null;
-const NEWS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const NEWS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes for freshest headlines
 
 const LIVE_EXTERNAL_FEEDS = [
-  { url: 'https://news.google.com/rss/search?q=USOSA+Nigeria&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: 'Google News / USOSA' },
-  { url: 'https://news.google.com/rss/search?q=Unity+Schools+Nigeria&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: 'Google News / Unity Schools' },
-  { url: 'https://news.google.com/rss/search?q=Federal+Unity+Colleges+Nigeria&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: 'Google News / Unity Colleges' },
-  { url: 'https://news.google.com/rss/search?q=Federal+Government+College+Nigeria&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: 'Google News / FGC' },
-  { url: 'https://news.google.com/rss/search?q=Kings+College+Lagos&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: "Google News / King's College" },
-  { url: 'https://news.google.com/rss/search?q=Queens+College+Lagos&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: "Google News / Queen's College" },
-  { url: 'https://punchng.com/feed/', defaultSource: 'Punch Nigeria' },
-  { url: 'https://guardian.ng/feed/', defaultSource: 'Guardian Nigeria' },
-  { url: 'https://www.vanguardngr.com/feed/', defaultSource: 'Vanguard Nigeria' },
-  { url: 'https://thenationonlineng.net/feed/', defaultSource: 'The Nation' },
-  { url: 'https://www.channelstv.com/home/feed/', defaultSource: 'Channels TV' },
-  { url: 'https://dailypost.ng/feed/', defaultSource: 'Daily Post' },
+  // Global feeds (all countries worldwide: USA, UK, Canada, Europe, Global Diaspora)
+  { url: 'https://news.google.com/rss/search?q=%22USOSA%22', defaultSource: 'Google News / USOSA Global' },
+  { url: 'https://news.google.com/rss/search?q=%22USOSA%22+OR+%22Unity+Schools%22+diaspora+OR+UK+OR+USA+OR+America+OR+Canada+OR+global', defaultSource: 'Google News / USOSA Diaspora' },
+  { url: 'https://news.google.com/rss/search?q=%22KCOBA%22+OR+%22QCOGA%22+OR+%22FEGOWOCO%22', defaultSource: 'Google News / Global Alumni' },
+  { url: 'https://news.google.com/rss/search?q=%22Unity+Schools%22+Old+Students', defaultSource: 'Google News / Unity Alumni' },
+  { url: 'https://news.google.com/rss/search?q=%22Federal+Unity+Colleges%22+OR+%22Federal+Unity+College%22', defaultSource: 'Google News / Unity Colleges' },
+  { url: 'https://news.google.com/rss/search?q=%22Federal+Government+College%22', defaultSource: 'Google News / FGC Global' },
+  { url: 'https://news.google.com/rss/search?q=%22Federal+Government+Girls+College%22+OR+%22FGGC%22', defaultSource: 'Google News / FGGC Global' },
+  { url: 'https://news.google.com/rss/search?q=%22Federal+Science+and+Technical+College%22+OR+%22FSTC%22', defaultSource: 'Google News / FSTC Global' },
+  { url: 'https://news.google.com/rss/search?q=%22Kings+College+Lagos%22+OR+%22Queens+College+Lagos%22', defaultSource: "Google News / Kings & Queens" },
+  { url: 'https://news.google.com/rss/search?q=%22Team+Taraba%22+OR+%22USOSA+Taraba%22', defaultSource: 'Google News / Team Taraba' },
+  { url: 'https://news.google.com/rss/search?q=%22Suleja+Academy%22+OR+%22Federal+Academy+Suleja%22', defaultSource: 'Google News / Suleja Academy' },
+  // National edition feeds
+  { url: 'https://news.google.com/rss/search?q=%22USOSA%22&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: 'Google News / USOSA National' },
+  { url: 'https://news.google.com/rss/search?q=%22Unity+Schools%22&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: 'Google News / Unity Schools' },
 ];
 
-const USOSA_KEYWORDS = [
-  'usosa', 'unity school', 'federal government college', 'fgc ',
-  'old students association', 'unity college', 'federal government girls',
-  'fggc', 'urip', 'usosan', 'king\'s college', 'queen\'s college', 'education'
-];
+/**
+ * Global Relevance Filter:
+ * Ensures news bearing USOSA or related Unity Colleges alumni news from ALL countries
+ * (Nigeria, UK, USA, Canada, Europe, global diaspora chapters) is accepted as agreed.
+ */
+function isRelevantToUsosaAndUnityColleges(title: string, snippet: string): boolean {
+  const combined = `${title} ${snippet}`.toLowerCase();
+
+  // 1. Direct USOSA & Alumni Entities: Always accepted from ALL countries worldwide
+  const directEntities = [
+    /\busosa\b/i,
+    /\busosan[s]?\b/i,
+    /\bunity schools? old students\b/i,
+    /\bfederal unity college[s]?\b/i,
+    /\bfederal government college[s]?\b/i,
+    /\bfederal government girls['’]? college[s]?\b/i,
+    /\bfederal science and technical college[s]?\b/i,
+    /\bfederal science & technical college[s]?\b/i,
+    /\bfederal academy suleja\b/i,
+    /\bsuleja academy\b/i,
+    /\bking['’]?s college lagos\b/i,
+    /\bqueen['’]?s college lagos\b/i,
+    /\bkcoba\b/i,
+    /\bqcoga\b/i,
+    /\bfegowoco\b/i,
+    /\btaraba\b/i,
+    /\bteam taraba\b/i,
+  ];
+
+  for (const regex of directEntities) {
+    if (regex.test(combined)) {
+      return true; // Accepted from all countries without restriction!
+    }
+  }
+
+  // 2. Specific Unity College Campus Patterns: e.g. "FGGC Bwari", "FGC Idoani", "FSTC Yaba", "FGC Warri"
+  const campusPattern = /\b(fgc|fggc|fstc)\s+(bwari|yaba|usi|otukpo|uromi|ilesa|shiroro|zuru|ohanso|jalingo|orozo|doma|michika|kafanchan|dayi|hadejia|lassa|tungbo|uyo|ahoada|kano|kaduna|warri|enugu|okigwe|ugwolawo|ijanikin|oyo|sagamu|onitsha|kazaure|odogbolu|ikot\s*ekpene|ilorin|sokoto|maiduguri|buni\s*yadi|keffi|azare|biliri|gwarzo|tambuwal|wukari|potiskum|vandeikya|rubochi|keana|kiyawa|daura|birnin\s*kebbi|gwandu|minna|kontagora|new\s*bussa|bida|malumfashi|dutse|gumel|langtang|pankshin|mangu|shendam|bokkos|yawuri|anza|zaria|ebonyi|abakaliki|afikpo|isenya|ogidi|nnewi|awka|umuahia|owerri|abaji|kwali|gwagwalada)\b/i;
+
+  if (campusPattern.test(combined)) {
+    return true;
+  }
+
+  // 3. Unity Schools + Alumni / Chapter / Diaspora / Global context
+  const isUnitySchool = /\bunity school[s]?\b/i.test(combined) || /\bunity college[s]?\b/i.test(combined);
+  const isAlumniOrGlobal = /\b(alumni|old students|diaspora|chapter|branch|association|convention|reunion|pta|admission|nigeria|uk|usa|america|london|canada|global|international)\b/i.test(combined);
+  if (isUnitySchool && isAlumniOrGlobal) {
+    return true;
+  }
+
+  // 4. Secondary Context Filter: Acronym (FGC/FGGC/FSTC) + Unity / Alumni / Global context
+  const hasAcronym = /\b(fgc|fggc|fstc)\b/i.test(combined);
+  const hasContext = /\b(alumni|old students|diaspora|chapter|branch|convention|reunion|inter-house sports|concession|privatisation|privatize|pta|education|scholarship|fundraiser|nigeria|uk|usa|america|london|canada)\b/i.test(combined);
+
+  if (hasAcronym && hasContext) {
+    return true;
+  }
+
+  return false;
+}
 
 function extractXmlTag(xml: string, tag: string): string {
   const patterns = [
@@ -2769,32 +2908,27 @@ async function fetchLiveExternalNewsItems(): Promise<Array<{ title: string; snip
 
         if (!title || seenTitles.has(title.toLowerCase())) continue;
 
-        const combined = (title + ' ' + snippet).toLowerCase();
-        const isTargetMatch = USOSA_KEYWORDS.some(kw => combined.includes(kw));
+        // Apply all-country relevance gate: accept all countries bearing USOSA or related news
+        if (!isRelevantToUsosaAndUnityColleges(title, snippet)) continue;
 
-        // Accept if keyword matches or if it's from a Google News search specifically targeting USOSA/Unity Schools
-        if (isTargetMatch || feed.url.includes('news.google.com')) {
-          seenTitles.add(title.toLowerCase());
-          rawItems.push({
-            title,
-            snippet: snippet || 'Read full coverage on external news portal.',
-            url: link || feed.url,
-            source,
-            pubDate,
-            timestamp
-          });
-        }
-        if (rawItems.length >= 25) break;
+        seenTitles.add(title.toLowerCase());
+        rawItems.push({
+          title,
+          snippet: snippet || 'Read full coverage on external news portal.',
+          url: link || feed.url,
+          source,
+          pubDate,
+          timestamp
+        });
       }
     } catch (e) {
       serverLogger.warn(`External feed fetch warning [${feed.defaultSource}]`, { error: (e as Error).message });
     }
-    if (rawItems.length >= 25) break;
   }
 
   // Sort raw items in strict descending order (NEWEST FIRST, OLDEST BELOW)
   rawItems.sort((a, b) => b.timestamp - a.timestamp);
-  return rawItems;
+  return rawItems.slice(0, 30);
 }
 
 function cleanText(txt: string): string {
@@ -2825,44 +2959,261 @@ function cleanNewsHtmlAndJunk(str: string): string {
     .trim();
 }
 
-// AI Journalism Agent (Chief Editor) persona processing
+function stripPublisherNames(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(/\b(vanguard\s*news|vanguard|punch\s*newspapers|punch|the\s*guardian\s*nigeria\s*news|the\s*guardian\s*nigeria|the\s*guardian|daily\s*trust|premium\s*times\s*nigeria|premium\s*times|leadership\s*newspapers|leadership|thecable|thisday\s*live|thisday|the\s*sun\s*nigeria|the\s*sun|sun\s*news|nigerian\s*tribune|tribune\s*online|tribune|businessday|daily\s*post\s*nigeria|daily\s*post|channels\s*tv|channels\s*television|arise\s*news|radio\s*nigeria|news\s*agency\s*of\s*nigeria|nan|google\s*news|rss\s*feed|independent\s*newspaper|independent|the\s*nation\s*newspaper|the\s*nation)\b/gi, "")
+    .replace(/\s*[-|–—•]\s*$/, "")
+    .replace(/^\s*[-|–—•]\s*/, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function cleanStoryTitle(raw: string): { cleanTitle: string; extractedSource: string } {
+  let title = (raw || "").replace(/<[^>]*>?/gm, "").trim();
+  let extractedSource = "";
+  const match = title.match(/\s*[-|–—•]\s*([^-|–—•]+)$/);
+  if (match && match[1]) {
+    extractedSource = match[1].trim();
+    title = title.substring(0, match.index).trim();
+  }
+  title = stripPublisherNames(title);
+  return { cleanTitle: title, extractedSource };
+}
+
+function extractKeywords(str: string): Set<string> {
+  const stopWords = new Set([
+    "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "of", "with",
+    "by", "from", "as", "is", "are", "was", "were", "be", "this", "that", "it",
+    "its", "into", "over", "after", "out", "about", "all", "new", "says", "how",
+    "why", "who", "will", "can", "has", "have", "had", "more", "now", "just",
+    "check", "read", "full", "story", "news"
+  ]);
+  const words = str
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !stopWords.has(w));
+  return new Set(words);
+}
+
+function calculateSimilarity(setA: Set<string>, setB: Set<string>): number {
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let intersection = 0;
+  for (const item of setA) {
+    if (setB.has(item)) intersection++;
+  }
+  const union = new Set([...setA, ...setB]).size;
+  return intersection / union;
+}
+
+const UNITY_SCHOOL_TAGS: { pattern: RegExp; tag: string }[] = [
+  { pattern: /king['’]?s\s*college/i, tag: "King's College Lagos" },
+  { pattern: /queen['’]?s\s*college/i, tag: "Queen's College Lagos" },
+  { pattern: /fggc\s*bwari/i, tag: "FGGC Bwari" },
+  { pattern: /fggc\s*oyo/i, tag: "FGGC Oyo" },
+  { pattern: /fggc\s*sagamu/i, tag: "FGGC Sagamu" },
+  { pattern: /fg[g]?c\s*kano/i, tag: "FGC Kano" },
+  { pattern: /fg[g]?c\s*kaduna/i, tag: "FGC Kaduna" },
+  { pattern: /fg[g]?c\s*warri|fegowoco/i, tag: "FGC Warri" },
+  { pattern: /fg[g]?c\s*enugu/i, tag: "FGC Enugu" },
+  { pattern: /fg[g]?c\s*okigwe/i, tag: "FGC Okigwe" },
+  { pattern: /fg[g]?c\s*ugwolawo/i, tag: "FGC Ugwolawo" },
+  { pattern: /fg[g]?c\s*ijanikin/i, tag: "FGC Lagos (Ijanikin)" },
+  { pattern: /fstc\s*yaba/i, tag: "FSTC Yaba" },
+  { pattern: /fstc\s*usi/i, tag: "FSTC Usi-Ekiti" },
+  { pattern: /fstc\s*otukpo/i, tag: "FSTC Otukpo" },
+  { pattern: /fstc|technical\s*college/i, tag: "Federal Science & Tech Colleges" },
+  { pattern: /fggc|girls\s*college/i, tag: "Federal Government Girls Colleges" },
+  { pattern: /fgc|federal\s*government\s*college/i, tag: "Federal Government Colleges" },
+  { pattern: /suleja\s*academy/i, tag: "Federal Academy Suleja" },
+  { pattern: /usosa|unity\s*school|unity\s*college/i, tag: "USOSA & Unity Colleges" },
+];
+
+function detectSchoolTag(text: string): string {
+  for (const item of UNITY_SCHOOL_TAGS) {
+    if (item.pattern.test(text)) {
+      return item.tag;
+    }
+  }
+  return "Unity Colleges Education";
+}
+
+function buildComprehensiveSummary(title: string, rawSnippet: string, schoolTag: string = "Federal Unity Colleges"): string {
+  const cleanSnippet = cleanNewsHtmlAndJunk(stripPublisherNames(rawSnippet));
+  const p1 = cleanSnippet && cleanSnippet.length > 50
+    ? cleanSnippet
+    : `Reports confirm significant developments regarding ${title.toLowerCase()}, drawing sustained attention and close engagement from parent associations, alumni networks, and education administrators nationwide.`;
+
+  const p2 = `Key stakeholders across ${schoolTag || "Federal Unity Colleges"} are actively tracking institutional directives and implementation frameworks to protect academic stability and student welfare across collegiate campuses.`;
+
+  const p3 = `Alumni chapters and education observers continue to monitor official statements and verified bulletins through the source channels linked below as further administrative guidelines unfold.`;
+
+  return `${p1}\n\n${p2}\n\n${p3}`;
+}
+
+interface ServerTopicCluster {
+  representativeTitle: string;
+  normTitle: string;
+  leadSource: string;
+  leadUrl: string;
+  publishedAt: string;
+  timestamp: number;
+  rawSnippet: string;
+  keywords: Set<string>;
+  numbers: Set<string>;
+  schoolTag: string;
+  sourcesMap: Map<string, { sourceName: string; title: string; url: string }>;
+}
+
+function clusterRawNewsItems(rawItems: Array<{ title: string; snippet: string; url: string; source: string; pubDate: string; timestamp: number }>): ServerTopicCluster[] {
+  const clusters: ServerTopicCluster[] = [];
+
+  for (const item of rawItems) {
+    const { cleanTitle, extractedSource } = cleanStoryTitle(item.title || "");
+    if (cleanTitle.length < 10) continue;
+
+    const sourceName = stripPublisherNames(extractedSource || item.source || "News Outlet") || "News Outlet";
+    const link = item.url || "https://news.google.com";
+    const cleanDesc = cleanNewsHtmlAndJunk(item.snippet || "");
+    const combinedText = `${cleanTitle} ${cleanDesc}`;
+    const keywords = extractKeywords(combinedText);
+    const schoolTag = detectSchoolTag(combinedText);
+
+    const titleNumbers = new Set(
+      (cleanTitle.match(/\d[\d,]+/g) || [])
+        .map(n => n.replace(/,/g, ''))
+        .filter(n => parseInt(n, 10) >= 100)
+    );
+
+    const normTitle = cleanTitle.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+
+    let matchedCluster: ServerTopicCluster | null = null;
+    for (const cluster of clusters) {
+      const similarity = calculateSimilarity(keywords, cluster.keywords);
+      const isKeywordMatch = similarity > 0.22;
+
+      let sharedNumber = false;
+      for (const num of titleNumbers) {
+        if (cluster.numbers.has(num)) {
+          sharedNumber = true;
+          break;
+        }
+      }
+      const isNumberMatch = sharedNumber && similarity > 0.15;
+
+      const topicPhrases = [
+        ["admission", "list"],
+        ["pta", "teachers"],
+        ["concession", "schools"],
+        ["privatiz", "schools"],
+        ["inter", "house", "sports"],
+        ["speech", "day"],
+        ["infrastructure", "upgrades"],
+      ];
+      let sharedPhrase = false;
+      for (const phrase of topicPhrases) {
+        const itemHas = phrase.every(p => normTitle.includes(p) || cleanDesc.toLowerCase().includes(p));
+        const clusterHas = phrase.every(p => cluster.normTitle.includes(p) || cluster.rawSnippet.toLowerCase().includes(p));
+        if (itemHas && clusterHas) {
+          sharedPhrase = true;
+          break;
+        }
+      }
+
+      const shorter = normTitle.length < cluster.normTitle.length ? normTitle : cluster.normTitle;
+      const longer = normTitle.length < cluster.normTitle.length ? cluster.normTitle : normTitle;
+      const isSubstringMatch = shorter.length > 20 && longer.includes(shorter.slice(0, Math.floor(shorter.length * 0.6)));
+
+      if (isKeywordMatch || isNumberMatch || sharedPhrase || isSubstringMatch) {
+        matchedCluster = cluster;
+        break;
+      }
+    }
+
+    const coverage = {
+      sourceName,
+      title: cleanTitle,
+      url: link,
+    };
+
+    if (matchedCluster) {
+      matchedCluster.sourcesMap.set(sourceName.toLowerCase(), coverage);
+      for (const k of keywords) matchedCluster.keywords.add(k);
+      for (const n of titleNumbers) matchedCluster.numbers.add(n);
+      matchedCluster.timestamp = Math.max(matchedCluster.timestamp, item.timestamp);
+      matchedCluster.publishedAt = item.pubDate || matchedCluster.publishedAt;
+
+      // Prefer authoritative headline over "How to check..."
+      if (
+        cleanTitle.toLowerCase().startsWith("fg releases") ||
+        cleanTitle.toLowerCase().startsWith("federal government") ||
+        cleanTitle.toLowerCase().startsWith("ministry of education") ||
+        (cleanTitle.length > matchedCluster.representativeTitle.length && !cleanTitle.toLowerCase().startsWith("how to"))
+      ) {
+        matchedCluster.representativeTitle = cleanTitle;
+      }
+    } else {
+      const sourcesMap = new Map<string, { sourceName: string; title: string; url: string }>();
+      sourcesMap.set(sourceName.toLowerCase(), coverage);
+
+      clusters.push({
+        representativeTitle: cleanTitle,
+        normTitle,
+        leadSource: sourceName,
+        leadUrl: link,
+        publishedAt: item.pubDate || "Recent",
+        timestamp: item.timestamp,
+        rawSnippet: cleanDesc,
+        keywords,
+        numbers: new Set(titleNumbers),
+        schoolTag,
+        sourcesMap,
+      });
+    }
+  }
+
+  // Sort newest first
+  clusters.sort((a, b) => b.timestamp - a.timestamp);
+  return clusters;
+}
+
+// AI Journalism Agent (Chief Editor) persona processing with smart topic clustering
 async function aiChiefEditorCurate(rawItems: Array<{ title: string; snippet: string; url: string; source: string; pubDate: string; timestamp: number }>): Promise<any[]> {
+  const clusters = clusterRawNewsItems(rawItems);
+  if (clusters.length === 0) return [];
+
+  const topClusters = clusters.slice(0, 15);
   const ai = getGeminiClient();
 
-  // De-duplicate raw items by normalized title before sending to AI
-  const seen = new Set<string>();
-  const dedupedItems = rawItems.filter(item => {
-    const key = item.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  if (ai && dedupedItems.length > 0) {
+  if (ai) {
     try {
-      const prompt = `You are a professional news editor for a Nigerian Unity Schools alumni community portal. Your readers are alumni of Federal Government Colleges (FGC, FGGC, FSTC) and members of USOSA.
+      const prompt = `You are the Chief News Editor for USOSA (Unity Schools Old Students Association) and Federal Unity Colleges alumni worldwide, covering news across ALL COUNTRIES (Nigeria, UK, USA, Canada, Europe, global diaspora chapters).
 
-Here are today's raw news items:
-${JSON.stringify(dedupedItems.slice(0, 12), null, 2)}
+Here are ${topClusters.length} distinct news topic clusters (each cluster aggregates reporting from one or more news channels):
+${JSON.stringify(topClusters.map((c, i) => ({
+  index: i,
+  suggestedTitle: c.representativeTitle,
+  outlets: Array.from(c.sourcesMap.values()).map(s => s.sourceName),
+  context: c.rawSnippet,
+  publishedAt: c.publishedAt,
+  schoolTag: c.schoolTag,
+})), null, 2)}
 
-Instructions:
-- Pick the top 6 most relevant stories. Do NOT repeat the same story twice even if reported by different outlets.
-- For each story, write a clean headline and a comprehensive, well-articulated, professionally executed narrative story summary of 10 to 15 lines (around 120-180 words, formatted across 2 to 3 fluid paragraphs).
-- STRICT RULE: This must be a pure, readable story summary, NOT an analysis. DO NOT use corporate headings or analytical section headers like "Executive Summary:", "Key Stakeholders:", "Strategic Implications:", or bullet points.
-- Write in fluent, articulate journalistic prose detailing what happened, who was involved, the facts, quotes or context, and how it impacts Federal Unity Colleges / USOSA stakeholders.
-- DO NOT fabricate facts, dates, or quotes.
-- Keep the original source name, URL, and publishedAt date from the input.
-- Order from newest to oldest.
+CRITICAL EDITORIAL RULES:
+1. COMBINE SIMILAR STORIES: Each topic cluster must be represented by exactly ONE major, overarching headline. NEVER output repetitive or duplicate headlines about the same news event (e.g. admission lists, PTA teacher absorption, alumni protests, speech days).
+2. For each cluster, write an authoritative, clean, human headline WITHOUT any publisher names or trailing tags (e.g. write "FG Releases 2026/2027 Admission List for Federal Unity Colleges", DO NOT add "- Vanguard" or "- The Guardian").
+3. Write a comprehensive narrative story summary of 10 to 15 lines (about 120-180 words, formatted across 2 to 3 fluid paragraphs). Detail what happened, official reactions from the Federal Ministry of Education or USOSA, key context, and next steps.
+4. STRICT RULE: DO NOT use analytical section headers (DO NOT write "Executive Summary:", "Context:", "Strategic Implications:", or bullet points). Write pure, readable journalistic prose.
+5. Order items strictly from newest to oldest.
 
 Return ONLY valid JSON (no markdown fences):
 {
   "headlines": [
     {
-      "title": "Clean headline",
-      "summary": "Cohesive 10 to 15 line narrative story summary in 2-3 readable paragraphs without analytical headers.",
-      "source": "Source Name",
-      "url": "https://link",
-      "publishedAt": "Date"
+      "index": 0,
+      "title": "Clean Authoritative Major Headline",
+      "summary": "10-15 line narrative story summary in 2-3 fluid paragraphs without analytical headers."
     }
   ]
 }`;
@@ -2873,56 +3224,70 @@ Return ONLY valid JSON (no markdown fences):
         config: { temperature: 0.15 },
       });
 
-      let rawText = (response.text || '').replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const rawText = (response.text || '').replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(rawText);
+
       if (Array.isArray(parsed.headlines) && parsed.headlines.length > 0) {
-        // Final de-dup pass on AI output
-        const outputSeen = new Set<string>();
-        const cleaned = parsed.headlines.filter((h: any) => {
-          const k = (h.title || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
-          if (outputSeen.has(k)) return false;
-          outputSeen.add(k);
-          return true;
+        const resultMap = new Map<number, { title: string; summary: string }>();
+        for (const item of parsed.headlines) {
+          if (typeof item.index === "number" && item.title && item.summary) {
+            resultMap.set(item.index, {
+              title: stripPublisherNames(cleanNewsHtmlAndJunk(cleanText(item.title))),
+              summary: cleanNewsHtmlAndJunk(cleanText(item.summary)),
+            });
+          }
+        }
+
+        return topClusters.map((cluster, idx) => {
+          const aiItem = resultMap.get(idx);
+          const finalTitle = aiItem?.title || cluster.representativeTitle;
+          const sourcesList = Array.from(cluster.sourcesMap.values());
+
+          let displaySource = cluster.leadSource;
+          if (sourcesList.length === 2) {
+            displaySource = `${sourcesList[0].sourceName} & ${sourcesList[1].sourceName}`;
+          } else if (sourcesList.length > 2) {
+            displaySource = `${sourcesList[0].sourceName}, ${sourcesList[1].sourceName} & ${sourcesList.length - 2} other outlets`;
+          }
+
+          const summary = aiItem?.summary || buildComprehensiveSummary(finalTitle, cluster.rawSnippet, cluster.schoolTag);
+
+          return {
+            title: finalTitle,
+            summary,
+            source: displaySource,
+            url: cluster.leadUrl,
+            publishedAt: cluster.publishedAt,
+            schoolTag: cluster.schoolTag,
+            otherSources: sourcesList,
+          };
         });
-        return cleaned.slice(0, 6).map((h: any) => ({
-          title: cleanNewsHtmlAndJunk(cleanText(h.title)),
-          summary: cleanNewsHtmlAndJunk(cleanText(h.summary)),
-          source: cleanNewsHtmlAndJunk(cleanText(h.source)),
-          url: (h.url || "").trim(),
-          publishedAt: cleanNewsHtmlAndJunk(cleanText(h.publishedAt || "Recent")),
-        }));
       }
     } catch (e) {
-      serverLogger.warn("AI Chief Editor processing warning", { error: (e as Error).message });
+      serverLogger.warn("AI Chief Editor processing warning, using clustered fallback", { error: (e as Error).message });
     }
   }
 
-  // Fallback: Clean raw items into simple summaries without AI
-  const fallbackSeen = new Set<string>();
-  return dedupedItems.slice(0, 6).filter(item => {
-    const key = item.title.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 60);
-    if (fallbackSeen.has(key)) return false;
-    fallbackSeen.add(key);
-    return true;
-  }).map(item => {
-    const title = cleanNewsHtmlAndJunk(cleanText(item.title));
-    let snippet = cleanNewsHtmlAndJunk(item.snippet || "");
-    // Remove the title if the snippet starts with it
-    if (snippet.toLowerCase().startsWith(title.toLowerCase())) {
-      snippet = snippet.slice(title.length).trim();
+  // Clustered Fallback: Combines similar headlines, produces multi-outlet attribution & 3-paragraph summary
+  return topClusters.map(cluster => {
+    const sourcesList = Array.from(cluster.sourcesMap.values());
+    let displaySource = cluster.leadSource;
+    if (sourcesList.length === 2) {
+      displaySource = `${sourcesList[0].sourceName} & ${sourcesList[1].sourceName}`;
+    } else if (sourcesList.length > 2) {
+      displaySource = `${sourcesList[0].sourceName}, ${sourcesList[1].sourceName} & ${sourcesList.length - 2} other outlets`;
     }
-    snippet = cleanNewsHtmlAndJunk(snippet);
 
-    const summary = snippet.length > 30
-      ? snippet
-      : `${title}. Read the full story from ${item.source || 'the source'} via the link below.`;
+    const summary = buildComprehensiveSummary(cluster.representativeTitle, cluster.rawSnippet, cluster.schoolTag);
 
     return {
-      title,
-      summary: cleanNewsHtmlAndJunk(cleanText(summary)),
-      source: cleanNewsHtmlAndJunk(cleanText(item.source)),
-      url: (item.url || "").trim(),
-      publishedAt: cleanNewsHtmlAndJunk(cleanText(item.pubDate || "Recent")),
+      title: cluster.representativeTitle,
+      summary,
+      source: displaySource,
+      url: cluster.leadUrl,
+      publishedAt: cluster.publishedAt,
+      schoolTag: cluster.schoolTag,
+      otherSources: sourcesList,
     };
   });
 }
@@ -3243,6 +3608,16 @@ app.get("/api/cron/birthdays/today", requireCronSecret, async (req: Request, res
     res.json({ success: true, count: celebrants.length, date: todayDate.toISOString() });
   } catch (err: any) {
     serverLogger.error("[Cron] D-Day alert failed", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/cron/events/purge-expired", requireCronSecret, async (req: Request, res: Response) => {
+  try {
+    const result = await purgeExpiredEvents();
+    res.json({ success: true, deletedCount: result.deletedCount });
+  } catch (err: any) {
+    serverLogger.error("[Cron] Event purge failed", err);
     res.status(500).json({ error: err.message });
   }
 });

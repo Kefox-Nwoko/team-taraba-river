@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { logger } from "./lib/logger";
 import { Member, GroupEvent, PhotoApprovalRequest } from "./types";
 import { AppStateManager } from "./services/storage";
-import { fetchMembers, fetchEvents, fetchApprovals, fetchVisitMetrics, deleteMember } from "./services/apiClient";
+import { fetchMembers, fetchEvents, fetchApprovals, fetchVisitMetrics, deleteMember, fetchUsosaNews } from "./services/apiClient";
 import { formatMemberDirectoryName } from "./utils/nameUtils";
 import { FirebaseSyncManager, FirebaseService, triggerGoogleAdminSignIn } from "./services/firebaseService";
 import { EngagementTracker } from "./services/EngagementTracker";
@@ -191,6 +191,11 @@ export default function App() {
     };
   }, [currentUser?.id]);
 
+  // Prefetch USOSA headlines on app startup so the news card is instantly warm
+  useEffect(() => {
+    fetchUsosaNews().catch(() => {});
+  }, []);
+
   // Modals state
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
   const [memberToEdit, setMemberToEdit] = useState<Member | null>(null);
@@ -297,7 +302,14 @@ export default function App() {
         const eMap = new Map<string, GroupEvent>();
         for (const ev of localE) { if (ev?.id) eMap.set(ev.id, ev); }
         for (const ev of fetchedE) { if (ev?.id) eMap.set(ev.id, ev); }
-        const cleanEvents = Array.from(eMap.values()).filter((ev) => !ev.id.startsWith("evt_arch_"));
+        const cleanEvents = Array.from(eMap.values()).filter(
+          (ev) =>
+            !ev.id.startsWith("evt_arch_") &&
+            !ev.id.startsWith("gdrive_root_") &&
+            ev.id !== "evt_taraba_gdrive" &&
+            ev.title !== "Team Taraba Official Photo Album" &&
+            !ev.id.startsWith("folder_")
+        );
         setEvents(cleanEvents);
         AppStateManager.saveEvents(cleanEvents);
       } catch (err) {
@@ -324,7 +336,14 @@ export default function App() {
         const eMap = new Map<string, GroupEvent>();
         for (const ev of localE) { if (ev?.id) eMap.set(ev.id, ev); }
         for (const ev of updatedEvents) { if (ev?.id) eMap.set(ev.id, ev); }
-        const cleanEvents = Array.from(eMap.values()).filter((ev) => !ev.id.startsWith("evt_arch_"));
+        const cleanEvents = Array.from(eMap.values()).filter(
+          (ev) =>
+            !ev.id.startsWith("evt_arch_") &&
+            !ev.id.startsWith("gdrive_root_") &&
+            ev.id !== "evt_taraba_gdrive" &&
+            ev.title !== "Team Taraba Official Photo Album" &&
+            !ev.id.startsWith("folder_")
+        );
         setEvents(cleanEvents);
         AppStateManager.saveEvents(cleanEvents);
       }
@@ -379,7 +398,7 @@ export default function App() {
       const cleanEvents = Array.from(eMap.values()).filter((ev) => {
         if (!ev?.id || seen.has(ev.id)) return false;
         seen.add(ev.id);
-        return !ev.id.startsWith("evt_arch_");
+        return !ev.id.startsWith("evt_arch_") && !ev.id.startsWith("folder_");
       });
       setEvents(cleanEvents);
       AppStateManager.saveEvents(cleanEvents);
@@ -421,7 +440,7 @@ export default function App() {
       const cleanEvents = Array.from(eMap.values()).filter((ev) => {
         if (!ev?.id || seen.has(ev.id)) return false;
         seen.add(ev.id);
-        return !ev.id.startsWith("evt_arch_");
+        return !ev.id.startsWith("evt_arch_") && !ev.id.startsWith("folder_");
       });
       setEvents(cleanEvents);
       AppStateManager.saveEvents(cleanEvents);
