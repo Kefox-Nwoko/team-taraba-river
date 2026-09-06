@@ -148,7 +148,8 @@ const VideoHoverCard: React.FC<{
   className?: string;
   aspectClass?: string;
   showPlayBadge?: boolean;
-}> = ({ videoUrl, title, className = "w-full h-full object-cover", aspectClass = "w-full h-full", showPlayBadge = true }) => {
+  forcePlay?: boolean;
+}> = ({ videoUrl, title, className = "w-full h-full object-cover", aspectClass = "w-full h-full", showPlayBadge = true, forcePlay }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -156,15 +157,14 @@ const VideoHoverCard: React.FC<{
   const isYt = videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be");
   const ytThumb = isYt ? getYouTubeThumbnail(videoUrl) : null;
 
-  // Append #t=0.5 to direct video URLs so browsers extract and render the first frame as the poster/image
   const videoSrc = videoUrl.includes("#t=") ? videoUrl : `${videoUrl}#t=0.5`;
 
-  const handleMouseEnter = () => {
+  const playVideo = () => {
     if (isYt || hasError || !videoRef.current) return;
     videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
   };
 
-  const handleMouseLeave = () => {
+  const pauseVideo = () => {
     if (isYt || hasError || !videoRef.current) return;
     videoRef.current.pause();
     try {
@@ -173,15 +173,30 @@ const VideoHoverCard: React.FC<{
     setIsPlaying(false);
   };
 
+  const handleMouseEnter = () => {
+    playVideo();
+  };
+
+  const handleMouseLeave = () => {
+    pauseVideo();
+  };
+
   const handleTouchStart = () => {
-    if (isYt || hasError || !videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+    if (videoRef.current?.paused) {
+      playVideo();
     } else {
-      videoRef.current.pause();
-      setIsPlaying(false);
+      pauseVideo();
     }
   };
+
+  useEffect(() => {
+    if (forcePlay === undefined) return;
+    if (forcePlay) {
+      playVideo();
+    } else {
+      pauseVideo();
+    }
+  }, [forcePlay]);
 
   if (isYt && ytThumb) {
     return (
@@ -245,7 +260,8 @@ const MediaPreviewItem: React.FC<{
   alt: string;
   className?: string;
   loading?: "lazy" | "eager";
-}> = ({ item, alt, className = "w-full h-full object-cover", loading = "lazy" }) => {
+  forcePlay?: boolean;
+}> = ({ item, alt, className = "w-full h-full object-cover", loading = "lazy", forcePlay }) => {
   if (item.isVideo && item.videoUrl && !item.videoUrl.includes("youtube.com") && !item.videoUrl.includes("youtu.be")) {
     return (
       <VideoHoverCard
@@ -254,6 +270,7 @@ const MediaPreviewItem: React.FC<{
         className={className}
         aspectClass="w-full h-full"
         showPlayBadge={true}
+        forcePlay={forcePlay}
       />
     );
   }
@@ -270,9 +287,7 @@ const MediaPreviewItem: React.FC<{
       />
       {item.isVideo && (
         <div className="absolute inset-0 bg-black/30 flex items-center justify-center pointer-events-none">
-          <div className="w-5 h-5 rounded-full bg-black/60 text-white opacity-60 flex items-center justify-center shadow-md">
-            <Play className="w-2.5 h-2.5 fill-current ml-0.5" />
-          </div>
+          <Play className="w-6 h-6 text-white fill-current" />
         </div>
       )}
     </div>
@@ -285,12 +300,14 @@ const FolderCollagePreview: React.FC<{
   youtubeVideoUrls?: string[];
   eventTitle: string;
   heightClass?: string;
+  forcePlay?: boolean;
 }> = ({
   images,
   youtubeVideoUrl,
   youtubeVideoUrls,
   eventTitle,
   heightClass = "h-full w-full aspect-square",
+  forcePlay,
 }) => {
   const allYtUrls = Array.from<string>(
     new Set(
@@ -332,7 +349,7 @@ const FolderCollagePreview: React.FC<{
   if (previewItems.length === 1) {
     return (
       <div className={`w-full ${heightClass} rounded-xl overflow-hidden bg-slate-900 relative`}>
-        <MediaPreviewItem item={previewItems[0]} alt={`${eventTitle} preview 1`} />
+        <MediaPreviewItem item={previewItems[0]} alt={`${eventTitle} preview 1`} forcePlay={forcePlay} />
       </div>
     );
   }
@@ -342,7 +359,7 @@ const FolderCollagePreview: React.FC<{
     return (
       <div className={`w-full ${heightClass} rounded-xl overflow-hidden grid grid-cols-2 gap-0.5 bg-slate-900 relative`}>
         {previewItems.map((item, i) => (
-          <MediaPreviewItem key={i} item={item} alt={`${eventTitle} preview ${i + 1}`} />
+          <MediaPreviewItem key={i} item={item} alt={`${eventTitle} preview ${i + 1}`} forcePlay={forcePlay} />
         ))}
       </div>
     );
@@ -353,13 +370,13 @@ const FolderCollagePreview: React.FC<{
     return (
       <div className={`w-full ${heightClass} rounded-xl overflow-hidden grid grid-cols-2 grid-rows-2 gap-0.5 bg-slate-900 relative`}>
         <div className="relative w-full h-full overflow-hidden col-start-1 row-start-1">
-          <MediaPreviewItem item={previewItems[0]} alt={`${eventTitle} preview 1`} />
+          <MediaPreviewItem item={previewItems[0]} alt={`${eventTitle} preview 1`} forcePlay={forcePlay} />
         </div>
         <div className="relative w-full h-full overflow-hidden col-start-2 row-start-1 row-span-2">
-          <MediaPreviewItem item={previewItems[1]} alt={`${eventTitle} preview 2`} />
+          <MediaPreviewItem item={previewItems[1]} alt={`${eventTitle} preview 2`} forcePlay={forcePlay} />
         </div>
         <div className="relative w-full h-full overflow-hidden col-start-1 row-start-2">
-          <MediaPreviewItem item={previewItems[2]} alt={`${eventTitle} preview 3`} />
+          <MediaPreviewItem item={previewItems[2]} alt={`${eventTitle} preview 3`} forcePlay={forcePlay} />
         </div>
       </div>
     );
@@ -369,7 +386,7 @@ const FolderCollagePreview: React.FC<{
   return (
     <div className={`w-full ${heightClass} rounded-xl overflow-hidden grid grid-cols-2 grid-rows-2 gap-0.5 bg-slate-905 relative`}>
       {previewItems.map((item, i) => (
-        <MediaPreviewItem key={i} item={item} alt={`${eventTitle} preview ${i + 1}`} />
+        <MediaPreviewItem key={i} item={item} alt={`${eventTitle} preview ${i + 1}`} forcePlay={forcePlay} />
       ))}
     </div>
   );
@@ -386,6 +403,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
   syncErrorMessage = null,
 }) => {
   const { notify } = useToast();
+  const [hoveredFolderId, setHoveredFolderId] = useState<string | null>(null);
   const mappedEvents = useMemo(() => {
     return (events || []).map((event) => {
       if (!event) return event;
@@ -1196,6 +1214,10 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                   <div
                     key={folder.id}
                     onClick={() => setSelectedFolder(folder)}
+                    onMouseEnter={() => setHoveredFolderId(folder.id)}
+                    onMouseLeave={() => setHoveredFolderId(null)}
+                    onTouchStart={() => setHoveredFolderId(folder.id)}
+                    onTouchEnd={() => setHoveredFolderId(null)}
                     className="group relative bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 shadow-sm hover:shadow-md transition cursor-pointer flex flex-col justify-between space-y-4"
                   >
                     <div className="space-y-3">
@@ -1206,6 +1228,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                           youtubeVideoUrls={folder.youtubeVideoUrls}
                           eventTitle={folder.title}
                           heightClass="h-full w-full"
+                          forcePlay={hoveredFolderId === folder.id}
                         />
                       </div>
                       <div className="flex items-start justify-between gap-3 pt-0.5">
@@ -1243,6 +1266,10 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                   <div
                     key={folder.id}
                     onClick={() => setSelectedFolder(folder)}
+                    onMouseEnter={() => setHoveredFolderId(folder.id)}
+                    onMouseLeave={() => setHoveredFolderId(null)}
+                    onTouchStart={() => setHoveredFolderId(folder.id)}
+                    onTouchEnd={() => setHoveredFolderId(null)}
                     className="p-4 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl flex items-center justify-between hover:border-cyan-500 transition cursor-pointer"
                   >
                     <div className="flex items-center gap-4 min-w-0">
@@ -1253,6 +1280,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                           youtubeVideoUrls={folder.youtubeVideoUrls}
                           eventTitle={folder.title}
                           heightClass="w-full h-full"
+                          forcePlay={hoveredFolderId === folder.id}
                         />
                       </div>
                       <div className="min-w-0">
@@ -1645,7 +1673,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                 <div className="w-full h-full aspect-video rounded-3xl overflow-hidden shadow-2xl border border-slate-800 bg-black flex items-center justify-center">
                   {galleryItems[lightboxIndex].videoUrl && (galleryItems[lightboxIndex].videoUrl.includes("youtube.com") || galleryItems[lightboxIndex].videoUrl.includes("youtu.be")) ? (
                     <iframe
-                      src={`https://www.youtube.com/embed/${extractYouTubeId(galleryItems[lightboxIndex].videoUrl)}?autoplay=1`}
+                      src={`https://www.youtube.com/embed/${extractYouTubeId(galleryItems[lightboxIndex].videoUrl)}?autoplay=1&vq=small&iv_load_policy=3&rel=0`}
                       title={galleryItems[lightboxIndex].title}
                       className="w-full h-full border-0"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -1657,6 +1685,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                       controls
                       autoPlay
                       playsInline
+                      preload="metadata"
+                      poster={galleryItems[lightboxIndex].url}
                       className="w-full h-full object-contain"
                     />
                   )}

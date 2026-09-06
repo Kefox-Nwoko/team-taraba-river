@@ -42,6 +42,14 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
+// Global process safety handlers to prevent unhandled background API errors from terminating server
+process.on('unhandledRejection', (reason) => {
+  serverLogger.warn('[Server] Handled asynchronous rejection:', { reason: String(reason) });
+});
+process.on('uncaughtException', (err) => {
+  serverLogger.error('[Server] Handled uncaught exception:', { error: err.message });
+});
+
 // Adaptive body-size limits — 50MB for media upload routes, 2MB for everything else
 const MEDIA_UPLOAD_PATHS = ['/api/media/upload', '/api/media/finalize', '/api/media/upload-video-to-youtube'];
 const smallJsonParser = express.json({ limit: '2mb' });
