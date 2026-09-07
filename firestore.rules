@@ -18,71 +18,95 @@ service cloud.firestore {
       );
     }
 
-
-    // Helper: Check if the requesting user owns this document
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    // Helper: Blocks privilege escalation via direct writes to the `role` field.
+    // A non-admin may create/update their own member record, but may not grant
+    // themselves (or anyone else) the "admin" role — only an admin can do that.
+    // Map.get(key, default) is used (rather than dot access) because Firestore
+    // rules throw when a map key is absent, and `role` isn't guaranteed present.
+    function roleUnchangedOnUpdate() {
+      return request.resource.data.get('role', null) == resource.data.get('role', null);
     }
 
-    // Members collection — allow read for directory & credential matching; allow updates and admin deletions
+    // Members collection — directory is public (login/credential matching depends on
+    // reading it), and self-registration stays open. Deletion and role changes require
+    // admin; this does not fully close the client-side auth gap (see audit notes) but
+    // stops anonymous mass-deletion and privilege escalation via direct Firestore writes.
     match /members/{memberId} {
       allow read: if true;
-      allow create: if true;
-      allow update, delete: if true;
+      allow create: if isAdmin() || request.resource.data.get('role', 'member') != 'admin';
+      allow update: if isAdmin() || roleUnchangedOnUpdate();
+      allow delete: if isAdmin();
     }
 
-    // Recycle bin / deleted members collection
+    // Recycle bin / deleted members collection — admin-only (restore/purge is an admin feature)
     match /deleted_members/{entryId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
-    // Events collection — community events are visible and manageable
+    // Events collection — community events are publicly visible; creation/RSVP-style
+    // updates stay open to match current self-service UX, but deletion requires admin.
     match /events/{eventId} {
       allow read: if true;
-      allow create, update, delete: if true;
+      allow create, update: if true;
+      allow delete: if isAdmin();
     }
 
-    // Photo approval requests — public submission and management
+    // Photo approval requests — anyone can submit a request and read the queue
+    // (needed to show submitters their own status), but only admins can decide/delete.
     match /photoRequests/{requestId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isAdmin();
     }
 
-    // Activity logs — community feed
+    // Activity logs — public community feed; only admins may edit or clear history.
     match /activityLogs/{logId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isAdmin();
     }
 
-    // System config & metrics
-    match /system/{metricId} {
-      allow read, write: if true;
+    // System metrics — the visit counter is a low-sensitivity public stat, so it stays
+    // writable by any visitor (it's just a number, no PII). Everything else under
+    // /system (e.g. email_config, which stores a live Resend API key) is admin-only.
+    match /system/metrics {
+      allow read: if true;
+      allow write: if true;
+    }
+    match /system/{docId} {
+      allow read, write: if isAdmin();
     }
 
+    // System config & app settings — admin-only; not public data.
     match /systemConfig/{configId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
-    // Settings (email config etc)
     match /settings/{settingId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
-    // Mail queue & notification logs
+    // Mail queue & notification logs — contain recipient PII and are backend-triggered
+    // only; no legitimate client-side caller needs direct access.
     match /mail/{mailId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
     match /notification_logs/{logId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
-    // Knowledge base articles
+    // Knowledge base articles — public help content; only admins may edit.
     match /knowledgeBase/{articleId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
-    // Media items
+    // Media items — public gallery catalog (currently unused by the client directly);
+    // reserved for admin/backend-managed writes.
     match /mediaItems/{mediaId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // Deny all other documents by default
@@ -91,4 +115,3 @@ service cloud.firestore {
     }
   }
 }
-
