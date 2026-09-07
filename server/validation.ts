@@ -140,6 +140,29 @@ export const MediaStatusSchema = z.object({
   mediaId: z.string().min(1, 'mediaId is required'),
 });
 
+// --- Direct-to-Google Resumable Upload Bridge Schemas ---
+// These back the endpoints that open a resumable upload session with Google
+// using server-held credentials, then hand the client only the resulting
+// short-lived, single-use session URL (never the client secret / refresh token).
+
+export const DriveUploadInitSchema = z.object({
+  fileName: z.string().min(1, 'fileName is required').max(300),
+  mimeType: z.string().min(1, 'mimeType is required').max(200),
+  size: z.number().int().positive().optional(),
+  folderName: z.string().max(300).optional(),
+});
+
+export const YouTubeUploadInitSchema = z.object({
+  fileName: z.string().min(1, 'fileName is required').max(300),
+  mimeType: z.string().max(200).optional(),
+  size: z.number().int().positive().optional(),
+  folderName: z.string().max(300).optional(),
+});
+
+export const DriveMakePublicSchema = z.object({
+  fileId: z.string().min(1, 'fileId is required'),
+});
+
 /**
  * Helper to validate request body against a schema.
  * Returns the parsed data or a formatted error string.

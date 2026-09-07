@@ -4,167 +4,67 @@
  * Streams photo and image files directly from the user's browser to the
  * Team Taraba River dedicated Google Drive folder using Google's Resumable Upload protocol.
  *
- * Credentials and Target Folder ID are injected at build time via Vite's import.meta.env.VITE_* mechanism.
+ * The Drive OAuth client secret and refresh token live on the server only —
+ * this module asks the backend to open the resumable upload session (server
+ * holds the credentials) and then streams bytes to the single-use session
+ * URL Google hands back. The browser never sees the Drive credentials.
  */
 import { logger } from "../lib/logger";
+import { auth } from "../lib/firebase";
 
-// Vite statically replaces these at build time with values from .env
-// Credentials MUST come from .env (gitignored). Never hardcode secrets in source.
-const DRIVE_CLIENT_ID =
-  import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID ||
-  import.meta.env.VITE_YOUTUBE_CLIENT_ID ||
-  "";
-const DRIVE_CLIENT_SECRET =
-  import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_SECRET ||
-  import.meta.env.VITE_YOUTUBE_CLIENT_SECRET ||
-  "";
-const DRIVE_REFRESH_TOKEN =
-  import.meta.env.VITE_GOOGLE_DRIVE_REFRESH_TOKEN ||
-  import.meta.env.VITE_YOUTUBE_REFRESH_TOKEN ||
-  "";
-const DRIVE_ROOT_FOLDER_ID =
-  import.meta.env.VITE_GOOGLE_DRIVE_FOLDER_ID ||
-  "19UcHi6ItJBeOAENfsOCM69K05NHc_13D";
-
-let cachedAccessToken: string | null = null;
-let tokenExpiryTime = 0;
-const subfolderCache = new Map<string, string>();
-
-/**
- * Refreshes the Google OAuth2 access token using the permanent refresh token.
- * Caches the token and reuses it until 60 seconds before expiry.
- */
-async function getDriveAccessToken(): Promise<string> {
-  if (cachedAccessToken && Date.now() < tokenExpiryTime - 60_000) {
-    return cachedAccessToken;
-  }
-
-  if (!DRIVE_CLIENT_ID || !DRIVE_CLIENT_SECRET || !DRIVE_REFRESH_TOKEN) {
-    throw new Error(
-      "Google Drive upload credentials are not configured. " +
-      `Client ID: ${DRIVE_CLIENT_ID ? "OK" : "MISSING"}, ` +
-      `Client Secret: ${DRIVE_CLIENT_SECRET ? "OK" : "MISSING"}, ` +
-      `Refresh Token: ${DRIVE_REFRESH_TOKEN ? "OK" : "MISSING"}`
-    );
-  }
-
-  const body = new URLSearchParams({
-    client_id: DRIVE_CLIENT_ID,
-    client_secret: DRIVE_CLIENT_SECRET,
-    refresh_token: DRIVE_REFRESH_TOKEN,
-    grant_type: "refresh_token",
-  });
-
-  let res: Response;
+function apiUrl(path: string): string {
   try {
-    res = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
-  } catch (networkErr: any) {
-    throw new Error(`Network error refreshing Google Drive token: ${networkErr?.message || networkErr}`);
-  }
+    const meta = (window as any).__API_BASE_URL__;
+    if (meta) return `${String(meta).replace(/\/$/, "")}${path}`;
+  } catch {}
+  const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+  return base ? `${base}${path}` : path;
+}
 
-  let data: any;
+async function getAuthHeaders(): Promise<HeadersInit> {
+  const user = auth.currentUser;
+  if (!user) return { "Content-Type": "application/json" };
   try {
-    data = await res.json();
+    const token = await user.getIdToken();
+    return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
   } catch {
-    throw new Error(`Google token endpoint returned non-JSON (status ${res.status})`);
+    return { "Content-Type": "application/json" };
   }
-
-  if (!res.ok || !data.access_token) {
-    throw new Error(
-      `Google Drive token refresh failed (${res.status}): ${data.error_description || data.error || JSON.stringify(data)}`
-    );
-  }
-
-  cachedAccessToken = data.access_token;
-  tokenExpiryTime = Date.now() + (data.expires_in || 3600) * 1000;
-  logger.info("[Drive] Access token refreshed OK");
-  return data.access_token;
 }
 
 /**
- * Finds or creates an event subfolder under the root Google Drive folder.
+ * Asks the backend to open a Google Drive resumable upload session and
+ * returns the single-use session URL to stream bytes to directly.
  */
-async function getOrCreateEventSubfolder(
-  folderName: string,
-  accessToken: string
+async function initDriveUploadSession(
+  fileName: string,
+  mimeType: string,
+  size: number,
+  folderName: string
 ): Promise<string> {
-  const rootId = DRIVE_ROOT_FOLDER_ID;
-  if (!folderName || !rootId) return rootId;
-
-  const cacheKey = `${rootId}::${folderName}`;
-  if (subfolderCache.has(cacheKey)) {
-    return subfolderCache.get(cacheKey)!;
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/media/drive/init-upload"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ fileName, mimeType, size, folderName }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.uploadUrl) {
+    throw new Error(data.error || `Failed to initiate Google Drive upload session (${res.status}).`);
   }
-
-  try {
-    // 1. Check if folder already exists
-    const query = `'${rootId}' in parents and name = '${folderName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-    const searchRes = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      }
-    );
-
-    if (searchRes.ok) {
-      const searchData = await searchRes.json();
-      if (searchData.files && searchData.files.length > 0) {
-        const foundId = searchData.files[0].id;
-        subfolderCache.set(cacheKey, foundId);
-        return foundId;
-      }
-    }
-
-    // 2. Create subfolder under root
-    const createRes = await fetch("https://www.googleapis.com/drive/v3/files?fields=id", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json; charset=UTF-8",
-      },
-      body: JSON.stringify({
-        name: folderName,
-        mimeType: "application/vnd.google-apps.folder",
-        parents: [rootId],
-      }),
-    });
-
-    if (createRes.ok) {
-      const createData = await createRes.json();
-      if (createData.id) {
-        // Make folder public readable
-        makeFilePublicReadable(createData.id, accessToken).catch(() => {});
-        subfolderCache.set(cacheKey, createData.id);
-        logger.info(`[Drive] Created new subfolder "${folderName}" (${createData.id})`);
-        return createData.id;
-      }
-    }
-  } catch (err) {
-    logger.warn(`[Drive] Subfolder creation fallback to root for "${folderName}":`, err);
-  }
-
-  return rootId;
+  return data.uploadUrl;
 }
 
 /**
- * Grants public read permissions to a Google Drive file or folder so it can be viewed by all users.
+ * Asks the backend to grant public read permissions to an uploaded Drive file.
  */
-async function makeFilePublicReadable(fileId: string, accessToken: string): Promise<void> {
+async function makeFilePublicReadable(fileId: string): Promise<void> {
   try {
-    await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+    const headers = await getAuthHeaders();
+    await fetch(apiUrl("/api/media/drive/make-public"), {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json; charset=UTF-8",
-      },
-      body: JSON.stringify({
-        role: "reader",
-        type: "anyone",
-      }),
+      headers,
+      body: JSON.stringify({ fileId }),
     });
   } catch (err) {
     logger.warn(`[Drive] Could not set public permission on ${fileId}:`, err);
@@ -175,12 +75,10 @@ async function makeFilePublicReadable(fileId: string, accessToken: string): Prom
  * Uploads an image file or blob directly from the client browser to Google Drive.
  *
  * Flow:
- *   1. Refresh Google OAuth access token
- *   2. Resolve or create event subfolder in Drive
- *   3. Initiate Google Drive Resumable Upload session
- *   4. Stream bytes with real-time XHR progress tracking
- *   5. Set public read permissions on uploaded image
- *   6. Return direct CDN image URL (`https://lh3.googleusercontent.com/d/${fileId}`)
+ *   1. Ask the backend to open a Drive resumable upload session (server holds the credentials)
+ *   2. Stream bytes with real-time XHR progress tracking directly to that session URL
+ *   3. Ask the backend to set public read permissions on the uploaded image
+ *   4. Return direct CDN image URL (`https://lh3.googleusercontent.com/d/${fileId}`)
  */
 export async function uploadImageDirectToDrive(
   fileOrBlob: File | Blob,
@@ -195,76 +93,29 @@ export async function uploadImageDirectToDrive(
     throw err;
   }
 
-  // Step 1: Get Access Token
-  const accessToken = await getDriveAccessToken();
-
-  if (signal?.aborted) {
-    const err = new Error("Google Drive upload was aborted by user.");
-    err.name = "AbortError";
-    throw err;
-  }
-
-  // Step 2: Resolve target Google Drive folder
-  const targetFolderId = await getOrCreateEventSubfolder(folderName, accessToken);
-
-  if (signal?.aborted) {
-    const err = new Error("Google Drive upload was aborted by user.");
-    err.name = "AbortError";
-    throw err;
-  }
-
-  // Step 3: Initialize Google Drive Resumable Upload Session
   const cleanName = (fileName || `image_${Date.now()}.webp`).replace(/[^a-zA-Z0-9._-]/g, "_");
   const mimeType = fileOrBlob.type || "image/webp";
 
-  const metadata = {
-    name: cleanName,
-    mimeType,
-    ...(targetFolderId ? { parents: [targetFolderId] } : {}),
-  };
-
-  let initRes: Response;
+  // Step 1: Ask the backend to initiate the Drive resumable upload session
+  let uploadUrl: string;
   try {
-    initRes = await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink,webContentLink",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json; charset=UTF-8",
-          "X-Upload-Content-Length": String(fileOrBlob.size),
-          "X-Upload-Content-Type": mimeType,
-        },
-        body: JSON.stringify(metadata),
-        signal,
-      }
-    );
-  } catch (networkErr: any) {
-    if (signal?.aborted || networkErr?.name === "AbortError") {
+    uploadUrl = await initDriveUploadSession(cleanName, mimeType, fileOrBlob.size, folderName);
+  } catch (initErr: any) {
+    if (signal?.aborted) {
       const err = new Error("Google Drive upload was aborted by user.");
       err.name = "AbortError";
       throw err;
     }
-    throw new Error(`Network error initiating Google Drive upload session: ${networkErr?.message || networkErr}`);
+    throw initErr;
   }
 
-  if (!initRes.ok) {
-    let errBody = "";
-    try { errBody = await initRes.text(); } catch {}
-    let detail = errBody;
-    try {
-      const parsed = JSON.parse(errBody);
-      detail = parsed?.error?.message || parsed?.error?.errors?.[0]?.message || errBody;
-    } catch {}
-    throw new Error(`Google Drive upload init failed (${initRes.status}): ${detail}`);
+  if (signal?.aborted) {
+    const err = new Error("Google Drive upload was aborted by user.");
+    err.name = "AbortError";
+    throw err;
   }
 
-  const uploadUrl = initRes.headers.get("location") || initRes.headers.get("Location");
-  if (!uploadUrl) {
-    throw new Error("Google Drive upload session URL missing in Location header.");
-  }
-
-  // Step 4: PUT binary file data with XHR progress
+  // Step 2: PUT binary file data with XHR progress
   return new Promise<string>((resolve, reject) => {
     if (signal?.aborted) {
       const err = new Error("Google Drive upload was aborted by user.");
@@ -321,10 +172,10 @@ export async function uploadImageDirectToDrive(
             return;
           }
           const fileId = data.id;
-          // Step 5: Make image public readable so CDN image link works
-          await makeFilePublicReadable(fileId, accessToken);
+          // Step 3: Make image public readable so CDN image link works
+          await makeFilePublicReadable(fileId);
 
-          // Step 6: Direct Google UserContent CDN link
+          // Step 4: Direct Google UserContent CDN link
           const cdnUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
           logger.info(`[Drive] ✅ Image upload complete to Google Drive: ${cdnUrl}`);
           if (onProgress) onProgress(100);

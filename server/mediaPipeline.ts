@@ -535,3 +535,190 @@ export async function uploadVideoToYouTube(item: MediaItem): Promise<string> {
   return uploadVideoBufferToYouTube(buffer, item.fileName, item.folderName, item.mimeType);
 }
 
+// ===================================================================
+//  Direct-to-Google Resumable Upload Bridge
+//
+//  The client streams large photo/video bytes straight to Google (fast,
+//  low memory on our server, keeps XHR progress/resume working) but it
+//  must never hold the Drive/YouTube client secret or refresh token to do
+//  it. So the server opens the resumable upload session here — using
+//  credentials that never leave this process — and only returns the
+//  resulting session URL, which is single-use and expires on its own.
+// ===================================================================
+
+export async function initDriveUploadSession(req: Request, res: Response): Promise<void> {
+  try {
+    const { fileName, mimeType, size, folderName } = req.body || {};
+
+    const serviceAccountPath = await getServiceAccountPath();
+    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
+    const auth = new google.auth.JWT({
+      email: serviceAccount.client_email,
+      key: serviceAccount.private_key,
+      scopes: ['https://www.googleapis.com/auth/drive'],
+    });
+    const accessToken = (await auth.getAccessToken()).token;
+    if (!accessToken) throw new Error('Failed to obtain a Google Drive access token.');
+
+    const drive = google.drive({ version: 'v3', auth });
+    const rootFolderId = await getDriveRootFolderId();
+    let targetFolderId = rootFolderId;
+    if (rootFolderId && folderName) {
+      targetFolderId = await findOrCreateDriveFolder(drive, folderName, rootFolderId);
+    }
+
+    const cleanName = String(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const metadata: any = {
+      name: cleanName,
+      mimeType,
+      ...(targetFolderId ? { parents: [targetFolderId] } : {}),
+    };
+
+    const initRes = await fetch(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink,webContentLink',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+          ...(size ? { 'X-Upload-Content-Length': String(size) } : {}),
+          'X-Upload-Content-Type': mimeType,
+        },
+        body: JSON.stringify(metadata),
+      }
+    );
+
+    if (!initRes.ok) {
+      const errText = await initRes.text().catch(() => '');
+      throw new Error(`Drive upload session init failed (${initRes.status}): ${errText}`);
+    }
+
+    const uploadUrl = initRes.headers.get('location');
+    if (!uploadUrl) {
+      throw new Error('Google Drive did not return an upload session URL.');
+    }
+
+    res.json({ success: true, uploadUrl });
+  } catch (error: any) {
+    serverLogger.error('Drive init-upload error', error);
+    res.status(500).json({ error: error?.message || 'Failed to initiate Google Drive upload session.' });
+  }
+}
+
+export async function makeDriveFilePublic(req: Request, res: Response): Promise<void> {
+  try {
+    const { fileId } = req.body || {};
+
+    const serviceAccountPath = await getServiceAccountPath();
+    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
+    const auth = new google.auth.JWT({
+      email: serviceAccount.client_email,
+      key: serviceAccount.private_key,
+      scopes: ['https://www.googleapis.com/auth/drive'],
+    });
+    const drive = google.drive({ version: 'v3', auth });
+
+    await setFilePublicReadable(drive, fileId);
+    res.json({ success: true });
+  } catch (error: any) {
+    serverLogger.error('Drive make-public error', error);
+    res.status(500).json({ error: error?.message || 'Failed to set Google Drive file permissions.' });
+  }
+}
+
+function getYouTubeOAuthClient() {
+  if (!config.youtubeClientId || !config.youtubeClientSecret || !config.youtubeRefreshToken) {
+    throw new Error(
+      'YouTube upload credentials are not configured on the server. Set YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, and YOUTUBE_REFRESH_TOKEN.'
+    );
+  }
+  const oauth2Client = new google.auth.OAuth2(config.youtubeClientId, config.youtubeClientSecret, config.youtubeRedirectUri);
+  oauth2Client.setCredentials({ refresh_token: config.youtubeRefreshToken });
+  return oauth2Client;
+}
+
+export async function initYouTubeUploadSession(req: Request, res: Response): Promise<void> {
+  try {
+    const { fileName, mimeType, size, folderName } = req.body || {};
+
+    const oauth2Client = getYouTubeOAuthClient();
+    const { token: accessToken } = await oauth2Client.getAccessToken();
+    if (!accessToken) throw new Error('Failed to obtain a YouTube access token.');
+
+    const cleanTitle = String(fileName || `Team Taraba River Video ${new Date().toLocaleDateString()}`)
+      .replace(/\.[^/.]+$/, '')
+      .substring(0, 95);
+
+    const metadata = {
+      snippet: {
+        title: cleanTitle,
+        description: `Team Taraba River Community Event Media Archive (${folderName || 'General Event'})\nUploaded via Team Taraba River Portal.`,
+        tags: ['Team Taraba River', 'Community', 'URIP', 'USOSA', 'Event'],
+        categoryId: '22',
+      },
+      status: {
+        privacyStatus: 'unlisted',
+        selfDeclaredMadeForKids: false,
+      },
+    };
+
+    const initRes = await fetch(
+      'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json; charset=UTF-8',
+          ...(size ? { 'X-Upload-Content-Length': String(size) } : {}),
+          'X-Upload-Content-Type': mimeType || 'video/mp4',
+        },
+        body: JSON.stringify(metadata),
+      }
+    );
+
+    if (!initRes.ok) {
+      const errText = await initRes.text().catch(() => '');
+      throw new Error(`YouTube upload session init failed (${initRes.status}): ${errText}`);
+    }
+
+    const uploadUrl = initRes.headers.get('location');
+    if (!uploadUrl) {
+      throw new Error('YouTube did not return an upload session URL.');
+    }
+
+    res.json({ success: true, uploadUrl });
+  } catch (error: any) {
+    serverLogger.error('YouTube init-upload error', error);
+    res.status(500).json({ error: error?.message || 'Failed to initiate YouTube upload session.' });
+  }
+}
+
+export async function deleteYouTubeVideoServer(req: Request, res: Response): Promise<void> {
+  try {
+    const { videoId } = req.params;
+    if (!videoId) {
+      res.status(400).json({ error: 'videoId is required' });
+      return;
+    }
+
+    const oauth2Client = getYouTubeOAuthClient();
+    const { token: accessToken } = await oauth2Client.getAccessToken();
+
+    const delRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?id=${encodeURIComponent(videoId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (delRes.ok || delRes.status === 404) {
+      res.json({ success: true });
+      return;
+    }
+
+    const errText = await delRes.text().catch(() => '');
+    res.status(delRes.status).json({ success: false, error: errText });
+  } catch (error: any) {
+    serverLogger.error('YouTube delete error', error);
+    res.status(500).json({ error: error?.message || 'Failed to delete YouTube video.' });
+  }
+}
+

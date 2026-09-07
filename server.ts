@@ -28,8 +28,21 @@ import {
   MemberRestoreSchema,
   MediaUploadSchema,
   MediaFinalizeSchema,
+  DriveUploadInitSchema,
+  YouTubeUploadInitSchema,
+  DriveMakePublicSchema,
 } from "./server/validation";
-import { uploadIntermediateMedia, finalizeMedia, getMediaStatus, uploadVideoBufferToYouTube, base64ToBuffer } from "./server/mediaPipeline";
+import {
+  uploadIntermediateMedia,
+  finalizeMedia,
+  getMediaStatus,
+  uploadVideoBufferToYouTube,
+  base64ToBuffer,
+  initDriveUploadSession,
+  makeDriveFilePublic,
+  initYouTubeUploadSession,
+  deleteYouTubeVideoServer,
+} from "./server/mediaPipeline";
 import { isMemberCredentialMatch } from "./src/lib/authMatching";
 import { CSV_SEED_MEMBERS } from "./src/data/csvMembers";
 import { getUpcomingNextMonthCelebrants, getTomorrowCelebrants, getWATDate } from "./server/birthdayService";
@@ -198,6 +211,8 @@ app.use('/api/ai/', heavyRateLimiter);
 app.use('/api/ai-xplora', heavyRateLimiter);
 app.use('/api/media/cloud-sync-all', heavyRateLimiter);
 app.use('/api/media/upload-video-to-youtube', heavyRateLimiter);
+app.use('/api/media/drive/init-upload', heavyRateLimiter);
+app.use('/api/media/youtube/init-upload', heavyRateLimiter);
 app.use('/api/usosa-news', heavyRateLimiter);
 
 // Auth-specific: 10 req/min per IP (used as route middleware on auth endpoints)
@@ -3464,6 +3479,48 @@ app.post("/api/media/upload-video-to-youtube", conditionalAuth, async (req: Requ
       error: error?.message || "Failed to stream video to YouTube.",
     });
   }
+});
+
+// ===================================================================
+//  Direct-to-Google Resumable Upload Bridge
+//
+//  The browser streams large photo/video bytes straight to Google (keeps
+//  the existing XHR progress/resume UX and avoids routing big binaries
+//  through this server as base64 JSON), but the Drive/YouTube client
+//  secret and refresh token must never reach the browser. So the client
+//  asks THIS server to open the resumable upload session — using
+//  credentials that stay server-side — and only receives the resulting
+//  single-use, self-expiring session URL to stream bytes to directly.
+// ===================================================================
+app.post("/api/media/drive/init-upload", conditionalAuth, async (req: Request, res: Response) => {
+  const validation = validateBody(DriveUploadInitSchema, req.body);
+  if (!validation.success) {
+    res.status(400).json({ error: (validation as any).error });
+    return;
+  }
+  await initDriveUploadSession(req, res);
+});
+
+app.post("/api/media/drive/make-public", conditionalAuth, async (req: Request, res: Response) => {
+  const validation = validateBody(DriveMakePublicSchema, req.body);
+  if (!validation.success) {
+    res.status(400).json({ error: (validation as any).error });
+    return;
+  }
+  await makeDriveFilePublic(req, res);
+});
+
+app.post("/api/media/youtube/init-upload", conditionalAuth, async (req: Request, res: Response) => {
+  const validation = validateBody(YouTubeUploadInitSchema, req.body);
+  if (!validation.success) {
+    res.status(400).json({ error: (validation as any).error });
+    return;
+  }
+  await initYouTubeUploadSession(req, res);
+});
+
+app.delete("/api/media/youtube/:videoId", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
+  await deleteYouTubeVideoServer(req, res);
 });
 
 // YouTube OAuth2 Callback to retrieve Refresh Token

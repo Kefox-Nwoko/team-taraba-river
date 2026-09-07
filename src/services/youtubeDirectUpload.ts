@@ -4,74 +4,56 @@
  * Streams video files directly from the user's browser to the
  * @tarabateam YouTube channel using Google's Resumable Upload protocol.
  *
- * Credentials are injected at build time via Vite's import.meta.env.VITE_* mechanism.
- * The .env file (gitignored) holds the secrets; Vite inlines them as static strings.
+ * The YouTube OAuth client secret and refresh token live on the server
+ * only — this module asks the backend to open the resumable upload
+ * session (server holds the credentials) and then streams bytes to the
+ * single-use session URL Google hands back. The browser never sees the
+ * YouTube credentials.
  */
 import { logger } from "../lib/logger";
+import { auth } from "../lib/firebase";
 
-// Vite statically replaces these at build time with the literal values from .env
-// Credentials MUST come from .env (gitignored). Never hardcode secrets in source.
-const YT_CLIENT_ID = import.meta.env.VITE_YOUTUBE_CLIENT_ID ?? "";
-const YT_CLIENT_SECRET = import.meta.env.VITE_YOUTUBE_CLIENT_SECRET ?? "";
-const YT_REFRESH_TOKEN = import.meta.env.VITE_YOUTUBE_REFRESH_TOKEN ?? "";
+function apiUrl(path: string): string {
+  try {
+    const meta = (window as any).__API_BASE_URL__;
+    if (meta) return `${String(meta).replace(/\/$/, "")}${path}`;
+  } catch {}
+  const base = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+  return base ? `${base}${path}` : path;
+}
 
-let cachedAccessToken: string | null = null;
-let tokenExpiryTime = 0;
+async function getAuthHeaders(): Promise<HeadersInit> {
+  const user = auth.currentUser;
+  if (!user) return { "Content-Type": "application/json" };
+  try {
+    const token = await user.getIdToken();
+    return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  } catch {
+    return { "Content-Type": "application/json" };
+  }
+}
 
 /**
- * Refreshes the Google OAuth2 access token using the permanent channel refresh token.
- * Caches the token and reuses it until 60 seconds before expiry.
+ * Asks the backend to open a YouTube resumable upload session and
+ * returns the single-use session URL to stream bytes to directly.
  */
-async function getAccessToken(): Promise<string> {
-  // Return cached token if still valid
-  if (cachedAccessToken && Date.now() < tokenExpiryTime - 60_000) {
-    return cachedAccessToken;
-  }
-
-  if (!YT_CLIENT_ID || !YT_CLIENT_SECRET || !YT_REFRESH_TOKEN) {
-    throw new Error(
-      "YouTube upload credentials are not configured. " +
-      `Client ID: ${YT_CLIENT_ID ? "OK" : "MISSING"}, ` +
-      `Client Secret: ${YT_CLIENT_SECRET ? "OK" : "MISSING"}, ` +
-      `Refresh Token: ${YT_REFRESH_TOKEN ? "OK" : "MISSING"}`
-    );
-  }
-
-  const body = new URLSearchParams({
-    client_id: YT_CLIENT_ID,
-    client_secret: YT_CLIENT_SECRET,
-    refresh_token: YT_REFRESH_TOKEN,
-    grant_type: "refresh_token",
+async function initYouTubeUploadSession(
+  fileName: string,
+  mimeType: string,
+  size: number,
+  folderName: string
+): Promise<string> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/media/youtube/init-upload"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ fileName, mimeType, size, folderName }),
   });
-
-  let res: Response;
-  try {
-    res = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-    });
-  } catch (networkErr: any) {
-    throw new Error(`Network error refreshing YouTube token: ${networkErr?.message || networkErr}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.uploadUrl) {
+    throw new Error(data.error || `Failed to initiate YouTube upload session (${res.status}).`);
   }
-
-  let data: any;
-  try {
-    data = await res.json();
-  } catch {
-    throw new Error(`YouTube token endpoint returned non-JSON (status ${res.status})`);
-  }
-
-  if (!res.ok || !data.access_token) {
-    throw new Error(
-      `YouTube token refresh failed (${res.status}): ${data.error_description || data.error || JSON.stringify(data)}`
-    );
-  }
-
-  cachedAccessToken = data.access_token;
-  tokenExpiryTime = Date.now() + (data.expires_in || 3600) * 1000;
-  logger.info("[YT] Access token refreshed OK");
-  return data.access_token;
+  return data.uploadUrl;
 }
 
 /**
@@ -98,16 +80,6 @@ export async function uploadVideoDirectToYouTube(
     const err = new Error("Upload aborted by user.");
     err.name = "AbortError";
     throw err;
-  }
-
-  // Pre-flight check: credentials must exist
-  if (!YT_CLIENT_ID || !YT_CLIENT_SECRET || !YT_REFRESH_TOKEN) {
-    throw new Error(
-      "YouTube upload credentials are not configured. " +
-      `Client ID: ${YT_CLIENT_ID ? "OK" : "MISSING"}, ` +
-      `Client Secret: ${YT_CLIENT_SECRET ? "OK" : "MISSING"}, ` +
-      `Refresh Token: ${YT_REFRESH_TOKEN ? "OK" : "MISSING"}`
-    );
   }
 
   // 97%+ High-Assurance transmission: Multi-attempt exponential backoff with chunk resume
@@ -172,8 +144,22 @@ async function doUpload(
     throw err;
   }
 
-  // --- Step 1: Pre-flight fresh access token ---
-  const accessToken = await getAccessToken();
+  // --- Step 1: Ask the backend to initiate the YouTube resumable upload session ---
+  const cleanTitle = (file.name || `Team Taraba River Video ${new Date().toLocaleDateString()}`)
+    .replace(/\.[^/.]+$/, "")
+    .substring(0, 95);
+
+  let uploadUrl: string;
+  try {
+    uploadUrl = await initYouTubeUploadSession(cleanTitle, file.type || "video/mp4", file.size, folderName);
+  } catch (initErr: any) {
+    if (signal?.aborted || initErr?.name === "AbortError") {
+      const err = new Error("Upload aborted by user.");
+      err.name = "AbortError";
+      throw err;
+    }
+    throw initErr;
+  }
 
   if (signal?.aborted) {
     const err = new Error("Upload aborted by user.");
@@ -181,69 +167,10 @@ async function doUpload(
     throw err;
   }
 
-  // --- Step 2: Initialize resumable upload session ---
-  const cleanTitle = (file.name || `Team Taraba River Video ${new Date().toLocaleDateString()}`)
-    .replace(/\.[^/.]+$/, "")
-    .substring(0, 95);
-
-  const metadata = {
-    snippet: {
-      title: cleanTitle,
-      description: `Team Taraba River Community Event Media Archive (${folderName || "General Event"})\nUploaded via Team Taraba River Portal.`,
-      tags: ["Team Taraba River", "Community", "URIP", "USOSA", "Event"],
-      categoryId: "22", // People & Blogs
-    },
-    status: {
-      privacyStatus: "unlisted",
-      selfDeclaredMadeForKids: false,
-    },
-  };
-
-  let initRes: Response;
-  try {
-    initRes = await fetch(
-      "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json; charset=UTF-8",
-          "X-Upload-Content-Length": String(file.size),
-          "X-Upload-Content-Type": file.type || "video/mp4",
-        },
-        body: JSON.stringify(metadata),
-        signal,
-      },
-    );
-  } catch (networkErr: any) {
-    if (signal?.aborted || networkErr?.name === "AbortError") {
-      const err = new Error("Upload aborted by user.");
-      err.name = "AbortError";
-      throw err;
-    }
-    throw new Error(`Network error creating YouTube upload session: ${networkErr?.message || networkErr}`);
-  }
-
-  if (!initRes.ok) {
-    let errBody = "";
-    try { errBody = await initRes.text(); } catch {}
-    let detail = errBody;
-    try {
-      const parsed = JSON.parse(errBody);
-      detail = parsed?.error?.message || parsed?.error?.errors?.[0]?.message || errBody;
-    } catch {}
-    throw new Error(`YouTube upload init failed (${initRes.status}): ${detail}`);
-  }
-
-  const uploadUrl = initRes.headers.get("location") || initRes.headers.get("Location");
-  if (!uploadUrl) {
-    throw new Error("YouTube returned OK but no upload session URL (Location header missing).");
-  }
-
   const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
   logger.info(`[YT] 97%+ Assurance Resumable Session Active for "${file.name}" (${sizeMB} MB)`);
 
-  // --- Step 3: Stream with Resumable Recovery and Activity Heartbeat ---
+  // --- Step 2: Stream with Resumable Recovery and Activity Heartbeat ---
   return await streamBytesWithResumableRecovery(file, uploadUrl, onProgress, signal);
 }
 
@@ -484,7 +411,9 @@ export function getYouTubeThumbnail(url?: string): string | null {
 }
 
 /**
- * Permanently deletes a video from the YouTube channel via the YouTube Data API v3.
+ * Permanently deletes a video from the YouTube channel via the backend
+ * (admin-only route — the server holds the credentials and enforces the
+ * admin check, so this never touches YouTube credentials in the browser).
  * Returns true if deleted or already non-existent (404).
  */
 export async function deleteYouTubeVideo(videoUrlOrId: string): Promise<boolean> {
@@ -495,12 +424,10 @@ export async function deleteYouTubeVideo(videoUrlOrId: string): Promise<boolean>
   }
 
   try {
-    const accessToken = await getAccessToken();
-    const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?id=${videoId}`, {
+    const headers = await getAuthHeaders();
+    const res = await fetch(apiUrl(`/api/media/youtube/${videoId}`), {
       method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers,
     });
 
     if (res.ok || res.status === 404) {
