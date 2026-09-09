@@ -227,6 +227,35 @@ async function getServiceAccountPath(): Promise<string> {
   return resolvedPath;
 }
 
+const DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive'];
+let cachedDriveAuthClient: any = null;
+
+/**
+ * Returns an authenticated Drive client credential: a local service-account key
+ * file if GOOGLE_APPLICATION_CREDENTIALS is configured (dev convenience), or
+ * Application Default Credentials otherwise — which Cloud Run provides
+ * automatically for whatever service account the service runs as, with no key
+ * file needed in production.
+ */
+export async function getDriveAuthClient(): Promise<any> {
+  if (cachedDriveAuthClient) return cachedDriveAuthClient;
+
+  if (config.googleApplicationCredentials) {
+    const serviceAccountPath = await getServiceAccountPath();
+    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
+    cachedDriveAuthClient = new google.auth.JWT({
+      email: serviceAccount.client_email,
+      key: serviceAccount.private_key,
+      scopes: DRIVE_SCOPES,
+    });
+    return cachedDriveAuthClient;
+  }
+
+  const auth = new google.auth.GoogleAuth({ scopes: DRIVE_SCOPES });
+  cachedDriveAuthClient = await auth.getClient();
+  return cachedDriveAuthClient;
+}
+
 async function getDriveRootFolderId(): Promise<string | null> {
   const folderIdFromEnv = config.googleDriveFolderId;
   if (folderIdFromEnv && folderIdFromEnv.length > 10 && !folderIdFromEnv.includes('1a2b3c')) {
@@ -285,17 +314,7 @@ async function setFilePublicReadable(drive: any, fileId: string): Promise<void> 
 }
 
 async function syncImageToDrive(item: MediaItem): Promise<string> {
-  const { google } = await import('googleapis');
-  
-  const serviceAccountPath = await getServiceAccountPath();
-  const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
-
-  const auth = new google.auth.JWT({
-    email: serviceAccount.client_email,
-    key: serviceAccount.private_key,
-    scopes: ['https://www.googleapis.com/auth/drive'],
-  });
-
+  const auth = await getDriveAuthClient();
   const drive = google.drive({ version: 'v3', auth });
 
   const buffer = await base64ToBuffer(item.base64Data);
@@ -337,17 +356,7 @@ async function syncImageToDrive(item: MediaItem): Promise<string> {
 }
 
 export async function uploadVideoToDrive(item: MediaItem): Promise<string> {
-  const { google } = await import('googleapis');
-  
-  const serviceAccountPath = await getServiceAccountPath();
-  const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
-
-  const auth = new google.auth.JWT({
-    email: serviceAccount.client_email,
-    key: serviceAccount.private_key,
-    scopes: ['https://www.googleapis.com/auth/drive'],
-  });
-
+  const auth = await getDriveAuthClient();
   const drive = google.drive({ version: 'v3', auth });
 
   let buffer = await base64ToBuffer(item.base64Data);
@@ -550,13 +559,7 @@ export async function initDriveUploadSession(req: Request, res: Response): Promi
   try {
     const { fileName, mimeType, size, folderName } = req.body || {};
 
-    const serviceAccountPath = await getServiceAccountPath();
-    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
-    const auth = new google.auth.JWT({
-      email: serviceAccount.client_email,
-      key: serviceAccount.private_key,
-      scopes: ['https://www.googleapis.com/auth/drive'],
-    });
+    const auth = await getDriveAuthClient();
     const accessToken = (await auth.getAccessToken()).token;
     if (!accessToken) throw new Error('Failed to obtain a Google Drive access token.');
 
@@ -609,13 +612,7 @@ export async function makeDriveFilePublic(req: Request, res: Response): Promise<
   try {
     const { fileId } = req.body || {};
 
-    const serviceAccountPath = await getServiceAccountPath();
-    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
-    const auth = new google.auth.JWT({
-      email: serviceAccount.client_email,
-      key: serviceAccount.private_key,
-      scopes: ['https://www.googleapis.com/auth/drive'],
-    });
+    const auth = await getDriveAuthClient();
     const drive = google.drive({ version: 'v3', auth });
 
     await setFilePublicReadable(drive, fileId);

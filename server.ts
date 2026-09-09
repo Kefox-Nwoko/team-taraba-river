@@ -42,6 +42,7 @@ import {
   makeDriveFilePublic,
   initYouTubeUploadSession,
   deleteYouTubeVideoServer,
+  getDriveAuthClient,
 } from "./server/mediaPipeline";
 import { isMemberCredentialMatch } from "./src/lib/authMatching";
 import { CSV_SEED_MEMBERS } from "./src/data/csvMembers";
@@ -512,14 +513,29 @@ async function seedFirestoreIfNeeded(): Promise<void> {
   serverLogger.info("Firestore auto-seeding is disabled (ready for live database).");
 }
 
+// K_SERVICE is set automatically by Cloud Run on every revision; NODE_ENV=production is
+// the generic signal for any other deployed environment. Neither is present when running
+// `npm run dev` locally, which is the only place the auth-skip fallback below may fire.
+const isDeployedEnv = !!process.env.K_SERVICE || process.env.NODE_ENV === 'production';
+
 /**
  * Conditional auth middleware.
  * In production (Firestore available), enforces Firebase token verification.
  * In local dev (no ADC), skips auth to allow viewing the app.
+ *
+ * IMPORTANT: the skip-auth fallback below must NEVER fire in a deployed environment.
+ * If it did, a misconfigured/unreachable Firestore Admin connection in production would
+ * silently grant every request a mock admin session instead of rejecting it — turning an
+ * infra hiccup into an authentication bypass. So a deployed environment with Firestore
+ * unavailable fails closed (503) instead of falling back to the dev shortcut.
  */
 function conditionalAuth(req: Request, res: Response, next: NextFunction): void {
   if (!isFirestoreAvailable()) {
-    // Local dev fallback: attach a mock user
+    if (isDeployedEnv) {
+      res.status(503).json({ error: 'Service temporarily unavailable (Firestore Admin not connected).' });
+      return;
+    }
+    // Local dev fallback only: attach a mock user
     req.user = { uid: 'local_dev', email: 'dev@local', role: 'admin' };
     next();
     return;
@@ -529,6 +545,10 @@ function conditionalAuth(req: Request, res: Response, next: NextFunction): void 
 
 function conditionalRequireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (!isFirestoreAvailable()) {
+    if (isDeployedEnv) {
+      res.status(503).json({ error: 'Service temporarily unavailable (Firestore Admin not connected).' });
+      return;
+    }
     next();
     return;
   }
@@ -1910,25 +1930,7 @@ app.post("/api/media/cloud-sync-all", conditionalAuth, async (req: Request, res:
     const { direction = "reverse" } = req.body;
     const { google } = await import('googleapis');
 
-    // Authenticate using the configured service account path
-    const credentialsPath = config.googleApplicationCredentials;
-    if (!credentialsPath) {
-      res.status(500).json({ error: "Google Drive sync requires GOOGLE_APPLICATION_CREDENTIALS to be configured." });
-      return;
-    }
-    const serviceAccountPath = path.resolve(process.cwd(), credentialsPath);
-    if (!fs.existsSync(serviceAccountPath)) {
-      res.status(500).json({ error: `Service account credentials file not found at: ${credentialsPath}` });
-      return;
-    }
-    const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf-8'));
-
-    const auth = new google.auth.JWT({
-      email: serviceAccount.client_email,
-      key: serviceAccount.private_key,
-      scopes: ['https://www.googleapis.com/auth/drive'], // Full drive access to allow folder creation
-    });
-
+    const auth = await getDriveAuthClient();
     const drive = google.drive({ version: 'v3', auth });
 
     // Root folder ID extracted from the configured Drive URL
@@ -2497,43 +2499,33 @@ app.get("/api/media/image/:fileId", async (req: Request, res: Response) => {
   const { fileId } = req.params;
   try {
     const { google } = await import('googleapis');
-    const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || 'service-account.json';
-    const resolvedPath = path.resolve(process.cwd(), credentialsPath);
-    if (fs.existsSync(resolvedPath)) {
-      const serviceAccount = JSON.parse(fs.readFileSync(resolvedPath, 'utf-8'));
-      const auth = new google.auth.JWT({
-        email: serviceAccount.client_email,
-        key: serviceAccount.private_key,
-        scopes: ['https://www.googleapis.com/auth/drive.readonly'],
-      });
-      const drive = google.drive({ version: 'v3', auth });
+    const auth = await getDriveAuthClient();
+    const drive = google.drive({ version: 'v3', auth });
 
-      const streamHeaders: Record<string, string> = {};
-      if (req.headers.range) {
-        streamHeaders['Range'] = req.headers.range;
-      }
-      const driveRes = await drive.files.get(
-        { fileId, alt: 'media' },
-        { responseType: 'stream', headers: Object.keys(streamHeaders).length > 0 ? streamHeaders : undefined }
-      );
-
-      const contentType = (driveRes.headers && (driveRes.headers['content-type'] || driveRes.headers['Content-Type'])) || 'image/webp';
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=43200');
-      res.setHeader('Accept-Ranges', 'bytes');
-      if (driveRes.headers['content-range']) {
-        res.setHeader('Content-Range', driveRes.headers['content-range']);
-      }
-      if (driveRes.headers['content-length']) {
-        res.setHeader('Content-Length', driveRes.headers['content-length']);
-      }
-      if (driveRes.status === 206) {
-        res.status(206);
-      }
-      driveRes.data.pipe(res);
-      return;
+    const streamHeaders: Record<string, string> = {};
+    if (req.headers.range) {
+      streamHeaders['Range'] = req.headers.range;
     }
-    res.redirect(`https://lh3.googleusercontent.com/d/${fileId}`);
+    const driveRes = await drive.files.get(
+      { fileId, alt: 'media' },
+      { responseType: 'stream', headers: Object.keys(streamHeaders).length > 0 ? streamHeaders : undefined }
+    );
+
+    const contentType = (driveRes.headers && (driveRes.headers['content-type'] || driveRes.headers['Content-Type'])) || 'image/webp';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=43200');
+    res.setHeader('Accept-Ranges', 'bytes');
+    if (driveRes.headers['content-range']) {
+      res.setHeader('Content-Range', driveRes.headers['content-range']);
+    }
+    if (driveRes.headers['content-length']) {
+      res.setHeader('Content-Length', driveRes.headers['content-length']);
+    }
+    if (driveRes.status === 206) {
+      res.status(206);
+    }
+    driveRes.data.pipe(res);
+    return;
   } catch (error: any) {
     serverLogger.warn(`[Image Proxy] Could not stream file ${fileId}, redirecting to CDN`, { error: error?.message || error });
     res.redirect(`https://lh3.googleusercontent.com/d/${fileId}`);

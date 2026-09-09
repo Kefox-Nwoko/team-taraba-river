@@ -1,7 +1,7 @@
 import { initializeApp, getApps, App } from 'firebase-admin/app';
 import { getFirestore, Firestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
-import { cert } from 'firebase-admin';
+import { cert, applicationDefault } from 'firebase-admin';
 
 import fs from 'fs';
 import path from 'path';
@@ -14,6 +14,9 @@ const firebaseConfig = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'f
 let app: App | undefined;
 let firestoreAvailable = false;
 
+// Prefer a local key file (dev convenience) if one is present; otherwise fall back to
+// Application Default Credentials, which Cloud Run provides automatically for whatever
+// service account the service is deployed to run as — no key file needed in production.
 const credentialsPath = config.googleApplicationCredentials;
 const candidatePaths = [
   credentialsPath ? path.resolve(process.cwd(), credentialsPath) : null,
@@ -29,23 +32,28 @@ for (const p of candidatePaths) {
   }
 }
 
-const hasCredentials = !!resolvedPath;
-
-if (hasCredentials && resolvedPath) {
+try {
   if (getApps().length === 0) {
     const initConfig: any = {
       projectId: firebaseConfig.projectId,
       storageBucket: firebaseConfig.storageBucket,
     };
-    initConfig.credential = cert(resolvedPath as string);
+    if (resolvedPath) {
+      initConfig.credential = cert(resolvedPath);
+      serverLogger.info(`Firebase Admin SDK: initializing using key file at ${resolvedPath}`);
+    } else {
+      initConfig.credential = applicationDefault();
+      serverLogger.info('Firebase Admin SDK: no local key file found — initializing using Application Default Credentials.');
+    }
     app = initializeApp(initConfig);
   } else {
     app = getApps()[0];
   }
+  // Optimistic — the real connectivity/authorization check happens in
+  // checkFirestoreConnection() at server startup, which is the authoritative gate.
   firestoreAvailable = true;
-  serverLogger.info(`Firebase Admin SDK: initialized using credentials at ${resolvedPath}`);
-} else {
-  serverLogger.warn(`Firebase Admin SDK: credentials file not found. Searched: ${candidatePaths.join(', ')}. Firestore Admin access is disabled for this session.`);
+} catch (err) {
+  serverLogger.warn('Firebase Admin SDK: initialization failed.', { error: String(err), searchedKeyFilePaths: candidatePaths });
   firestoreAvailable = false;
 }
 
