@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Member } from "../types";
-import { loginMember } from "../services/apiClient";
+import { requestLoginCode, verifyLoginCode, verifySession } from "../services/apiClient";
 import {
   signInWithCustomToken,
   triggerGoogleAdminSignIn,
@@ -12,7 +12,6 @@ import { isMemberCredentialMatch } from "../lib/authMatching";
 import { INITIAL_MEMBERS } from "../data/seedData";
 import { LogIn, UserPlus, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck, BookOpen, X } from "lucide-react";
 import { BRAND_LOGO, LOGIN_WALL_BG } from "../constants/assets";
-import { clientConfig, isAdminEmailClient } from "../lib/config";
 import { logger } from "../lib/logger";
 
 interface LoginGateProps {
@@ -35,6 +34,12 @@ export const LoginGate: React.FC<LoginGateProps> = ({
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Two-step credential login: "credential" (email/phone entry) -> "code"
+  // (enter the one-time code emailed to the account's registered address).
+  const [stage, setStage] = useState<"credential" | "code">("credential");
+  const [maskedEmail, setMaskedEmail] = useState("");
+  const [codeInput, setCodeInput] = useState("");
+
   // Load the heavy login wallpaper after first paint so it never blocks the
   // initial render on slow connections — a cheap gradient shows instantly.
   const [wallLoaded, setWallLoaded] = useState(false);
@@ -50,7 +55,12 @@ export const LoginGate: React.FC<LoginGateProps> = ({
       throw new Error("No email address was returned by Google authentication.");
     }
 
-    const isAdmin = isAdminEmailClient(userEmail);
+    // Admin status must come from the server (ADMIN_EMAILS in server/config.ts
+    // is the single source of truth) — never decide it locally. Defaults to
+    // false (member) if the server can't be reached, so a verification
+    // failure never silently grants admin.
+    const serverMember = await verifySession();
+    const isAdmin = serverMember?.role === "admin";
     let memberSession: Member | undefined;
 
     if (isAdmin) {
@@ -145,6 +155,28 @@ export const LoginGate: React.FC<LoginGateProps> = ({
       setIsAdminLoading(false);
     }
   };
+  // Completes a session once we have a server-verified member + optional
+  // custom token — shared by the local-dev one-step fallback and the
+  // code-verification step.
+  const completeLogin = (member: Member, customToken?: string | null) => {
+    if (customToken) signInWithCustomToken(customToken).catch(() => {});
+    const memberSession: Member = { ...member, role: member.role || "member" };
+    if (!memberSession.photoUrl) {
+      const matchedPhoto = AppStateManager.findMatchingMember(memberSession);
+      if (matchedPhoto && matchedPhoto.photoUrl) {
+        memberSession.photoUrl = matchedPhoto.photoUrl;
+        memberSession.photoStatus = matchedPhoto.photoStatus || "approved";
+      }
+    }
+    AppStateManager.setCurrentUser(memberSession);
+    onLoginSuccess(memberSession);
+  };
+
+  // Step 1: resolve the credential server-side. A match never logs the
+  // member in directly here — either they're routed to Google (Gmail
+  // accounts), or a one-time code is emailed to their registered address
+  // and we move to the code-entry stage. Deciding this locally from a
+  // cached member list would let anyone skip the code entirely.
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!credential.trim()) return;
@@ -153,64 +185,24 @@ export const LoginGate: React.FC<LoginGateProps> = ({
 
     try {
       const rawCred = credential.trim();
+      const result = await requestLoginCode(rawCred);
 
-      // 1. Instant local memory / state match (< 1ms)
-      const cached = AppStateManager.getMembers();
-      let membersList = availableMembers.length > 0 
-        ? availableMembers 
-        : (cached.length > 0 ? cached : INITIAL_MEMBERS);
-      let matched: Member | undefined = membersList.find((m) => isMemberCredentialMatch(m, rawCred));
-
-      // 2. Direct check against INITIAL_MEMBERS if still not matched
-      if (!matched) {
-        matched = INITIAL_MEMBERS.find((m) => isMemberCredentialMatch(m, rawCred));
+      if (result.requiresGoogle) {
+        setError("This account uses Gmail. Please sign in with the Google button below.");
+        return;
       }
 
-      // 3. If not found in memory, query live Firestore members immediately
-      if (!matched) {
-        try {
-          const liveMembers = await FirebaseSyncManager.seedCSVDataIfNeeded();
-          if (liveMembers.length > 0) {
-            AppStateManager.saveMembers(liveMembers);
-            matched = liveMembers.find((m) => isMemberCredentialMatch(m, rawCred));
-          }
-        } catch {}
+      // Local-dev fallback only: no email service is available offline, so
+      // the server completes the login in one step here instead.
+      if (result.member) {
+        completeLogin(result.member, result.customToken);
+        return;
       }
 
-      // 3. Fallback to API endpoint if not yet resolved
-      if (!matched) {
-        try {
-          const res = await loginMember(rawCred);
-          matched = { ...res.member, role: res.member.role || "member" };
-          if (res.customToken) {
-            signInWithCustomToken(res.customToken).catch(() => {});
-          }
-        } catch (apiErr) {
-          throw apiErr;
-        }
-      } else {
-        // Background token refresh / session sync (non-blocking)
-        loginMember(rawCred)
-          .then((res) => {
-            if (res.customToken) signInWithCustomToken(res.customToken).catch(() => {});
-          })
-          .catch(() => {});
-      }
-
-      if (matched) {
-        const isAdmin = isAdminEmailClient(matched.email) || matched.role === "admin";
-        const memberSession: Member = { ...matched, role: isAdmin ? "admin" : (matched.role || "member") };
-        if (!memberSession.photoUrl) {
-          const matchedPhoto = AppStateManager.findMatchingMember(memberSession);
-          if (matchedPhoto && matchedPhoto.photoUrl) {
-            memberSession.photoUrl = matchedPhoto.photoUrl;
-            memberSession.photoStatus = matchedPhoto.photoStatus || "approved";
-          }
-        }
-        AppStateManager.setCurrentUser(memberSession);
-        onLoginSuccess(memberSession);
-      } else {
-        throw new Error("Credentials not recognized. Access denied.");
+      if (result.codeSent) {
+        setMaskedEmail(result.maskedEmail || "your registered email");
+        setCodeInput("");
+        setStage("code");
       }
     } catch (err) {
       setError(
@@ -221,6 +213,44 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Step 2: verify the emailed code and complete the session.
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (codeInput.trim().length !== 6) return;
+    setError(null);
+    setIsLoading(true);
+    try {
+      const res = await verifyLoginCode(credential.trim(), codeInput.trim());
+      completeLogin(res.member, res.customToken);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Incorrect code. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setError(null);
+    setIsLoading(true);
+    try {
+      const result = await requestLoginCode(credential.trim());
+      if (result.codeSent) {
+        setMaskedEmail(result.maskedEmail || "your registered email");
+        setCodeInput("");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not resend the code. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleBackToCredential = () => {
+    setStage("credential");
+    setCodeInput("");
+    setError(null);
   };
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 py-12 bg-slate-950 overflow-x-hidden">
@@ -279,70 +309,117 @@ export const LoginGate: React.FC<LoginGateProps> = ({
             </button>
           </div>
         )}
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-center text-sm text-slate-300 uppercase tracking-wider mb-1.5">
-              Email or Phone Number
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. 'member@domain.com/08023456789'"
-              value={credential}
-              onChange={(e) => {
-                setCredential(e.target.value);
-                if (error) setError(null);
-              }}
-              className="w-full block bg-slate-950/90 border border-slate-700/80 focus:border-cyan-400 rounded-2xl px-3 sm:px-4 py-3 text-xs sm:text-sm text-white focus:outline-none transition placeholder:text-slate-500 placeholder:text-[11px] sm:placeholder:text-xs text-center"
-            />
-          </div>{" "}
-          <div className="flex justify-center">
-            <button type="submit" disabled={isLoading || !credential.trim()} className="w-3/4 py-2 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white text-sm rounded-xl transition shadow-md shadow-cyan-600/30 flex items-center justify-center space-x-1.5 disabled:opacity-50 cursor-pointer" >
+        {stage === "credential" ? (
+          <>
+            {/* Form */}
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-center text-sm text-slate-300 uppercase tracking-wider mb-1.5">
+                  Email or Phone Number
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. 'member@domain.com/08023456789'"
+                  value={credential}
+                  onChange={(e) => {
+                    setCredential(e.target.value);
+                    if (error) setError(null);
+                  }}
+                  className="w-full block bg-slate-950/90 border border-slate-700/80 focus:border-cyan-400 rounded-2xl px-3 sm:px-4 py-3 text-xs sm:text-sm text-white focus:outline-none transition placeholder:text-slate-500 placeholder:text-[11px] sm:placeholder:text-xs text-center"
+                />
+              </div>{" "}
+              <div className="flex justify-center">
+                <button type="submit" disabled={isLoading || !credential.trim()} className="w-3/4 py-2 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white text-sm rounded-xl transition shadow-md shadow-cyan-600/30 flex items-center justify-center space-x-1.5 disabled:opacity-50 cursor-pointer" >
+                  {" "}
+                  <LogIn className="w-3.5 h-3.5" />{" "}
+                  <span>
+                    {isLoading ? "Sending code..." : "Sign In"}
+                  </span>{" "}
+                </button>{" "}
+              </div>
+            </form>{" "}
+            {/* Google OAuth Button */}{" "}
+            <div className="pt-4 border-t border-slate-800/80 flex justify-center">
               {" "}
-              <LogIn className="w-3.5 h-3.5" />{" "}
-              <span>
-                {isLoading ? "Verifying..." : "Sign In"}
-              </span>{" "}
-            </button>{" "}
-          </div>
-        </form>{" "}
-        {/* Google OAuth Button */}{" "}
-        <div className="pt-4 border-t border-slate-800/80 flex justify-center">
-          {" "}
-          <button type="button" onClick={handleAdminLogin} disabled={isAdminLoading} className="w-3/4 py-2 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 text-sm rounded-xl transition shadow-sm flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50" >
-            {" "}
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-[15px] h-[15px] shrink-0">
-              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.7 17.74 9.5 24 9.5z"/>
-              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-            </svg>{" "}
-            <span className="font-medium">
-              {isAdminLoading ? "Authenticating..." : "Google"}
-            </span>{" "}
-          </button>{" "}
-        </div>{" "}
-        {/* Secondary Actions */}{" "}
-        <div className="pt-4 border-t border-slate-800 flex flex-col items-center gap-3">
-          {" "}
-          <div className="text-slate-400 text-sm"> Not registered yet? </div>{" "}
-          <button onClick={onOpenRegister} className="w-full sm:w-auto py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition flex items-center justify-center space-x-2 cursor-pointer" >
-            {" "}
-            <UserPlus className="w-4 h-4 text-cyan-400" />{" "}
-            <span>Register your profile</span>{" "}
-          </button>{" "}
-          {onOpenManual && (
-            <button
-              type="button"
-              onClick={onOpenManual}
-              className="mt-1 text-xs text-teal-400 hover:text-teal-300 transition flex items-center space-x-1.5 cursor-pointer underline underline-offset-4 py-1"
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>📖 Open User Guide & Documentation</span>
-            </button>
-          )}
-        </div>{" "}
+              <button type="button" onClick={handleAdminLogin} disabled={isAdminLoading} className="w-3/4 py-2 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 text-sm rounded-xl transition shadow-sm flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50" >
+                {" "}
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-[15px] h-[15px] shrink-0">
+                  <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.7 17.74 9.5 24 9.5z"/>
+                  <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                  <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                  <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                </svg>{" "}
+                <span className="font-medium">
+                  {isAdminLoading ? "Authenticating..." : "Google"}
+                </span>{" "}
+              </button>{" "}
+            </div>{" "}
+            {/* Secondary Actions */}{" "}
+            <div className="pt-4 border-t border-slate-800 flex flex-col items-center gap-3">
+              {" "}
+              <div className="text-slate-400 text-sm"> Not registered yet? </div>{" "}
+              <button onClick={onOpenRegister} className="w-full sm:w-auto py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition flex items-center justify-center space-x-2 cursor-pointer" >
+                {" "}
+                <UserPlus className="w-4 h-4 text-cyan-400" />{" "}
+                <span>Register your profile</span>{" "}
+              </button>{" "}
+              {onOpenManual && (
+                <button
+                  type="button"
+                  onClick={onOpenManual}
+                  className="mt-1 text-xs text-teal-400 hover:text-teal-300 transition flex items-center space-x-1.5 cursor-pointer underline underline-offset-4 py-1"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>📖 Open User Guide & Documentation</span>
+                </button>
+              )}
+            </div>{" "}
+          </>
+        ) : (
+          /* Code entry stage — enter the one-time code emailed to the account's registered address */
+          <form onSubmit={handleVerifyCode} className="space-y-4">
+            <div className="text-center space-y-1">
+              <ShieldCheck className="w-6 h-6 text-cyan-400 mx-auto mb-1" />
+              <p className="text-sm text-slate-300">
+                We sent a 6-digit code to <span className="text-cyan-400 font-medium">{maskedEmail}</span>
+              </p>
+            </div>
+            <div>
+              <label className="block text-center text-sm text-slate-300 uppercase tracking-wider mb-1.5">
+                Enter Code
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                required
+                maxLength={6}
+                placeholder="000000"
+                value={codeInput}
+                onChange={(e) => {
+                  setCodeInput(e.target.value.replace(/\D/g, "").slice(0, 6));
+                  if (error) setError(null);
+                }}
+                className="w-full block bg-slate-950/90 border border-slate-700/80 focus:border-cyan-400 rounded-2xl px-3 sm:px-4 py-3 text-lg tracking-[0.5em] text-white focus:outline-none transition placeholder:text-slate-600 text-center"
+              />
+            </div>
+            <div className="flex justify-center">
+              <button type="submit" disabled={isLoading || codeInput.length !== 6} className="w-3/4 py-2 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white text-sm rounded-xl transition shadow-md shadow-cyan-600/30 flex items-center justify-center space-x-1.5 disabled:opacity-50 cursor-pointer" >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>{isLoading ? "Verifying..." : "Verify & Sign In"}</span>
+              </button>
+            </div>
+            <div className="pt-2 flex flex-col items-center gap-2 text-xs">
+              <button type="button" onClick={handleResendCode} disabled={isLoading} className="text-cyan-400 hover:text-cyan-300 underline underline-offset-4 cursor-pointer disabled:opacity-50">
+                Resend code
+              </button>
+              <button type="button" onClick={handleBackToCredential} className="text-slate-400 hover:text-slate-300 cursor-pointer">
+                Use a different email or phone number
+              </button>
+            </div>
+          </form>
+        )}
       </div>{" "}
     </div>
   );

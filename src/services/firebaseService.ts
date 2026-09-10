@@ -31,7 +31,6 @@ import {
   ActivityLog,
   DeletedMemberEntry,
 } from "../types";
-import { isAdminEmailClient } from "../lib/config";
 import { sanitizeMemberRecord } from "../utils/nameUtils";
 import { sanitizeEventRecord, parseEventDateObj } from "../utils/eventUtils";
 
@@ -62,7 +61,11 @@ export function mapFirebaseUserToMember(user: User): Member {
     skills: [],
     photoUrl: googlePhoto,
     photoStatus: "approved",
-    role: isAdminEmailClient(googleEmail) ? "admin" : "member",
+    // Never grant admin here — this is a locally-built session before the
+    // server has verified anything. The real role is fetched from
+    // /api/auth/verify (the single source of truth for ADMIN_EMAILS)
+    // immediately after sign-in; see LoginGate.processGoogleUser.
+    role: "member",
     isGoogleAuth: true,
     activityPoints: 0,
     joinedAt: new Date().toISOString(),

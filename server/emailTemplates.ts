@@ -272,6 +272,36 @@ export function buildTestEmailHtml(recipientEmail: string): { subject: string; h
 
   const html = getBaseEmailLayout(subject, title, preheader, content);
   const text = `Birthday Reminder System Connected for ${recipientEmail}.`;
-  
+
+  return { subject, html, text };
+}
+
+/**
+ * Builds the sign-in verification code email sent to a member's registered
+ * address whenever they log in without Google OAuth (see /api/auth/login).
+ */
+export function buildLoginCodeEmailHtml(params: {
+  code: string;
+  memberName?: string;
+}): { subject: string; html: string; text: string } {
+  const { code, memberName } = params;
+  const subject = `[Team Taraba] Your sign-in code: ${code}`;
+  const title = `Sign-In Code`;
+  const preheader = `Use this code to finish signing in to Team Taraba River.`;
+  const greetingName = sanitizeText(memberName) || "there";
+
+  const content = `
+    <p>Hi ${greetingName},</p>
+    <p>Enter this code to finish signing in:</p>
+    <div style="margin: 24px 0; text-align: center;">
+      <span style="display: inline-block; padding: 14px 28px; background-color: #f1f5f9; border-radius: 8px; font-size: 28px; font-weight: 700; letter-spacing: 8px; color: #0f172a;">${sanitizeText(code)}</span>
+    </div>
+    <p>This code expires in 10 minutes and can only be used once.</p>
+    <p>If you didn't request this, you can safely ignore this email — no one can sign in to your account without this code.</p>
+  `;
+
+  const html = getBaseEmailLayout(subject, title, preheader, content);
+  const text = `Your Team Taraba River sign-in code is ${code}. It expires in 10 minutes.`;
+
   return { subject, html, text };
 }

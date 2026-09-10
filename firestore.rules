@@ -10,79 +10,126 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Helper: Check if the requesting user is an admin (via custom claims or verified admin email)
+    // Helper: Check if the requesting user is an admin (via custom claims or
+    // verified admin email). Keep this in sync with ADMIN_EMAILS in
+    // server/config.ts — there are exactly 2 admins.
     function isAdmin() {
       return isAuthenticated() && (
         request.auth.token.role == 'admin' ||
-        request.auth.token.email in ['tarabateam@gmail.com', 'kefox.nwoko@gmail.com', 'xtraworxng@gmail.com']
+        request.auth.token.email in ['tarabateam@gmail.com', 'kefox.nwoko@gmail.com']
       );
     }
 
-
-    // Helper: Check if the requesting user owns this document
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    // Helper: Check if the requesting user owns this document (their
+    // Firebase Auth uid matches the member document's ID — true for both
+    // Google-authenticated members and code-verified members, since the
+    // server mints custom tokens with uid == the member's doc ID).
+    function isOwner(memberId) {
+      return isAuthenticated() && request.auth.uid == memberId;
     }
 
-    // Members collection — allow read for directory & credential matching; allow updates and admin deletions
+    // Members collection.
+    // - read: any signed-in user (directory + profile lookups). Credential
+    //   matching for login happens server-side via the Admin SDK, so an
+    //   anonymous visitor never needs to read this collection.
+    // - create: public — a brand-new registrant has no session yet. Firestore
+    //   only routes a write here if the document does not already exist;
+    //   once it exists, further writes are evaluated as `update` below, so
+    //   this can't be used to overwrite an existing member.
+    // - update: the member themselves, or an admin.
+    // - delete: admin only.
     match /members/{memberId} {
-      allow read: if true;
+      allow read: if isAuthenticated();
       allow create: if true;
-      allow update, delete: if true;
+      allow update: if isOwner(memberId) || isAdmin();
+      allow delete: if isAdmin();
     }
 
-    // Recycle bin / deleted members collection
+    // Recycle bin / deleted members collection — admin dashboard only.
     match /deleted_members/{entryId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
-    // Events collection — community events are visible and manageable
+    // Events collection — visible to any signed-in member; only admins
+    // create/update/delete via the dashboard (RSVP goes through the
+    // authenticated Express API, which uses the Admin SDK, not this path).
     match /events/{eventId} {
-      allow read: if true;
-      allow create, update, delete: if true;
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
     }
 
-    // Photo approval requests — public submission and management
+    // Photo approval requests — any signed-in member can submit one;
+    // only admins decide (approve/reject) or delete them.
     match /photoRequests/{requestId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
     }
 
-    // Activity logs — community feed
+    // Activity logs — community feed. Any signed-in member's actions can
+    // append entries; only admins bulk-edit or clear them.
     match /activityLogs/{logId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
     }
 
-    // System config & metrics
+    // System metrics (visit counters) — any signed-in member increments
+    // these; email_config holds the Resend API key and is admin-only.
+    // NOTE: Firestore ORs together every `match` block that applies to a
+    // given path — a broader wildcard match does NOT get overridden by a
+    // more specific sibling match, it only adds permissions on top of it.
+    // So the email_config exception has to live as a condition inside this
+    // one match block, not as a separate (and silently ineffective) rule.
     match /system/{metricId} {
-      allow read, write: if true;
+      allow read: if metricId == 'email_config' ? isAdmin() : isAuthenticated();
+      allow write: if metricId == 'email_config' ? isAdmin() : isAuthenticated();
     }
 
+    // System config — cloud pipeline settings are admin-only, except the
+    // visit-metrics mirror which any signed-in member updates. Same
+    // single-match-block reasoning as system/{metricId} above.
     match /systemConfig/{configId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if configId == 'visit_metrics' ? isAuthenticated() : isAdmin();
     }
 
-    // Settings (email config etc)
+    // Settings (email config etc) — not used by any client code path today;
+    // admin-only as a safe default. The server's own email config reads use
+    // the Admin SDK and are unaffected by this rule.
     match /settings/{settingId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
-    // Mail queue & notification logs
+    // Mail queue & notification logs — not written by any client code path
+    // today; admin-only so an authenticated non-admin can't send arbitrary
+    // mail through the app's sender identity.
     match /mail/{mailId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
     match /notification_logs/{logId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin();
     }
 
-    // Knowledge base articles
+    // Knowledge base articles — read by any signed-in member (AI assistant
+    // context); only admins manage content.
     match /knowledgeBase/{articleId} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
-    // Media items
+    // Media items — server-managed (media pipeline via Admin SDK); no
+    // legitimate client-side write path exists today.
     match /mediaItems/{mediaId} {
-      allow read, write: if true;
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // Short-lived sign-in codes for /api/auth/login — server-only
+    // (Admin SDK), never touched by any client.
+    match /loginCodes/{memberId} {
+      allow read, write: if false;
     }
 
     // Deny all other documents by default
@@ -91,4 +138,3 @@ service cloud.firestore {
     }
   }
 }
-

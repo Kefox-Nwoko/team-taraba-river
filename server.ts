@@ -23,6 +23,7 @@ import {
   DriveSyncSchema,
   YouTubeParseSchema,
   LoginCredentialSchema,
+  LoginCodeVerifySchema,
   AdminAISearchSchema,
   MemberContactSearchSchema,
   MemberRestoreSchema,
@@ -47,8 +48,9 @@ import {
 import { isMemberCredentialMatch } from "./src/lib/authMatching";
 import { CSV_SEED_MEMBERS } from "./src/data/csvMembers";
 import { getUpcomingNextMonthCelebrants, getTomorrowCelebrants, getWATDate } from "./server/birthdayService";
-import { buildMonthlyDigestEmailHtml, buildDailyEveAlertEmailHtml, buildTestEmailHtml } from "./server/emailTemplates";
+import { buildMonthlyDigestEmailHtml, buildDailyEveAlertEmailHtml, buildTestEmailHtml, buildLoginCodeEmailHtml } from "./server/emailTemplates";
 import { getEmailConfig, updateEmailConfig, sendEmail } from "./server/emailService";
+import { createLoginCode, verifyLoginCode } from "./server/loginCodes";
 import { parseEventDateObj } from "./src/utils/eventUtils";
 
 dotenv.config();
@@ -784,6 +786,39 @@ app.post("/api/auth/verify", rateLimiter, async (req: Request, res: Response) =>
 
 // 3. Auth: Login via credential (email/phone) — issues a Firebase custom token
 //    This allows the existing email/phone login UX while adding real token auth.
+/**
+ * Shared credential lookup used by both login steps below: checks the
+ * in-memory fallback list first, then queries Firestore.
+ */
+async function findMemberByCredential(rawCred: string): Promise<{ memberData: Member; memberDocId: string } | null> {
+  const matchedLocal = fallbackMembers.find(m => isMemberCredentialMatch(m, rawCred));
+  if (matchedLocal) {
+    return { memberData: matchedLocal, memberDocId: matchedLocal.id };
+  }
+
+  const allMembersSnap = await db.collection(COLLECTIONS.members).get();
+  for (const d of allMembersSnap.docs) {
+    const m = { id: d.id, ...d.data() } as Member;
+    if (isMemberCredentialMatch(m, rawCred)) {
+      return { memberData: m, memberDocId: d.id };
+    }
+  }
+  return null;
+}
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split('@');
+  if (!domain) return email;
+  const visible = local.slice(0, 1);
+  return `${visible}${'*'.repeat(Math.max(local.length - 1, 3))}@${domain}`;
+}
+
+/**
+ * Step 1 of login: resolve the credential to a member and either point
+ * Gmail-registered members at Google OAuth, or email a one-time code to
+ * their REGISTERED address (never to whatever they typed) and wait for
+ * /api/auth/login/verify-code. No member data is returned from this step.
+ */
 app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => {
   const validation = validateBody(LoginCredentialSchema, req.body);
   if (!validation.success) {
@@ -791,61 +826,85 @@ app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => 
     return;
   }
 
-  const { credential } = validation.data;
-  const rawCred = credential.trim();
+  const rawCred = validation.data.credential.trim();
 
-  // Local dev fallback: search in-memory
+  // Local dev fallback: no email service to rely on, so log in immediately.
+  // This path can never fire in a deployed environment (see isDeployedEnv).
   if (!isFirestoreAvailable()) {
     const matched = fallbackMembers.find(m => isMemberCredentialMatch(m, rawCred));
-
     if (!matched) {
-      res.status(404).json({
-        error: 'Credentials not recognized. Access denied.'
-      });
+      res.status(404).json({ error: 'Credentials not recognized. Access denied.' });
       return;
     }
-
-    res.json({
-      success: true,
-      member: { ...matched, role: 'member' as UserRole },
-      customToken: null,
-    });
+    res.json({ success: true, member: { ...matched, role: 'member' as UserRole }, customToken: null });
     return;
   }
 
   try {
-    let memberData: Member | null = null;
-    let memberDocId: string | null = null;
+    const found = await findMemberByCredential(rawCred);
+    if (!found) {
+      res.status(404).json({ error: 'Credentials not recognized. Access denied.' });
+      return;
+    }
+    const { memberData, memberDocId } = found;
 
-    // 1. Check in-memory fallback list first
-    const matchedLocal = fallbackMembers.find(m => isMemberCredentialMatch(m, rawCred));
-    if (matchedLocal) {
-      memberData = matchedLocal;
-      memberDocId = matchedLocal.id;
-    } else {
-      // 2. Query all members in Firestore and match with isMemberCredentialMatch
-      const allMembersSnap = await db.collection(COLLECTIONS.members).get();
-      for (const d of allMembersSnap.docs) {
-        const m = { id: d.id, ...d.data() } as Member;
-        if (isMemberCredentialMatch(m, rawCred)) {
-          memberData = m;
-          memberDocId = d.id;
-          break;
-        }
-      }
+    if ((memberData.email || '').toLowerCase().trim().endsWith('@gmail.com')) {
+      res.json({
+        success: false,
+        requiresGoogle: true,
+        error: 'This account uses Gmail. Please sign in with Google instead.',
+      });
+      return;
     }
 
-    if (!memberData || !memberDocId) {
-      res.status(404).json({
-        error: 'Credentials not recognized. Access denied.'
-      });
+    if (!memberData.email) {
+      res.status(500).json({ error: 'No email on file for this account. Contact an administrator.' });
+      return;
+    }
+
+    const code = await createLoginCode(memberDocId);
+    const { subject, html, text } = buildLoginCodeEmailHtml({ code, memberName: memberData.fullName });
+    await sendEmail({ to: memberData.email, subject, html, text });
+
+    res.json({ success: true, codeSent: true, maskedEmail: maskEmail(memberData.email) });
+  } catch (error) {
+    serverLogger.error("Login error", error);
+    res.status(500).json({ error: 'Login service temporarily unavailable.' });
+  }
+});
+
+/**
+ * Step 2 of login: verify the one-time code and complete the session.
+ * Mirrors the bookkeeping the old single-step /api/auth/login used to do.
+ */
+app.post("/api/auth/login/verify-code", rateLimiter, async (req: Request, res: Response) => {
+  const validation = validateBody(LoginCodeVerifySchema, req.body);
+  if (!validation.success) {
+    res.status(400).json({ error: (validation as any).error });
+    return;
+  }
+
+  const { code } = validation.data;
+  const rawCred = validation.data.credential.trim();
+
+  try {
+    const found = await findMemberByCredential(rawCred);
+    if (!found) {
+      res.status(404).json({ error: 'Credentials not recognized. Access denied.' });
+      return;
+    }
+    const { memberData, memberDocId } = found;
+
+    const verification = await verifyLoginCode(memberDocId, code);
+    if (!verification.ok) {
+      res.status(401).json({ error: verification.reason || 'Incorrect code.' });
       return;
     }
 
     const todayStr = new Date().toISOString().split('T')[0];
     const lastActiveDateStr = memberData.lastActive ? memberData.lastActive.split('T')[0] : '';
     const isNewDayVisit = lastActiveDateStr !== todayStr;
-    
+
     memberData.lastActive = new Date().toISOString();
     const updates: Record<string, any> = {
       lastActive: memberData.lastActive
@@ -868,7 +927,7 @@ app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => 
         });
       }
     }
-    
+
     await db.collection(COLLECTIONS.members).doc(memberDocId).update(updates);
 
     let customToken: string | null = null;
@@ -887,7 +946,7 @@ app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => 
       customToken,
     });
   } catch (error) {
-    serverLogger.error("Login error", error);
+    serverLogger.error("Login code verification error", error);
     res.status(500).json({ error: 'Login service temporarily unavailable.' });
   }
 });
@@ -1099,7 +1158,14 @@ function simpleContactSearch(members: Member[], query: string): Array<{ id: stri
 }
 
 // 5. Member Service: Registration
-app.post("/api/members", conditionalAuth, async (req: Request, res: Response) => {
+// Intentionally public (no conditionalAuth) — a brand-new visitor has no
+// Firebase session yet, so this is the one place a fully anonymous request
+// creates data. Rate-limited and fully Zod-validated to bound abuse. A
+// custom token is minted below so the client comes away with a real
+// session (uid == the new member's doc ID), matching how /api/auth/login
+// establishes sessions — otherwise firestore.rules' isOwner() check would
+// reject the member's own follow-up profile edits.
+app.post("/api/members", rateLimiter, async (req: Request, res: Response) => {
   const validation = validateBody(MemberRegistrationSchema, req.body);
   if (!validation.success) {
     res.status(400).json({ error: (validation as any).error });
@@ -1118,7 +1184,7 @@ app.post("/api/members", conditionalAuth, async (req: Request, res: Response) =>
     }
 
     const needsApproval = data.photoUrl && data.photoUrl.trim().length > 0;
-    const memberId = req.user?.uid || `mem_${Date.now()}`;
+    const memberId = `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     const newMember: Member = {
       id: memberId,
@@ -1164,7 +1230,17 @@ app.post("/api/members", conditionalAuth, async (req: Request, res: Response) =>
       pointsEarned: 20,
     });
 
-    res.status(201).json({ success: true, member: newMember });
+    let customToken: string | null = null;
+    try {
+      customToken = await Promise.race([
+        adminAuth.createCustomToken(memberId, { role: 'member' }),
+        new Promise<null>((r) => setTimeout(() => r(null), 1200))
+      ]);
+    } catch {
+      customToken = null;
+    }
+
+    res.status(201).json({ success: true, member: newMember, customToken });
   } catch (error) {
       serverLogger.error("Register member error", error);
     res.status(500).json({ error: 'Registration failed.' });

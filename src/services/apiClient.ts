@@ -7,9 +7,8 @@ import {
 } from "../types";
 import { auth } from "../lib/firebase";
 import { logger } from "../lib/logger";
-import { FirebaseSyncManager } from "./firebaseService";
+import { FirebaseSyncManager, signInWithCustomToken } from "./firebaseService";
 import { AppStateManager } from "./storage";
-import { isMemberCredentialMatch } from "../lib/authMatching";
 import { sanitizeMemberRecord } from "../utils/nameUtils";
 import { sanitizeEventRecord, parseEventDateObj, isChapterEvent } from "../utils/eventUtils";
 
@@ -139,38 +138,97 @@ export async function emptyRecycleBin(): Promise<void> {
   await FirebaseSyncManager.emptyRecycleBin();
 }
 
-export async function loginMember(
-  credential: string
-): Promise<{ member: Member; customToken?: string }> {
-  // Step 1: Try backend endpoint if available
-  try {
-    const res = await fetch(apiUrl("/api/auth/login"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ credential }),
-    });
-    const contentType = res.headers.get("content-type") || "";
-    if (res.ok && contentType.includes("application/json")) {
-      const data = await res.json();
-      if (data && data.member) return data;
-    }
-  } catch {}
-
-  // Step 2: Direct Firestore search fallback
-  const members = await FirebaseSyncManager.seedCSVDataIfNeeded();
-  const matched = members.find((m) => isMemberCredentialMatch(m, credential));
-
-  if (matched) {
-    return { member: matched };
-  }
-
-  throw new Error("Credentials not recognized. Access denied.");
+export interface RequestLoginCodeResult {
+  requiresGoogle?: boolean;
+  codeSent?: boolean;
+  maskedEmail?: string;
+  // Present only in the local-dev fallback, where the server can't send a
+  // real email and completes the login in one step.
+  member?: Member;
+  customToken?: string | null;
 }
+
+/**
+ * Step 1 of login: resolves the credential server-side. Never matches a
+ * member purely on the client — that would bypass the sign-in code
+ * verification entirely, which defeats the point of requiring one.
+ */
+export async function requestLoginCode(credential: string): Promise<RequestLoginCodeResult> {
+  const res = await fetch(apiUrl("/api/auth/login"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential }),
+  });
+  const contentType = res.headers.get("content-type") || "";
+  const data = contentType.includes("application/json") ? await res.json() : null;
+
+  if (!res.ok || !data) {
+    throw new Error(data?.error || "Credentials not recognized. Access denied.");
+  }
+  if (data.requiresGoogle) {
+    return { requiresGoogle: true };
+  }
+  if (data.member) {
+    return { member: data.member, customToken: data.customToken ?? null };
+  }
+  if (data.codeSent) {
+    return { codeSent: true, maskedEmail: data.maskedEmail };
+  }
+  throw new Error("Unexpected response from login service.");
+}
+
+/**
+ * Step 2 of login: verify the one-time code emailed in step 1 and complete
+ * the session.
+ */
+export async function verifyLoginCode(
+  credential: string,
+  code: string
+): Promise<{ member: Member; customToken?: string | null }> {
+  const res = await fetch(apiUrl("/api/auth/login/verify-code"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ credential, code }),
+  });
+  const contentType = res.headers.get("content-type") || "";
+  const data = contentType.includes("application/json") ? await res.json() : null;
+
+  if (!res.ok || !data || !data.member) {
+    throw new Error(data?.error || "Incorrect code. Please try again.");
+  }
+  return { member: data.member, customToken: data.customToken ?? null };
+}
+
 export async function loginGoogleAdmin(
   email: string,
   password?: string
 ): Promise<{ member: Member; token: string }> {
   throw new Error("Direct admin login is no longer supported. Use Google OAuth sign-in.");
+}
+
+/**
+ * Asks the server to verify the currently signed-in Firebase user and return
+ * their authoritative role. The server derives admin status from ADMIN_EMAILS
+ * (server/config.ts), so this is the single source of truth for role — never
+ * decide admin status on the client from a locally held email list.
+ */
+export async function verifySession(): Promise<Member | null> {
+  try {
+    const headers = await getAuthHeaders();
+    const res = await fetch(apiUrl("/api/auth/verify"), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ email: auth.currentUser?.email || "" }),
+    });
+    const contentType = res.headers.get("content-type") || "";
+    if (res.ok && contentType.includes("application/json")) {
+      const data = await res.json();
+      if (data && data.member) return data.member as Member;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 export async function registerMember(memberData: Partial<Member>): Promise<Member> {
   const sanitizedInput = sanitizeMemberRecord(memberData);
@@ -201,11 +259,21 @@ export async function registerMember(memberData: Partial<Member>): Promise<Membe
     const contentType = res.headers.get("content-type") || "";
     if (res.ok && contentType.includes("application/json")) {
       const data = await res.json();
-      if (data && data.member) return sanitizeMemberRecord(data.member);
+      if (data && data.member) {
+        // Establish a real Firebase session for the new member (uid == their
+        // doc ID) so firestore.rules' isOwner() check allows their own
+        // follow-up profile edits, same as the login flow.
+        if (data.customToken) {
+          await signInWithCustomToken(data.customToken).catch(() => {});
+        }
+        return sanitizeMemberRecord(data.member);
+      }
     }
   } catch {}
 
-  // Direct Firestore fallback
+  // Direct Firestore fallback (server/network unreachable). Without a
+  // signed-in session this write will be rejected once firestore.rules is
+  // locked down — this path only helps while the server is genuinely down.
   await FirebaseSyncManager.saveMember(newMember);
   return newMember;
 }

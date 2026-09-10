@@ -10,13 +10,12 @@ const getEnv = (key: string, fallback: string): string => {
 
 export const clientConfig = {
   ownerEmail: getEnv('OWNER_EMAIL', 'tarabateam@gmail.com'),
-  adminEmails: getEnv('ADMIN_EMAILS', 'tarabateam@gmail.com,kefox.nwoko@gmail.com')
-    .split(',')
-    .map((e: string) => e.trim().toLowerCase())
-    .filter(Boolean),
 };
 
-export const isAdminEmailClient = (email?: string | null): boolean => {
-  if (!email) return false;
-  return clientConfig.adminEmails.includes(email.toLowerCase());
-};
+// Admin status is intentionally NOT decided on the client. The server is the
+// single source of truth (ADMIN_EMAILS in server/config.ts, enforced by
+// authMiddleware on every protected request). Use apiClient.verifySession()
+// to get the authoritative role instead of checking an email against a
+// locally held list — a client-side copy of that list would silently drift
+// from the server's whenever ADMIN_EMAILS changes, and would also mean
+// shipping admin email addresses in the public JS bundle for no benefit.

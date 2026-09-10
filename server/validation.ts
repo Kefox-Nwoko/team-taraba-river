@@ -102,6 +102,11 @@ export const LoginCredentialSchema = z.object({
   credential: z.string().min(1, 'Email or Phone number is required'),
 });
 
+export const LoginCodeVerifySchema = z.object({
+  credential: z.string().min(1, 'Email or Phone number is required'),
+  code: z.string().min(6, 'Enter the 6-digit code').max(6, 'Enter the 6-digit code'),
+});
+
 // --- Admin AI Search Schema ---
 
 export const AdminAISearchSchema = z.object({
