@@ -307,8 +307,7 @@ export default function App() {
             !ev.id.startsWith("evt_arch_") &&
             !ev.id.startsWith("gdrive_root_") &&
             ev.id !== "evt_taraba_gdrive" &&
-            ev.title !== "Team Taraba Official Photo Album" &&
-            !ev.id.startsWith("folder_")
+            ev.title !== "Team Taraba Official Photo Album"
         );
         setEvents(cleanEvents);
         AppStateManager.saveEvents(cleanEvents);
@@ -341,8 +340,7 @@ export default function App() {
             !ev.id.startsWith("evt_arch_") &&
             !ev.id.startsWith("gdrive_root_") &&
             ev.id !== "evt_taraba_gdrive" &&
-            ev.title !== "Team Taraba Official Photo Album" &&
-            !ev.id.startsWith("folder_")
+            ev.title !== "Team Taraba Official Photo Album"
         );
         setEvents(cleanEvents);
         AppStateManager.saveEvents(cleanEvents);
@@ -398,7 +396,7 @@ export default function App() {
       const cleanEvents = Array.from(eMap.values()).filter((ev) => {
         if (!ev?.id || seen.has(ev.id)) return false;
         seen.add(ev.id);
-        return !ev.id.startsWith("evt_arch_") && !ev.id.startsWith("folder_");
+        return !ev.id.startsWith("evt_arch_");
       });
       setEvents(cleanEvents);
       AppStateManager.saveEvents(cleanEvents);
@@ -440,7 +438,7 @@ export default function App() {
       const cleanEvents = Array.from(eMap.values()).filter((ev) => {
         if (!ev?.id || seen.has(ev.id)) return false;
         seen.add(ev.id);
-        return !ev.id.startsWith("evt_arch_") && !ev.id.startsWith("folder_");
+        return !ev.id.startsWith("evt_arch_");
       });
       setEvents(cleanEvents);
       AppStateManager.saveEvents(cleanEvents);
