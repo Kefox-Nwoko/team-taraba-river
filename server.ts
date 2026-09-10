@@ -469,7 +469,7 @@ async function getEvents(): Promise<GroupEvent[]> {
   }
 
   const data = list
-    .filter((e) => !e.id.startsWith("evt_arch_") && !e.id.startsWith("folder_"))
+    .filter((e) => !e.id.startsWith("evt_arch_"))
     .map((e) => {
       const parsedDate = parseDateFromTitle(e.title);
       if (parsedDate) {

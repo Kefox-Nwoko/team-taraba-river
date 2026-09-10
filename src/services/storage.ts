@@ -433,8 +433,7 @@ export class AppStateManager {
           e.id.startsWith("evt_arch_") ||
           e.id.startsWith("gdrive_root_") ||
           e.id === "evt_taraba_gdrive" ||
-          e.title === "Team Taraba Official Photo Album" ||
-          e.id.startsWith("folder_")
+          e.title === "Team Taraba Official Photo Album"
         ) {
           return false;
         }

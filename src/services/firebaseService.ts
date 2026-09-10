@@ -236,7 +236,7 @@ export class FirebaseSyncManager {
         firestoreEvents.push(sanitizeEventRecord(raw));
       });
 
-      return firestoreEvents.filter((e) => !e.id.startsWith("evt_arch_") && !e.id.startsWith("folder_"));
+      return firestoreEvents.filter((e) => !e.id.startsWith("evt_arch_"));
     } catch (err) {
       logger.warn("Firestore events fetch fallback", { error: err });
       return [];
@@ -252,7 +252,7 @@ export class FirebaseSyncManager {
           const raw = { id: docSnap.id, ...docSnap.data() } as GroupEvent;
           list.push(sanitizeEventRecord(raw));
         });
-        const clean = list.filter((e) => !e.id.startsWith("evt_arch_") && !e.id.startsWith("folder_"));
+        const clean = list.filter((e) => !e.id.startsWith("evt_arch_"));
         onUpdate(clean);
       });
     } catch (err) {

@@ -377,7 +377,6 @@ export async function fetchEvents(): Promise<GroupEvent[]> {
     if (!e || !e.id) return false;
     if (e.id.startsWith("evt_arch_")) return false;
     if (e.id.startsWith("gdrive_root_") || e.id === "evt_taraba_gdrive" || e.title === "Team Taraba Official Photo Album") return false;
-    if (e.id.startsWith("folder_")) return false;
     return true;
   });
 
