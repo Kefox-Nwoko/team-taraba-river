@@ -41,7 +41,7 @@ describe("emailTemplates", () => {
       adminRecipientEmail: "tarabateam@gmail.com",
     });
 
-    expect(result.subject).toContain("Upcoming Birthday Celebrants for September 2026");
+    expect(result.subject).toContain("[Team Taraba] Upcoming Birthdays for September 2026");
     expect(result.html).toContain("Kefox Nwoko");
     expect(result.html).toContain("September 16");
     expect(result.html).not.toContain("https://wa.me");
@@ -63,8 +63,9 @@ describe("emailTemplates", () => {
 
   it("builds a valid Test Connection email", () => {
     const result = buildTestEmailHtml("tarabateam@gmail.com");
-    expect(result.subject).toContain("Birthday Reminder System Connected");
+    expect(result.subject).toContain("[Team Taraba] Birthday Alerts Connected");
     expect(result.html).toContain("tarabateam@gmail.com");
-    expect(result.html).toContain("12:00 PM WAT");
+    expect(result.html).toContain("8:00 PM");
+    expect(result.html).toContain("6:00 AM");
   });
 });

@@ -119,8 +119,14 @@ describe("EventCreationSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects invalid category", () => {
-    const invalid = { ...validEvent, category: "invalid" };
+  it("accepts a category not in the preset list (falls back to raw text)", () => {
+    const custom = { ...validEvent, category: "invalid" };
+    const result = validateBody(EventCreationSchema, custom);
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a non-string, non-array category", () => {
+    const invalid = { ...validEvent, category: 12345 };
     const result = validateBody(EventCreationSchema, invalid);
     expect(result.success).toBe(false);
   });

@@ -70,7 +70,7 @@ This portal is owned and operated by Team Taraba River. Access to and use of thi
    - **Public Directory Data (Members Only):** Full Name, Title, Unity School, Graduation Year, Occupation, Professional Skills, and Profile Image.
    - **Restricted Administrative Records:** Phone Number, Email Address, Residential Area, Next of Kin, and Birthday (Day & Month only).
 3. **Automated Birthday Reminder Processing:**
-   - The platform utilizes an automated background scheduling engine that runs daily at **12:00 PM WAT**.
+   - The platform utilizes an automated background scheduling engine that runs a daily eve reminder at **8:00 PM WAT** and a same-day reminder at **6:00 AM WAT**.
    - The engine processes birthday records (**Day and Month only — birth years are never collected, stored, or displayed**) to generate advance monthly planning digests and daily 24-hour eve reminders.
    - Notices are dispatched securely via transactional email services (Resend) to official team administrators (`tarabateam@gmail.com`) strictly for community felicitations and WhatsApp announcements.
 4. **Zero-Sale & Zero-Monetization Guarantee:** Personal data is **never sold, leased, rented, or shared** with commercial third-party advertisers, brokers, or external entities.
