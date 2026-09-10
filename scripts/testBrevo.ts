@@ -5,9 +5,9 @@ dotenv.config();
 import { getUpcomingNextMonthCelebrants, buildMonthlyDigestEmailHtml, getWATDate } from "../src/utils/birthdayUtils";
 import { CSV_SEED_MEMBERS } from "../src/data/csvMembers";
 
-const apiKey = (process.env.RESEND_API_KEY || "").trim();
+const apiKey = (process.env.BREVO_API_KEY || "").trim();
 if (!apiKey) {
-  console.error("Error: RESEND_API_KEY environment variable is required. Set it in your .env file.");
+  console.error("Error: BREVO_API_KEY environment variable is required. Set it in your .env file.");
   process.exit(1);
 }
 
@@ -23,21 +23,22 @@ const email = buildMonthlyDigestEmailHtml({
 console.log(`Dispatching ${nextMonthInfo.nextMonthName} ${nextMonthInfo.year} Digest (${nextMonthInfo.celebrants.length} celebrants) to tarabateam@gmail.com...`);
 
 const postData = JSON.stringify({
-  from: "Team Taraba River <onboarding@resend.dev>",
-  to: ["tarabateam@gmail.com"],
+  sender: { name: "Team Taraba River", email: "tarabateam@gmail.com" },
+  to: [{ email: "tarabateam@gmail.com" }],
   subject: email.subject,
-  html: email.html,
-  text: email.text,
+  htmlContent: email.html,
+  textContent: email.text,
 });
 
 const options: https.RequestOptions = {
-  hostname: "api.resend.com",
+  hostname: "api.brevo.com",
   port: 443,
-  path: "/emails",
+  path: "/v3/smtp/email",
   method: "POST",
   headers: {
-    "Authorization": `Bearer ${apiKey}`,
+    "api-key": apiKey,
     "Content-Type": "application/json",
+    "accept": "application/json",
     "Content-Length": Buffer.byteLength(postData),
   },
 };

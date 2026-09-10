@@ -3,15 +3,17 @@ import { serverLogger } from "./logger";
 
 export interface EmailConfig {
   recipientEmail: string;
-  resendApiKey?: string;
+  apiKey?: string;
   senderEmail?: string;
   enabled: boolean;
 }
 
+const DEFAULT_SENDER = "Team Taraba River <tarabateam@gmail.com>";
+
 const DEFAULT_CONFIG: EmailConfig = {
   recipientEmail: process.env.ADMIN_NOTIFICATION_EMAIL || "tarabateam@gmail.com",
-  resendApiKey: process.env.RESEND_API_KEY || "",
-  senderEmail: process.env.SENDER_EMAIL || "Team Taraba River <onboarding@resend.dev>",
+  apiKey: process.env.BREVO_API_KEY || "",
+  senderEmail: process.env.SENDER_EMAIL || DEFAULT_SENDER,
   enabled: true,
 };
 
@@ -22,11 +24,11 @@ let inMemoryConfig: EmailConfig = { ...DEFAULT_CONFIG };
  * Permanently enabled and locked to the organization owner: tarabateam@gmail.com
  */
 export async function getEmailConfig(): Promise<EmailConfig> {
-  const apiKey = process.env.RESEND_API_KEY || inMemoryConfig.resendApiKey || "";
+  const apiKey = process.env.BREVO_API_KEY || inMemoryConfig.apiKey || "";
   return {
     recipientEmail: "tarabateam@gmail.com",
-    resendApiKey: apiKey,
-    senderEmail: process.env.SENDER_EMAIL || inMemoryConfig.senderEmail || "Team Taraba River <onboarding@resend.dev>",
+    apiKey,
+    senderEmail: process.env.SENDER_EMAIL || inMemoryConfig.senderEmail || DEFAULT_SENDER,
     enabled: true,
   };
 }
@@ -65,17 +67,30 @@ export interface SendEmailParams {
 export interface SendEmailResult {
   success: boolean;
   messageId?: string;
-  provider: "resend" | "firestore_mail" | "simulation";
+  provider: "brevo" | "firestore_mail" | "simulation";
   error?: string;
 }
 
 /**
- * Dispatches an email via Resend API (or fallback to Firestore / preview simulation).
+ * Parses a "Name <email>" string (or a bare email) into Brevo's
+ * `{ name, email }` sender shape.
+ */
+function parseSender(raw: string): { name: string; email: string } {
+  const match = raw.match(/^(.*)<(.+)>$/);
+  if (match) {
+    return { name: match[1].trim() || "Team Taraba River", email: match[2].trim() };
+  }
+  return { name: "Team Taraba River", email: raw.trim() };
+}
+
+/**
+ * Dispatches an email via the Brevo transactional email API (or falls back
+ * to Firestore queuing / preview simulation).
  */
 export async function sendEmail(params: SendEmailParams): Promise<SendEmailResult> {
   const config = await getEmailConfig();
   const recipient = params.to || config.recipientEmail || "tarabateam@gmail.com";
-  const apiKey = config.resendApiKey || process.env.RESEND_API_KEY;
+  const apiKey = config.apiKey || process.env.BREVO_API_KEY;
 
   if (!config.enabled) {
     serverLogger.info("[EmailService] Email dispatch skipped (service is disabled)");
@@ -86,50 +101,51 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
     };
   }
 
-  // 1. If Resend API Key is available, dispatch via Resend REST API
+  // 1. If a Brevo API Key is available, dispatch via the Brevo REST API
   if (apiKey) {
     try {
-      const sender = config.senderEmail || "Team Taraba River <onboarding@resend.dev>";
-      const response = await fetch("https://api.resend.com/emails", {
+      const sender = parseSender(config.senderEmail || DEFAULT_SENDER);
+      const response = await fetch("https://api.brevo.com/v3/smtp/email", {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey.trim()}`,
+          "api-key": apiKey.trim(),
           "Content-Type": "application/json",
+          "accept": "application/json",
         },
         body: JSON.stringify({
-          from: sender,
-          to: [recipient],
+          sender,
+          to: [{ email: recipient }],
           subject: params.subject,
-          html: params.html,
-          text: params.text || "",
+          htmlContent: params.html,
+          textContent: params.text || undefined,
         }),
       });
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.message || data.error?.message || `HTTP ${response.status}`);
+        throw new Error(data.message || `HTTP ${response.status}`);
       }
 
-      serverLogger.info("[EmailService] ✅ Email successfully sent via Resend", {
+      serverLogger.info("[EmailService] ✅ Email successfully sent via Brevo", {
         to: recipient,
         subject: params.subject,
-        messageId: data.id,
+        messageId: data.messageId,
       });
 
       return {
         success: true,
-        messageId: data.id,
-        provider: "resend",
+        messageId: data.messageId,
+        provider: "brevo",
       };
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      serverLogger.error("[EmailService] Failed to send email via Resend", {
+      serverLogger.error("[EmailService] Failed to send email via Brevo", {
         error: errorMsg,
         to: recipient,
       });
       return {
         success: false,
-        provider: "resend",
+        provider: "brevo",
         error: errorMsg,
       };
     }
@@ -166,7 +182,7 @@ export async function sendEmail(params: SendEmailParams): Promise<SendEmailResul
   }
 
   // 3. Simulation mode when no API key is yet configured
-  serverLogger.info("[EmailService] ℹ️ Simulation Mode: Email rendered and logged (Add RESEND_API_KEY to send real emails)", {
+  serverLogger.info("[EmailService] ℹ️ Simulation Mode: Email rendered and logged (Add BREVO_API_KEY to send real emails)", {
     to: recipient,
     subject: params.subject,
   });
