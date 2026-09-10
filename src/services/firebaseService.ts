@@ -270,6 +270,45 @@ export class FirebaseSyncManager {
     }
   }
 
+  /**
+   * Atomically attaches one approved photo/video to an event's media
+   * folder, creating the event if it doesn't exist yet. Uses arrayUnion +
+   * merge instead of a local read-modify-write, so approving many items
+   * from the same upload batch in quick succession (each a separate,
+   * unserialized click) can never overwrite each other's contributions —
+   * a plain saveEvent() read-then-setDoc is not safe under concurrent
+   * writes to the same document.
+   */
+  public static async attachApprovedMedia(params: {
+    eventId: string;
+    photoUrl?: string;
+    videoUrl?: string;
+    createFields: Partial<GroupEvent>;
+  }): Promise<void> {
+    const update: Record<string, any> = { ...params.createFields, id: params.eventId };
+    if (params.photoUrl) {
+      update.driveImageUrls = arrayUnion(params.photoUrl);
+    }
+    if (params.videoUrl) {
+      update.youtubeVideoUrls = arrayUnion(params.videoUrl);
+      update.youtubeVideoUrl = params.videoUrl;
+    }
+    await setDoc(doc(db, "events", params.eventId), update, { merge: true });
+  }
+
+  /**
+   * Atomically increments a member's activity points. Safer than a local
+   * read-modify-write when several approvals for the same member can be
+   * processed in quick succession (see attachApprovedMedia above).
+   */
+  public static async incrementMemberActivityPoints(memberId: string, amount: number): Promise<void> {
+    try {
+      await updateDoc(doc(db, "members", memberId), { activityPoints: increment(amount) });
+    } catch (err) {
+      logger.error("Failed to increment member activity points", err);
+    }
+  }
+
   public static async deleteMember(
     memberId: string,
     memberEmail?: string,

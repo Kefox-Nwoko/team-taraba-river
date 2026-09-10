@@ -681,24 +681,54 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   };
 
   const handleApprovePhoto = async (req: PhotoApprovalRequest) => {
-    // 1. Award activity points to the uploading member
+    // 1. Award activity points to the uploading member. Atomic increment —
+    // approving several items from the same member in quick succession
+    // (each an independent, unserialized click) must not clobber earlier
+    // point awards the way a local read-modify-write would.
     const memIdx = members.findIndex((m) => m.id === req.memberId);
-    if (memIdx !== -1) {
-      if (members[memIdx].role !== "admin") {
-        members[memIdx].activityPoints = (members[memIdx].activityPoints || 0) + 20;
-      }
+    if (memIdx !== -1 && members[memIdx].role !== "admin") {
+      members[memIdx] = { ...members[memIdx], activityPoints: (members[memIdx].activityPoints || 0) + 20 };
       AppStateManager.saveMembers(members);
-      try {
-        await FirebaseSyncManager.saveMember(members[memIdx]);
-      } catch (e) {}
+      FirebaseSyncManager.incrementMemberActivityPoints(req.memberId, 20).catch(() => {});
     }
 
-    // 2. Attach media to target event
+    // 2. Attach media to the target event — atomic arrayUnion (see
+    // FirebaseSyncManager.attachApprovedMedia). Approving many photos from
+    // one upload batch fires one independent call per card with no
+    // serialization between them; a local-array read-then-setDoc silently
+    // drops every contribution but the last writer's.
     const allEvents = AppStateManager.getEvents();
-    let targetEvt = req.eventId ? allEvents.find((e) => e.id === req.eventId) : undefined;
+    const eventId = req.eventId || `folder_${Date.now()}`;
+    const targetEvt = allEvents.find((e) => e.id === eventId);
 
+    const createFields: Partial<GroupEvent> = {
+      title: req.folderName || req.title || "Community Event",
+      date: req.date || req.uploadedAt?.split("T")[0] || new Date().toISOString().split("T")[0],
+      time: "09:00",
+      location: req.location || "",
+      category: req.category || "General",
+      description: req.description || `Archival media collection for ${req.folderName || "Community Event"}.`,
+      driveFolderId: `drive_folder_${Date.now()}`,
+      createdBy: req.memberName || "Community Member",
+      createdById: req.memberId || "mem_guest",
+      attendeeIds: [],
+      maxCapacity: 100,
+      createdAt: req.uploadedAt || new Date().toISOString(),
+    };
+
+    try {
+      await FirebaseSyncManager.attachApprovedMedia({
+        eventId,
+        photoUrl: req.type === "photo" ? req.photoUrl : undefined,
+        videoUrl: req.type === "video" ? req.photoUrl : undefined,
+        createFields,
+      });
+    } catch (e) {}
+
+    // Optimistic local update for instant UI feedback in this browser only —
+    // the real-time Firestore listener reconciles it with the authoritative
+    // state moments later, so this doesn't need to be race-safe itself.
     if (targetEvt) {
-      // Event exists — add the approved photo/video to it
       if (req.type === "video") {
         const existingVideos = targetEvt.youtubeVideoUrls || (targetEvt.youtubeVideoUrl ? [targetEvt.youtubeVideoUrl] : []);
         if (!existingVideos.includes(req.photoUrl)) {
@@ -711,36 +741,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           targetEvt.driveImageUrls = [req.photoUrl, ...existingImgs];
         }
       }
-      AppStateManager.saveEvents(allEvents);
-      try {
-        await FirebaseSyncManager.saveEvent(targetEvt);
-      } catch (e) {}
     } else {
-      // This was a new folder upload submitted by a member — create and publish the media album now
       const newEvt: GroupEvent = {
-        id: req.eventId || `folder_${Date.now()}`,
-        title: req.folderName || req.title || "Community Event",
-        date: req.date || req.uploadedAt?.split("T")[0] || new Date().toISOString().split("T")[0],
-        time: "09:00",
-        location: req.location || "",
-        category: req.category || "General",
-        description: req.description || `Archival media collection for ${req.folderName || "Community Event"}.`,
+        id: eventId,
+        ...createFields,
         driveImageUrls: req.type === "photo" ? [req.photoUrl] : [],
-        driveFolderId: `drive_folder_${Date.now()}`,
         youtubeVideoUrl: req.type === "video" ? req.photoUrl : "",
         youtubeVideoUrls: req.type === "video" ? [req.photoUrl] : [],
-        createdBy: req.memberName || "Community Member",
-        createdById: req.memberId || "mem_guest",
-        attendeeIds: [],
-        maxCapacity: 100,
-        createdAt: req.uploadedAt || new Date().toISOString(),
-      };
+      } as GroupEvent;
       allEvents.unshift(newEvt);
-      AppStateManager.saveEvents(allEvents);
-      try {
-        await FirebaseSyncManager.saveEvent(newEvt);
-      } catch (e) {}
     }
+    AppStateManager.saveEvents(allEvents);
 
     // 3. Zero-residue: Delete approval request document from Firestore immediately
     try {
