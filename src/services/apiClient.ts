@@ -139,7 +139,6 @@ export async function emptyRecycleBin(): Promise<void> {
 }
 
 export interface RequestLoginCodeResult {
-  requiresGoogle?: boolean;
   codeSent?: boolean;
   maskedEmail?: string;
   // Present only in the local-dev fallback, where the server can't send a
@@ -164,9 +163,6 @@ export async function requestLoginCode(credential: string): Promise<RequestLogin
 
   if (!res.ok || !data) {
     throw new Error(data?.error || "Credentials not recognized. Access denied.");
-  }
-  if (data.requiresGoogle) {
-    return { requiresGoogle: true };
   }
   if (data.member) {
     return { member: data.member, customToken: data.customToken ?? null };

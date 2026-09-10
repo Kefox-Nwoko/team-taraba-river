@@ -173,10 +173,12 @@ export const LoginGate: React.FC<LoginGateProps> = ({
   };
 
   // Step 1: resolve the credential server-side. A match never logs the
-  // member in directly here — either they're routed to Google (Gmail
-  // accounts), or a one-time code is emailed to their registered address
-  // and we move to the code-entry stage. Deciding this locally from a
-  // cached member list would let anyone skip the code entirely.
+  // member in directly here — a one-time code is emailed to their
+  // registered address and we move to the code-entry stage. This is
+  // available to every member, including Gmail accounts, who are free to
+  // use this OR the Google button below — it's their choice. Deciding this
+  // locally from a cached member list would let anyone skip the code
+  // entirely.
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!credential.trim()) return;
@@ -186,11 +188,6 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     try {
       const rawCred = credential.trim();
       const result = await requestLoginCode(rawCred);
-
-      if (result.requiresGoogle) {
-        setError("This account uses Gmail. Please sign in with the Google button below.");
-        return;
-      }
 
       // Local-dev fallback only: no email service is available offline, so
       // the server completes the login in one step here instead.

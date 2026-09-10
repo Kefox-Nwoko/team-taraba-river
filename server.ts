@@ -814,10 +814,12 @@ function maskEmail(email: string): string {
 }
 
 /**
- * Step 1 of login: resolve the credential to a member and either point
- * Gmail-registered members at Google OAuth, or email a one-time code to
- * their REGISTERED address (never to whatever they typed) and wait for
- * /api/auth/login/verify-code. No member data is returned from this step.
+ * Step 1 of login: resolve the credential to a member and email a one-time
+ * code to their REGISTERED address (never to whatever they typed), then
+ * wait for /api/auth/login/verify-code. No member data is returned from
+ * this step. Available to every member regardless of email provider —
+ * Gmail-registered members can use this OR the separate Google OAuth
+ * button; it's their choice, not enforced here.
  */
 app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => {
   const validation = validateBody(LoginCredentialSchema, req.body);
@@ -848,15 +850,9 @@ app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => 
     }
     const { memberData, memberDocId } = found;
 
-    if ((memberData.email || '').toLowerCase().trim().endsWith('@gmail.com')) {
-      res.json({
-        success: false,
-        requiresGoogle: true,
-        error: 'This account uses Gmail. Please sign in with Google instead.',
-      });
-      return;
-    }
-
+    // Gmail accounts are free to use either Google OAuth (their own "Google"
+    // button on the login screen) or this code path — it's the member's
+    // choice, not enforced here.
     if (!memberData.email) {
       res.status(500).json({ error: 'No email on file for this account. Contact an administrator.' });
       return;
