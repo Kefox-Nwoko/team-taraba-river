@@ -371,6 +371,10 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
     const query = queryText.trim();
     if (!query || query.length < 2 || contactLoading) return;
 
+    // Mark any in-flight search as superseded — searchMembers itself has a
+    // hard 15s overall deadline (see apiClient.ts), so this guard is purely
+    // about not letting an older, slower response overwrite the results of
+    // a newer search once both eventually resolve.
     if (contactAbortRef.current) contactAbortRef.current.abort();
     const controller = new AbortController();
     contactAbortRef.current = controller;
@@ -378,15 +382,17 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
     setContactLoading(true);
     try {
       const res = await searchMembers(query);
+      if (controller.signal.aborted) return;
       setContactResults(res.members);
       setContactTotal(res.total);
       setContactAiPowered(res.aiPowered);
     } catch {
+      if (controller.signal.aborted) return;
       setContactResults([]);
       setContactTotal(0);
       setContactAiPowered(false);
     } finally {
-      setContactLoading(false);
+      if (!controller.signal.aborted) setContactLoading(false);
     }
   }
 

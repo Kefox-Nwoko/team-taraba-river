@@ -1094,16 +1094,22 @@ Return format: ["id1", "id2", ...]`;
 
     let response: any = null;
     const aiModels = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.6-flash"];
+    // Each model attempt gets a hard 6s cutoff — without one, a hung call
+    // blocks every later fallback model AND the simpleContactSearch fallback
+    // below, leaving the request (and the UI spinner) stuck indefinitely.
     for (const model of aiModels) {
       try {
-        response = await ai.models.generateContent({
-          model,
-          contents: prompt,
-          config: {
-            temperature: 0.2,
-            responseMimeType: "application/json",
-          },
-        });
+        response = await Promise.race([
+          ai.models.generateContent({
+            model,
+            contents: prompt,
+            config: {
+              temperature: 0.2,
+              responseMimeType: "application/json",
+            },
+          }),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${model} timed out`)), 6000)),
+        ]);
         if (response?.text) break;
       } catch (err) {}
     }

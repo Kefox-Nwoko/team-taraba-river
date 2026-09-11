@@ -1900,20 +1900,32 @@ RULES & CAPABILITIES:
 
 User prompt: "${query}"`;
 
+  // Each model attempt gets a hard 6s cutoff — without one, a single hung
+  // request blocks not just this model but every later fallback (the next
+  // model name, the server search, and the instant local search below),
+  // leaving the UI spinning indefinitely instead of degrading gracefully.
   for (const model of models) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature: 0.2,
-          },
-        }),
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6000);
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.2,
+            },
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       const data = await res.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (text) {
@@ -1948,52 +1960,85 @@ User prompt: "${query}"`;
   return null;
 }
 
+// Absolute ceiling on the whole search — Steps 1 and 2 each have their own
+// per-request timeouts, but this is the single, explicit answer to "when
+// does it stop searching": no matter how many fallback steps are involved,
+// the caller never waits longer than this before getting a real (if lower-
+// confidence) result from the always-instant local search in Step 3.
+const MEMBER_SEARCH_OVERALL_DEADLINE_MS = 15000;
+
 export async function searchMembers(query: string): Promise<MemberSearchResponse> {
   const localMembers = AppStateManager.getMembers();
-  const storedKey = localStorage.getItem("gemini_api_key") || DEFAULT_GEMINI_KEY;
 
-  // Step 1: Try direct Gemini AI search if key is available
-  if (storedKey && localMembers.length > 0) {
+  const runSteps = async (): Promise<MemberSearchResponse> => {
+    const storedKey = localStorage.getItem("gemini_api_key") || DEFAULT_GEMINI_KEY;
+
+    // Step 1: Try direct Gemini AI search if key is available. This always
+    // searches the FULL current member list (localMembers, no slicing/
+    // pagination), so results cover every registered contact, not a subset.
+    if (storedKey && localMembers.length > 0) {
+      try {
+        const directAiResults = await queryDirectGeminiMemberSearch(localMembers, query, storedKey);
+        if (directAiResults && directAiResults.length > 0) {
+          return {
+            members: directAiResults,
+            total: directAiResults.length,
+            aiPowered: true,
+          };
+        }
+      } catch {}
+    }
+
+    // Step 2: Try backend API — also time-boxed so a slow server-side AI call
+    // can't leave this stuck; Step 3 below always completes instantly.
     try {
-      const directAiResults = await queryDirectGeminiMemberSearch(localMembers, query, storedKey);
-      if (directAiResults && directAiResults.length > 0) {
-        return {
-          members: directAiResults,
-          total: directAiResults.length,
-          aiPowered: true,
-        };
+      const headers = await getAuthHeaders();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch(apiUrl("/api/members/search"), {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ query }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json")) {
+        const data = await res.json();
+        if (Array.isArray(data.members) && data.members.length > 0) {
+          return {
+            members: data.members,
+            total: typeof data.total === "number" ? data.total : data.members.length,
+            aiPowered: Boolean(data.aiPowered),
+          };
+        }
       }
     } catch {}
-  }
 
-  // Step 2: Try backend API
-  try {
-    const headers = await getAuthHeaders();
-    const res = await fetch(apiUrl("/api/members/search"), {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ query }),
-    });
-    const contentType = res.headers.get("content-type") || "";
-    if (res.ok && contentType.includes("application/json")) {
-      const data = await res.json();
-      if (Array.isArray(data.members) && data.members.length > 0) {
-        return {
-          members: data.members,
-          total: typeof data.total === "number" ? data.total : data.members.length,
-          aiPowered: Boolean(data.aiPowered),
-        };
-      }
-    }
-  } catch {}
-
-  // Step 3: Fast client-side semantic search engine
-  const fallbackResults = performClientSemanticMemberSearch(localMembers, query);
-  return {
-    members: fallbackResults,
-    total: fallbackResults.length,
-    aiPowered: true,
+    // Step 3: Fast client-side semantic search engine — synchronous over the
+    // full local member list, so it always finishes immediately and always
+    // covers every contact regardless of how Steps 1/2 went.
+    const fallbackResults = performClientSemanticMemberSearch(localMembers, query);
+    return {
+      members: fallbackResults,
+      total: fallbackResults.length,
+      aiPowered: true,
+    };
   };
+
+  return Promise.race([
+    runSteps(),
+    new Promise<MemberSearchResponse>((resolve) => {
+      setTimeout(() => {
+        const fallbackResults = performClientSemanticMemberSearch(localMembers, query);
+        resolve({ members: fallbackResults, total: fallbackResults.length, aiPowered: true });
+      }, MEMBER_SEARCH_OVERALL_DEADLINE_MS);
+    }),
+  ]);
 }
 
 export async function adminAISearch(query: string): Promise<Member[]> {
@@ -2013,11 +2058,19 @@ export async function adminAISearch(query: string): Promise<Member[]> {
 
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(apiUrl("/api/admin/ai-search"), {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ query }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    let res: Response;
+    try {
+      res = await fetch(apiUrl("/api/admin/ai-search"), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ query }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
     const data = await res.json();
     if (res.ok && Array.isArray(data.members) && data.members.length > 0) {
       return data.members;
