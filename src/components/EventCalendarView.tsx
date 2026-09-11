@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { logger } from "../lib/logger";
 import { GroupEvent, Member } from "../types";
 import { submitEventRSVP } from "../services/apiClient";
@@ -15,6 +15,13 @@ import {
   Clock,
   Cake,
 } from "lucide-react";
+
+const MONTH_NAME_TO_NUMBER: Record<string, number> = {
+  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+  apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
+  aug: 8, august: 8, sep: 9, september: 9, oct: 10, october: 10,
+  nov: 11, november: 11, dec: 12, december: 12
+};
 
 interface EventCalendarViewProps {
   events: GroupEvent[];
@@ -56,10 +63,14 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
     }
   };
 
-  // STRICT RULE: Only official future chapter events (excludes past events and media gallery folders)
-  const officialUpcomingEvents = events.filter(isOfficialFutureEvent);
+  // STRICT RULE: Only official future chapter events (excludes past events and media gallery folders).
+  // Memoized because this view re-renders on every RSVP click, and without
+  // memoization all of this filtering/sorting/date-parsing work (including
+  // the per-member birthday regex parsing below) re-ran unconditionally
+  // every time regardless of whether events/members actually changed.
+  const officialUpcomingEvents = useMemo(() => events.filter(isOfficialFutureEvent), [events]);
 
-  const eventsInNext7Days = officialUpcomingEvents
+  const eventsInNext7Days = useMemo(() => officialUpcomingEvents
     .filter((e) => {
       const days = getDaysUntilEvent(e.date);
       return (days !== null && days >= 0 && days <= 7) || isEventOngoing(e);
@@ -73,9 +84,9 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
       const dA = getDaysUntilEvent(a.date) ?? 999;
       const dB = getDaysUntilEvent(b.date) ?? 999;
       return dA - dB;
-    });
+    }), [officialUpcomingEvents]);
 
-  const filteredEvents = officialUpcomingEvents
+  const filteredEvents = useMemo(() => officialUpcomingEvents
     .filter((e) => {
       if (selectedCategory === "next7days") {
         const days = getDaysUntilEvent(e.date);
@@ -94,9 +105,9 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
       const dA = getDaysUntilEvent(a.date) ?? 999;
       const dB = getDaysUntilEvent(b.date) ?? 999;
       return dA - dB;
-    });
+    }), [officialUpcomingEvents, selectedCategory]);
 
-  const dynamicCategories = Array.from(
+  const dynamicCategories = useMemo(() => Array.from(
     new Set(
       officialUpcomingEvents.flatMap((e) =>
         (e.category || "General")
@@ -105,91 +116,86 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
           .filter(Boolean)
       )
     )
-  ).sort();
+  ).sort(), [officialUpcomingEvents]);
 
   // BIRTHDAYS FILTER: Current month, and next month's birthdays starting from the 25th of the current month
-  const todayObj = new Date();
-  const currentMonth = todayObj.getMonth() + 1; // 1-12
-  const currentDay = todayObj.getDate(); // 1-31
-  const nextMonth = (currentMonth % 12) + 1;
+  const birthdaysList = useMemo(() => {
+    const todayObj = new Date();
+    const currentMonth = todayObj.getMonth() + 1; // 1-12
+    const currentDay = todayObj.getDate(); // 1-31
+    const nextMonth = (currentMonth % 12) + 1;
 
-  const monthMap: Record<string, number> = {
-    jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
-    apr: 4, april: 4, may: 5, jun: 6, june: 6, jul: 7, july: 7,
-    aug: 8, august: 8, sep: 9, september: 9, oct: 10, october: 10,
-    nov: 11, november: 11, dec: 12, december: 12
-  };
+    return members
+      .map((m) => {
+        const dobStr = (m.dateOfBirth || "").trim();
+        const bMonthRaw = (m as any).birthMonth;
+        const bDayRaw = (m as any).birthDay;
 
-  const birthdaysList = members
-    .map((m) => {
-      const dobStr = (m.dateOfBirth || "").trim();
-      const bMonthRaw = (m as any).birthMonth;
-      const bDayRaw = (m as any).birthDay;
+        let bMonth = 0;
+        let bDay = 0;
 
-      let bMonth = 0;
-      let bDay = 0;
-
-      if (bDayRaw) bDay = parseInt(bDayRaw, 10) || 0;
-      if (bMonthRaw) {
-        bMonth = parseInt(bMonthRaw, 10) || 0;
-        if (isNaN(bMonth) || bMonth === 0) {
-          const lowercase = String(bMonthRaw).toLowerCase();
-          for (const [mName, mNum] of Object.entries(monthMap)) {
-            if (lowercase.includes(mName)) {
-              bMonth = mNum;
-              break;
-            }
-          }
-        }
-      }
-
-      if (dobStr) {
-        const isoMatch = dobStr.match(/^\d{4}-(\d{1,2})-(\d{1,2})$/);
-        if (isoMatch) {
-          bMonth = parseInt(isoMatch[1], 10);
-          bDay = parseInt(isoMatch[2], 10);
-        } else {
-          const cleanDob = dobStr.replace(/(\d+)(st|nd|rd|th)/gi, "$1").toLowerCase();
-          for (const [mName, mNum] of Object.entries(monthMap)) {
-            if (cleanDob.includes(mName)) {
-              bMonth = mNum;
-              const dayMatch = cleanDob.match(/\b([0-2]?[0-9]|3[01])\b/);
-              if (dayMatch) {
-                bDay = parseInt(dayMatch[1], 10);
+        if (bDayRaw) bDay = parseInt(bDayRaw, 10) || 0;
+        if (bMonthRaw) {
+          bMonth = parseInt(bMonthRaw, 10) || 0;
+          if (isNaN(bMonth) || bMonth === 0) {
+            const lowercase = String(bMonthRaw).toLowerCase();
+            for (const [mName, mNum] of Object.entries(MONTH_NAME_TO_NUMBER)) {
+              if (lowercase.includes(mName)) {
+                bMonth = mNum;
+                break;
               }
-              break;
             }
           }
         }
-      }
 
-      const isToday = bMonth === currentMonth && bDay === currentDay;
-      // Birthdays that have passed (bDay < currentDay) disappear once the day is over
-      const isUpcomingThisMonth = bMonth === currentMonth && bDay >= currentDay;
-      const isNextMonthNearEnd = currentDay >= 25 && bMonth === nextMonth;
+        if (dobStr) {
+          const isoMatch = dobStr.match(/^\d{4}-(\d{1,2})-(\d{1,2})$/);
+          if (isoMatch) {
+            bMonth = parseInt(isoMatch[1], 10);
+            bDay = parseInt(isoMatch[2], 10);
+          } else {
+            const cleanDob = dobStr.replace(/(\d+)(st|nd|rd|th)/gi, "$1").toLowerCase();
+            for (const [mName, mNum] of Object.entries(MONTH_NAME_TO_NUMBER)) {
+              if (cleanDob.includes(mName)) {
+                bMonth = mNum;
+                const dayMatch = cleanDob.match(/\b([0-2]?[0-9]|3[01])\b/);
+                if (dayMatch) {
+                  bDay = parseInt(dayMatch[1], 10);
+                }
+                break;
+              }
+            }
+          }
+        }
 
-      const isVisible = isUpcomingThisMonth || isNextMonthNearEnd;
+        const isToday = bMonth === currentMonth && bDay === currentDay;
+        // Birthdays that have passed (bDay < currentDay) disappear once the day is over
+        const isUpcomingThisMonth = bMonth === currentMonth && bDay >= currentDay;
+        const isNextMonthNearEnd = currentDay >= 25 && bMonth === nextMonth;
 
-      return {
-        memberId: m.id,
-        memberName: m.fullName,
-        photoUrl: m.photoUrl,
-        fullDob: m.dateOfBirth || (((m as any).birthDay || "") + " " + ((m as any).birthMonth || "")).trim(),
-        bDay,
-        bMonth,
-        isToday,
-        isVisible,
-      };
-    })
-    .filter((item) => item.isVisible)
-    .sort((a, b) => {
-      // 1. Today's celebrants come first
-      if (a.isToday && !b.isToday) return -1;
-      if (!a.isToday && b.isToday) return 1;
-      // 2. Sort chronologically by day
-      if (a.bMonth === b.bMonth) return a.bDay - b.bDay;
-      return a.bMonth - b.bMonth;
-    });
+        const isVisible = isUpcomingThisMonth || isNextMonthNearEnd;
+
+        return {
+          memberId: m.id,
+          memberName: m.fullName,
+          photoUrl: m.photoUrl,
+          fullDob: m.dateOfBirth || (((m as any).birthDay || "") + " " + ((m as any).birthMonth || "")).trim(),
+          bDay,
+          bMonth,
+          isToday,
+          isVisible,
+        };
+      })
+      .filter((item) => item.isVisible)
+      .sort((a, b) => {
+        // 1. Today's celebrants come first
+        if (a.isToday && !b.isToday) return -1;
+        if (!a.isToday && b.isToday) return 1;
+        // 2. Sort chronologically by day
+        if (a.bMonth === b.bMonth) return a.bDay - b.bDay;
+        return a.bMonth - b.bMonth;
+      });
+  }, [members]);
 
   const handleRSVP = async (eventId: string, status: "attending" | "maybe" | "declined") => {
     if (!currentUser) return;

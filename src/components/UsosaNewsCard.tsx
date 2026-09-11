@@ -39,6 +39,7 @@ import {
   NewsHeadline,
 } from "../services/apiClient";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { LazyImage } from "./ui/LazyImage";
 import { formatMemberDisplayName } from "../utils/nameUtils";
 import { Member } from "../types";
 import { EngagementTracker } from "../services/EngagementTracker";
@@ -46,6 +47,31 @@ import { EngagementTracker } from "../services/EngagementTracker";
 interface UsosaNewsCardProps {
   currentUser: Member | null;
 }
+
+/** Networking-tab result avatar — same lazy-load + skeleton-fade treatment
+ *  as MemberAvatar elsewhere, falling back to initials on a missing or
+ *  failed photo instead of a raw <img> with no placeholder. */
+const NetworkingAvatar: React.FC<{ photoUrl?: string; fullName?: string }> = ({ photoUrl, fullName }) => {
+  const [errored, setErrored] = useState(false);
+  const initial = (fullName || "M").charAt(0).toUpperCase();
+
+  if (photoUrl && !errored) {
+    return (
+      <LazyImage
+        src={photoUrl}
+        alt={fullName || "Member"}
+        onError={() => setErrored(true)}
+        className="w-11 h-11 rounded-2xl shrink-0 shadow-sm mt-0.5"
+      />
+    );
+  }
+
+  return (
+    <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-teal-600 to-emerald-500 text-white flex items-center justify-center shrink-0 font-black text-sm shadow-sm mt-0.5">
+      {initial}
+    </div>
+  );
+};
 
 interface ChatMessage {
   id: string;
@@ -821,14 +847,9 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                     className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-teal-500/50 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3.5"
                   >
                     <div className="flex items-start gap-3 min-w-0 flex-1">
-                      {/* Avatar */}
-                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-teal-600 to-emerald-500 text-white flex items-center justify-center shrink-0 font-black text-sm overflow-hidden shadow-sm mt-0.5">
-                        {m.photoUrl ? (
-                          <img src={m.photoUrl} alt="" className="w-11 h-11 rounded-2xl object-cover" />
-                        ) : (
-                          (m.fullName || "M").charAt(0).toUpperCase()
-                        )}
-                      </div>
+                      {/* Avatar — same lazy-load + skeleton-fade pattern as MemberAvatar/LazyImage
+                          elsewhere in the app, instead of a raw <img> with no placeholder. */}
+                      <NetworkingAvatar photoUrl={m.photoUrl} fullName={m.fullName} />
 
                       {/* Info */}
                       <div className="min-w-0 flex-1 space-y-1">

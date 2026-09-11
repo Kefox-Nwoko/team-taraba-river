@@ -778,7 +778,30 @@ export class AppStateManager {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
+
+  private static notifySuppressDepth = 0;
+
+  /**
+   * Collapses every notify() call inside fn into at most one, fired after fn
+   * finishes. Batch operations (e.g. approving 10 photos in a row) used to
+   * fire a full app re-render per item since each one calls saveMembers/
+   * saveEvents individually — this lets that per-item work stay as-is while
+   * the UI only actually re-renders once for the whole batch.
+   */
+  public static async runBatched(fn: () => Promise<void>): Promise<void> {
+    this.notifySuppressDepth++;
+    try {
+      await fn();
+    } finally {
+      this.notifySuppressDepth = Math.max(0, this.notifySuppressDepth - 1);
+      if (this.notifySuppressDepth === 0) {
+        this.notify();
+      }
+    }
+  }
+
   private static notify() {
+    if (this.notifySuppressDepth > 0) return;
     this.listeners.forEach((fn) => fn());
   }
 }

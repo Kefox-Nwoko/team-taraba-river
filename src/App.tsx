@@ -233,11 +233,19 @@ export default function App() {
   };
 
   useEffect(() => {
-    const handleScroll = (e?: Event) => {
+    // Throttled to once per animation frame — this used to run a
+    // querySelectorAll + loop over every scroll-container on the page on
+    // EVERY scroll event (which can fire dozens of times per second during
+    // a fling), competing with scroll compositing on the main thread.
+    let ticking = false;
+    let lastEventTarget: EventTarget | null = null;
+
+    const computeScrollTopVisibility = () => {
+      ticking = false;
       const winScroll = window.scrollY || document.documentElement.scrollTop;
       let containerScroll = 0;
-      if (e && e.target && (e.target as HTMLElement).scrollTop) {
-        containerScroll = (e.target as HTMLElement).scrollTop;
+      if (lastEventTarget && (lastEventTarget as HTMLElement).scrollTop) {
+        containerScroll = (lastEventTarget as HTMLElement).scrollTop;
       }
       const scrollables = document.querySelectorAll(".overflow-y-auto, [data-scroll-container]");
       scrollables.forEach((el) => {
@@ -246,6 +254,14 @@ export default function App() {
         }
       });
       setShowScrollTop(winScroll > 150 || containerScroll > 150);
+    };
+
+    const handleScroll = (e?: Event) => {
+      lastEventTarget = e?.target ?? null;
+      if (!ticking) {
+        ticking = true;
+        requestAnimationFrame(computeScrollTopVisibility);
+      }
     };
 
     handleScroll();

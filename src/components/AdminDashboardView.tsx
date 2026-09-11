@@ -784,7 +784,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     return updatedEvt;
   };
 
-  const handleRejectPhoto = async (req: PhotoApprovalRequest) => {
+  const handleRejectPhoto = async (req: PhotoApprovalRequest, shouldRefresh: boolean = true) => {
     // If rejecting a video, also delete it from YouTube to prevent orphaned assets
     if (req.type === "video" && req.photoUrl) {
       try {
@@ -833,7 +833,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
 
     setPendingApprovals((prev) => prev.filter((r) => r.id !== req.id));
-    onRefreshData();
+    if (shouldRefresh) {
+      onRefreshData();
+    }
   };
 
   // Media Moderation Multi-Selection State
@@ -862,9 +864,14 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     if (itemsToApprove.length === 0) return;
     setIsBatchProcessing(true);
     let lastEvent: GroupEvent | undefined;
-    for (const req of itemsToApprove) {
-      lastEvent = await handleApprovePhoto(req, false);
-    }
+    // Each handleApprovePhoto call does its own saveMembers/saveEvents,
+    // which would otherwise fire a full app re-render per item — runBatched
+    // collapses that fan-out to one re-render for the whole batch.
+    await AppStateManager.runBatched(async () => {
+      for (const req of itemsToApprove) {
+        lastEvent = await handleApprovePhoto(req, false);
+      }
+    });
     setSelectedMediaIds(new Set());
     setIsBatchProcessing(false);
     if (lastEvent) {
@@ -902,14 +909,20 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     if (itemsToReject.length === 0) return;
     setIsProcessingReject(true);
     try {
-      for (const req of itemsToReject) {
-        const updatedReq = {
-          ...req,
-          adminNotes: rejectionNotesInput.trim() || req.adminNotes,
-        };
-        await handleRejectPhoto(updatedReq);
-      }
+      // Same reasoning as handleBatchApprove: suppress the per-item local
+      // re-render and the per-item server refresh, then do each exactly
+      // once for the whole batch.
+      await AppStateManager.runBatched(async () => {
+        for (const req of itemsToReject) {
+          const updatedReq = {
+            ...req,
+            adminNotes: rejectionNotesInput.trim() || req.adminNotes,
+          };
+          await handleRejectPhoto(updatedReq, false);
+        }
+      });
       setSelectedMediaIds(new Set());
+      onRefreshData();
     } finally {
       setIsProcessingReject(false);
       setIsBatchRejectModalOpen(false);
