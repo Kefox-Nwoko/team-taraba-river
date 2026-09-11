@@ -20,8 +20,8 @@ import {
  * late to decide whether to skip.
  */
 
-const ADMIN_EMAIL = "kefox.nwoko@gmail.com";
-const OTHER_ADMIN_EMAIL = "tarabateam@gmail.com";
+const ADMIN_EMAIL = "tarabateam@gmail.com";
+const OTHER_ADMIN_EMAIL = "xtraworxng@gmail.com";
 const NON_ADMIN_EMAIL = "someone@example.com";
 
 let testEnv: RulesTestEnvironment | null = null;
@@ -122,12 +122,12 @@ describe.skipIf(!testEnv)("firestore.rules", () => {
       );
     });
 
-    it("denies the OLD undocumented third admin email (xtraworxng@gmail.com) — must no longer have admin rights", async () => {
+    it("denies kefox.nwoko@gmail.com — removed from the admin roster", async () => {
       await testEnv!.withSecurityRulesDisabled(async (ctx) => {
         await ctx.firestore().collection("members").doc("mem_other").set({ fullName: "Other" });
       });
-      const notAdminAnymore = testEnv!.authenticatedContext("stale_admin_uid", {
-        email: "xtraworxng@gmail.com",
+      const notAdminAnymore = testEnv!.authenticatedContext("former_admin_uid", {
+        email: "kefox.nwoko@gmail.com",
       });
       await assertFails(
         notAdminAnymore.firestore().collection("members").doc("mem_other").update({ activityPoints: 0 })

@@ -174,11 +174,12 @@ export const LoginGate: React.FC<LoginGateProps> = ({
 
   // Step 1: resolve the credential server-side. A match never logs the
   // member in directly here — a one-time code is emailed to their
-  // registered address and we move to the code-entry stage. This is
-  // available to every member, including Gmail accounts, who are free to
-  // use this OR the Google button below — it's their choice. Deciding this
-  // locally from a cached member list would let anyone skip the code
-  // entirely.
+  // registered address and we move to the code-entry stage. Regular members
+  // are free to use this OR the Google button below — it's their choice.
+  // Admin accounts are the one exception: they're routed to Google only
+  // (enforced server-side against the account's registered email, not
+  // whatever was typed). Deciding any of this locally from a cached member
+  // list would let anyone skip the code entirely.
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!credential.trim()) return;
@@ -188,6 +189,11 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     try {
       const rawCred = credential.trim();
       const result = await requestLoginCode(rawCred);
+
+      if (result.requiresGoogle) {
+        setError("Admin accounts must sign in with Google. Please use the Google button below.");
+        return;
+      }
 
       // Local-dev fallback only: no email service is available offline, so
       // the server completes the login in one step here instead.

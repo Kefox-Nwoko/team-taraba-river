@@ -141,6 +141,9 @@ export async function emptyRecycleBin(): Promise<void> {
 export interface RequestLoginCodeResult {
   codeSent?: boolean;
   maskedEmail?: string;
+  // Set when the resolved account is an admin — admins must use the Google
+  // OAuth button instead of the code flow.
+  requiresGoogle?: boolean;
   // Present only in the local-dev fallback, where the server can't send a
   // real email and completes the login in one step.
   member?: Member;
@@ -163,6 +166,9 @@ export async function requestLoginCode(credential: string): Promise<RequestLogin
 
   if (!res.ok || !data) {
     throw new Error(data?.error || "Credentials not recognized. Access denied.");
+  }
+  if (data.requiresGoogle) {
+    return { requiresGoogle: true };
   }
   if (data.member) {
     return { member: data.member, customToken: data.customToken ?? null };

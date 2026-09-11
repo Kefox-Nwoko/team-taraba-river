@@ -457,7 +457,7 @@ const CHAPTERS: Chapter[] = [
         }
       ],
       steps: [
-        "Sign in using an authorized Google Admin account (e.g. kefox.nwoko@gmail.com or tarabateam@gmail.com).",
+        "Sign in with Google using an authorized admin account (e.g. tarabateam@gmail.com or xtraworxng@gmail.com). Admin accounts must use Google sign-in — the email/phone code option is member-only.",
         "Tap the 'Admin' badge icon in the bottom navigation bar.",
         "Tap 'Members Directory' to edit member profiles, assign roles, or seed member rosters.",
         "Tap 'Media Moderation' to review and approve newly uploaded member profile pictures with 1 tap.",

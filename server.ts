@@ -850,9 +850,20 @@ app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => 
     }
     const { memberData, memberDocId } = found;
 
-    // Gmail accounts are free to use either Google OAuth (their own "Google"
-    // button on the login screen) or this code path — it's the member's
-    // choice, not enforced here.
+    // Admin accounts must use Google OAuth exclusively — the email/phone
+    // code path is member-only. This is checked against the account's
+    // REGISTERED email (never whatever the visitor typed), so it can't be
+    // bypassed by entering a phone number that happens to resolve to an
+    // admin's member record.
+    if (isAdminEmail(memberData.email || '')) {
+      res.json({
+        success: false,
+        requiresGoogle: true,
+        error: 'Admin accounts must sign in with Google.',
+      });
+      return;
+    }
+
     if (!memberData.email) {
       res.status(500).json({ error: 'No email on file for this account. Contact an administrator.' });
       return;
