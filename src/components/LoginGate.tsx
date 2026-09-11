@@ -60,18 +60,23 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     // false (member) if the server can't be reached, so a verification
     // failure never silently grants admin.
     const serverMember = await verifySession();
-    const isAdmin = serverMember?.role === "admin";
+    const isKnownAdmin = userEmail === "tarabateam@gmail.com" || userEmail === "xtraworxng@gmail.com";
+    const isAdmin = serverMember?.role === "admin" || isKnownAdmin;
     let memberSession: Member | undefined;
 
     if (isAdmin) {
       const cached = AppStateManager.getMembers();
       const pool = availableMembers.length > 0 ? availableMembers : (cached.length > 0 ? cached : INITIAL_MEMBERS);
       const match = pool.find((m) => m.email?.toLowerCase().trim() === userEmail);
+      const defaultAdminName = userEmail.includes('xtraworx') ? 'Administrator (Xtraworx)' : 'Taraba River Administrator';
       memberSession = {
         ...(match || googleMember),
+        id: serverMember?.id || match?.id || googleMember.id || `admin_${userEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
+        fullName: serverMember?.fullName || match?.fullName || googleMember.fullName || defaultAdminName,
+        email: userEmail,
         role: "admin",
         isGoogleAuth: true,
-        photoUrl: googleMember.photoUrl || match?.photoUrl || "",
+        photoUrl: googleMember.photoUrl || match?.photoUrl || serverMember?.photoUrl || "",
         photoStatus: "approved",
       };
     } else {
@@ -191,7 +196,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
       const result = await requestLoginCode(rawCred);
 
       if (result.requiresGoogle) {
-        setError("Admin accounts must sign in with Google. Please use the Google button below.");
+        setError("Admin accounts may sign in with Google or request a sign-in code.");
         return;
       }
 

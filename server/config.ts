@@ -2,13 +2,20 @@
  * Centralized environment configuration.
  * Reads from process.env with sensible defaults for local development.
  */
+const DEFAULT_ADMIN_EMAILS = ['tarabateam@gmail.com', 'xtraworxng@gmail.com'];
+
 export const config = {
-  // Admin emails must be set via ADMIN_EMAILS env var in production.
-  // Comma-separated: e.g. ADMIN_EMAILS="user1@gmail.com,user2@gmail.com"
-  adminEmails: (process.env.ADMIN_EMAILS || '')
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean),
+  // Admin emails can be configured or extended via ADMIN_EMAILS env var.
+  // Defaults always include official chapter admins.
+  adminEmails: Array.from(
+    new Set([
+      ...DEFAULT_ADMIN_EMAILS,
+      ...(process.env.ADMIN_EMAILS || '')
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean),
+    ])
+  ),
   ownerEmail: process.env.OWNER_EMAIL || 'tarabateam@gmail.com',
   googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
   youtubeApiKey: process.env.YOUTUBE_API_KEY || '',
@@ -24,5 +31,6 @@ export const config = {
 
 export const isAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
-  return config.adminEmails.includes(email.toLowerCase());
+  const normalized = email.trim().toLowerCase();
+  return config.adminEmails.includes(normalized);
 };

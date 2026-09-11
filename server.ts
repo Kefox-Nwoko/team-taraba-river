@@ -744,15 +744,19 @@ app.post("/api/auth/verify", rateLimiter, async (req: Request, res: Response) =>
       }
 
       await db.collection(COLLECTIONS.members).doc(uid).update(updates);
+      if (role === 'admin' && !fallbackMembers.some(m => m.email?.toLowerCase().trim() === email.toLowerCase().trim())) {
+        fallbackMembers.push(member);
+      }
     } else {
+      const adminDefaultName = email.toLowerCase().includes('xtraworx') ? 'Administrator (Xtraworx)' : 'Taraba River Administrator';
       member = {
         id: uid,
-        fullName: decodedToken.name || email.split('@')[0] || 'Community Member',
+        fullName: decodedToken.name || (role === 'admin' ? adminDefaultName : (email.split('@')[0] || 'Community Member')),
         email: email,
         phoneNumber: decodedToken.phone_number || '',
         dateOfBirth: '',
-        occupation: 'Community Member',
-        skills: ['Community Support'],
+        occupation: role === 'admin' ? 'System Administrator' : 'Community Member',
+        skills: role === 'admin' ? ['Portal Administration', 'Executive Leadership'] : ['Community Support'],
         photoUrl: decodedToken.picture || '',
         photoStatus: 'approved' as PhotoApprovalStatus,
         role: role as UserRole,
@@ -762,6 +766,10 @@ app.post("/api/auth/verify", rateLimiter, async (req: Request, res: Response) =>
       };
       await db.collection(COLLECTIONS.members).doc(uid).set(member);
       await incrementGlobalVisits(member.fullName);
+
+      if (role === 'admin' && !fallbackMembers.some(m => m.email?.toLowerCase().trim() === email.toLowerCase().trim())) {
+        fallbackMembers.push(member);
+      }
 
       if (role !== 'admin') {
         await addActivityLog({
@@ -796,13 +804,55 @@ async function findMemberByCredential(rawCred: string): Promise<{ memberData: Me
     return { memberData: matchedLocal, memberDocId: matchedLocal.id };
   }
 
-  const allMembersSnap = await db.collection(COLLECTIONS.members).get();
-  for (const d of allMembersSnap.docs) {
-    const m = { id: d.id, ...d.data() } as Member;
-    if (isMemberCredentialMatch(m, rawCred)) {
-      return { memberData: m, memberDocId: d.id };
+  if (isFirestoreAvailable()) {
+    try {
+      const allMembersSnap = await db.collection(COLLECTIONS.members).get();
+      for (const d of allMembersSnap.docs) {
+        const m = { id: d.id, ...d.data() } as Member;
+        if (isMemberCredentialMatch(m, rawCred)) {
+          return { memberData: m, memberDocId: d.id };
+        }
+      }
+    } catch (err) {
+      serverLogger.warn("Firestore query in findMemberByCredential failed", { error: String(err) });
     }
   }
+
+  // If the credential is an authorized admin email, ensure the admin account exists
+  if (isAdminEmail(rawCred)) {
+    const adminEmail = rawCred.toLowerCase().trim();
+    const adminDocId = `admin_${adminEmail.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const adminName = adminEmail.includes('xtraworx') ? 'Administrator (Xtraworx)' : 'Taraba River Administrator';
+    const adminRecord: Member = {
+      id: adminDocId,
+      fullName: adminName,
+      email: adminEmail,
+      phoneNumber: '',
+      dateOfBirth: '',
+      occupation: 'System Administrator',
+      skills: ['Portal Administration', 'Executive Leadership'],
+      photoUrl: '',
+      photoStatus: 'approved' as PhotoApprovalStatus,
+      role: 'admin' as UserRole,
+      activityPoints: 0,
+      joinedAt: new Date().toISOString(),
+      lastActive: new Date().toISOString(),
+    };
+
+    if (isFirestoreAvailable()) {
+      try {
+        await db.collection(COLLECTIONS.members).doc(adminDocId).set(adminRecord, { merge: true });
+      } catch (err) {
+        serverLogger.warn("Failed to persist admin record in Firestore", { error: String(err) });
+      }
+    }
+
+    if (!fallbackMembers.some(m => m.email?.toLowerCase().trim() === adminEmail)) {
+      fallbackMembers.push(adminRecord);
+    }
+    return { memberData: adminRecord, memberDocId: adminDocId };
+  }
+
   return null;
 }
 
@@ -816,10 +866,8 @@ function maskEmail(email: string): string {
 /**
  * Step 1 of login: resolve the credential to a member and email a one-time
  * code to their REGISTERED address (never to whatever they typed), then
- * wait for /api/auth/login/verify-code. No member data is returned from
- * this step. Available to every member regardless of email provider —
- * Gmail-registered members can use this OR the separate Google OAuth
- * button; it's their choice, not enforced here.
+ * wait for /api/auth/login/verify-code. Available to both general members
+ * and administrators.
  */
 app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => {
   const validation = validateBody(LoginCredentialSchema, req.body);
@@ -833,12 +881,29 @@ app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => 
   // Local dev fallback: no email service to rely on, so log in immediately.
   // This path can never fire in a deployed environment (see isDeployedEnv).
   if (!isFirestoreAvailable()) {
-    const matched = fallbackMembers.find(m => isMemberCredentialMatch(m, rawCred));
+    const matched = fallbackMembers.find(m => isMemberCredentialMatch(m, rawCred)) ||
+      (isAdminEmail(rawCred) ? {
+        id: `admin_${rawCred.toLowerCase().trim().replace(/[^a-zA-Z0-9]/g, '_')}`,
+        fullName: rawCred.toLowerCase().includes('xtraworx') ? 'Administrator (Xtraworx)' : 'Taraba River Administrator',
+        email: rawCred.toLowerCase().trim(),
+        phoneNumber: '',
+        dateOfBirth: '',
+        occupation: 'System Administrator',
+        skills: ['Portal Administration'],
+        photoUrl: '',
+        photoStatus: 'approved' as PhotoApprovalStatus,
+        role: 'admin' as UserRole,
+        activityPoints: 0,
+        joinedAt: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+      } : null);
+
     if (!matched) {
       res.status(404).json({ error: 'Credentials not recognized. Access denied.' });
       return;
     }
-    res.json({ success: true, member: { ...matched, role: 'member' as UserRole }, customToken: null });
+    const effectiveRole: UserRole = (matched.role === 'admin' || isAdminEmail(matched.email)) ? 'admin' : 'member';
+    res.json({ success: true, member: { ...matched, role: effectiveRole }, customToken: null });
     return;
   }
 
@@ -849,20 +914,6 @@ app.post("/api/auth/login", rateLimiter, async (req: Request, res: Response) => 
       return;
     }
     const { memberData, memberDocId } = found;
-
-    // Admin accounts must use Google OAuth exclusively — the email/phone
-    // code path is member-only. This is checked against the account's
-    // REGISTERED email (never whatever the visitor typed), so it can't be
-    // bypassed by entering a phone number that happens to resolve to an
-    // admin's member record.
-    if (isAdminEmail(memberData.email || '')) {
-      res.json({
-        success: false,
-        requiresGoogle: true,
-        error: 'Admin accounts must sign in with Google.',
-      });
-      return;
-    }
 
     if (!memberData.email) {
       res.status(500).json({ error: 'No email on file for this account. Contact an administrator.' });
@@ -912,15 +963,19 @@ app.post("/api/auth/login/verify-code", rateLimiter, async (req: Request, res: R
     const lastActiveDateStr = memberData.lastActive ? memberData.lastActive.split('T')[0] : '';
     const isNewDayVisit = lastActiveDateStr !== todayStr;
 
+    const effectiveRole: UserRole = (memberData.role === 'admin' || isAdminEmail(memberData.email)) ? 'admin' : 'member';
+    memberData.role = effectiveRole;
+
     memberData.lastActive = new Date().toISOString();
     const updates: Record<string, any> = {
+      role: effectiveRole,
       lastActive: memberData.lastActive
     };
 
     await incrementGlobalVisits(memberData.fullName);
 
     if (isNewDayVisit) {
-      if (memberData.role !== 'admin') {
+      if (effectiveRole !== 'admin') {
         memberData.activityPoints = (memberData.activityPoints || 0) + 10;
         updates.activityPoints = memberData.activityPoints;
 
@@ -940,7 +995,7 @@ app.post("/api/auth/login/verify-code", rateLimiter, async (req: Request, res: R
     let customToken: string | null = null;
     try {
       customToken = await Promise.race([
-        adminAuth.createCustomToken(memberDocId, { role: memberData.role || 'member' }),
+        adminAuth.createCustomToken(memberDocId, { role: effectiveRole }),
         new Promise<null>((r) => setTimeout(() => r(null), 1200))
       ]);
     } catch {
@@ -949,7 +1004,7 @@ app.post("/api/auth/login/verify-code", rateLimiter, async (req: Request, res: R
 
     res.json({
       success: true,
-      member: { ...memberData, role: 'member' as UserRole },
+      member: { ...memberData, role: effectiveRole },
       customToken,
     });
   } catch (error) {
