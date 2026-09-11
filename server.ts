@@ -2958,73 +2958,90 @@ function formatRssDate(dateStr: string): string {
   } catch { return 'Recent'; }
 }
 
-// Fetch raw items from external feeds. Feeds are fetched in parallel — with
-// 13 feeds and a 6s per-feed timeout, a sequential loop could take up to
-// ~78s in the worst case; in parallel it's bounded by the single slowest
-// feed (~6s worst case), which is what "loads superfast" actually requires.
-async function fetchLiveExternalNewsItems(): Promise<Array<{ title: string; snippet: string; url: string; source: string; pubDate: string; timestamp: number }>> {
-  type RawItem = { title: string; snippet: string; url: string; source: string; pubDate: string; timestamp: number };
+type RawNewsItem = { title: string; snippet: string; url: string; source: string; pubDate: string; timestamp: number };
 
-  const perFeedResults = await Promise.allSettled(
-    LIVE_EXTERNAL_FEEDS.map(async (feed): Promise<RawItem[]> => {
-      const items: RawItem[] = [];
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6000);
-      try {
-        const res = await fetch(feed.url, {
-          signal: controller.signal,
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-        });
-        if (!res.ok) return items;
+async function fetchOneNewsFeed(feed: { url: string; defaultSource: string }): Promise<RawNewsItem[]> {
+  const items: RawNewsItem[] = [];
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 7000);
+  try {
+    const res = await fetch(feed.url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+    });
+    if (!res.ok) return items;
 
-        const xml = await res.text();
-        const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-        let match;
+    const xml = await res.text();
+    const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+    let match;
 
-        while ((match = itemRegex.exec(xml)) !== null) {
-          const block = match[1];
-          const title = stripHtml(extractXmlTag(block, 'title'));
-          const rawDesc = extractXmlTag(block, 'description') || extractXmlTag(block, 'content:encoded') || '';
-          const snippet = stripHtml(rawDesc).slice(0, 500);
-          const link = stripHtml(extractXmlTag(block, 'link'));
-          const sourceTag = extractXmlTag(block, 'source');
-          const source = stripHtml(sourceTag) || feed.defaultSource;
-          const rawPubDate = extractXmlTag(block, 'pubDate');
-          const pubDate = formatRssDate(rawPubDate);
+    while ((match = itemRegex.exec(xml)) !== null) {
+      const block = match[1];
+      const title = stripHtml(extractXmlTag(block, 'title'));
+      const rawDesc = extractXmlTag(block, 'description') || extractXmlTag(block, 'content:encoded') || '';
+      const snippet = stripHtml(rawDesc).slice(0, 500);
+      const link = stripHtml(extractXmlTag(block, 'link'));
+      const sourceTag = extractXmlTag(block, 'source');
+      const source = stripHtml(sourceTag) || feed.defaultSource;
+      const rawPubDate = extractXmlTag(block, 'pubDate');
+      const pubDate = formatRssDate(rawPubDate);
 
-          let timestamp = Date.now();
-          if (rawPubDate) {
-            const t = new Date(rawPubDate).getTime();
-            if (!isNaN(t)) timestamp = t;
-          }
-
-          if (!title) continue;
-
-          // Apply all-country relevance gate: accept all countries bearing USOSA or related news
-          if (!isRelevantToUsosaAndUnityColleges(title, snippet)) continue;
-
-          items.push({
-            title,
-            snippet: snippet || 'Read full coverage on external news portal.',
-            url: link || feed.url,
-            source,
-            pubDate,
-            timestamp
-          });
-        }
-        return items;
-      } catch (e) {
-        serverLogger.warn(`External feed fetch warning [${feed.defaultSource}]`, { error: (e as Error).message });
-        return items;
-      } finally {
-        clearTimeout(timeout);
+      let timestamp = Date.now();
+      if (rawPubDate) {
+        const t = new Date(rawPubDate).getTime();
+        if (!isNaN(t)) timestamp = t;
       }
-    })
-  );
+
+      if (!title) continue;
+
+      // Apply all-country relevance gate: accept all countries bearing USOSA or related news
+      if (!isRelevantToUsosaAndUnityColleges(title, snippet)) continue;
+
+      items.push({
+        title,
+        snippet: snippet || 'Read full coverage on external news portal.',
+        url: link || feed.url,
+        source,
+        pubDate,
+        timestamp
+      });
+    }
+    return items;
+  } catch (e) {
+    serverLogger.warn(`External feed fetch warning [${feed.defaultSource}]`, { error: (e as Error).message });
+    return items;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// Fetch raw items from external feeds, in limited-concurrency batches rather
+// than either a fully sequential loop or all-at-once. A sequential loop of
+// 13 feeds at a 6-7s timeout each could take ~90s worst case. Firing all 13
+// simultaneously was tried first and is actually SLOWER and unreliable in
+// practice here — Google News appears to throttle/stall bursts of near-
+// simultaneous requests from one IP (a classic anti-bot signature), so full
+// parallelism intermittently timed out on every single feed at once. Small
+// batches (4 concurrent, staggered) get most of the speed win from
+// parallelism while looking nothing like a burst scrape.
+const NEWS_FEED_BATCH_SIZE = 4;
+const NEWS_FEED_BATCH_STAGGER_MS = 250;
+
+async function fetchLiveExternalNewsItems(): Promise<RawNewsItem[]> {
+  const perFeedResults: PromiseSettledResult<RawNewsItem[]>[] = [];
+
+  for (let i = 0; i < LIVE_EXTERNAL_FEEDS.length; i += NEWS_FEED_BATCH_SIZE) {
+    const batch = LIVE_EXTERNAL_FEEDS.slice(i, i + NEWS_FEED_BATCH_SIZE);
+    const batchResults = await Promise.allSettled(batch.map(fetchOneNewsFeed));
+    perFeedResults.push(...batchResults);
+    if (i + NEWS_FEED_BATCH_SIZE < LIVE_EXTERNAL_FEEDS.length) {
+      await new Promise((r) => setTimeout(r, NEWS_FEED_BATCH_STAGGER_MS));
+    }
+  }
 
   // Merge in original feed order so cross-feed duplicate titles resolve the
   // same way the old sequential loop did (earlier feed in the list wins).
-  const rawItems: RawItem[] = [];
+  const rawItems: RawNewsItem[] = [];
   const seenTitles = new Set<string>();
   for (const result of perFeedResults) {
     if (result.status !== 'fulfilled') continue;
