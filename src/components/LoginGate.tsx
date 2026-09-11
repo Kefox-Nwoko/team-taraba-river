@@ -56,23 +56,23 @@ export const LoginGate: React.FC<LoginGateProps> = ({
     }
 
     // Admin status must come from the server (ADMIN_EMAILS in server/config.ts
-    // is the single source of truth) — never decide it locally. Defaults to
-    // false (member) if the server can't be reached, so a verification
-    // failure never silently grants admin.
+    // is the single source of truth) — never decide it locally from a
+    // hardcoded email list, which would silently drift from the real admin
+    // roster the moment it changes. Defaults to false (member) if the
+    // server can't be reached, so a verification failure never silently
+    // grants admin.
     const serverMember = await verifySession();
-    const isKnownAdmin = userEmail === "tarabateam@gmail.com" || userEmail === "xtraworxng@gmail.com";
-    const isAdmin = serverMember?.role === "admin" || isKnownAdmin;
+    const isAdmin = serverMember?.role === "admin";
     let memberSession: Member | undefined;
 
     if (isAdmin) {
       const cached = AppStateManager.getMembers();
       const pool = availableMembers.length > 0 ? availableMembers : (cached.length > 0 ? cached : INITIAL_MEMBERS);
       const match = pool.find((m) => m.email?.toLowerCase().trim() === userEmail);
-      const defaultAdminName = userEmail.includes('xtraworx') ? 'Administrator (Xtraworx)' : 'Taraba River Administrator';
       memberSession = {
         ...(match || googleMember),
         id: serverMember?.id || match?.id || googleMember.id || `admin_${userEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,
-        fullName: serverMember?.fullName || match?.fullName || googleMember.fullName || defaultAdminName,
+        fullName: serverMember?.fullName || match?.fullName || googleMember.fullName || "Taraba River Administrator",
         email: userEmail,
         role: "admin",
         isGoogleAuth: true,

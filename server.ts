@@ -2918,24 +2918,26 @@ Provide a JSON object with:
 // 16. USOSA News Update — 100% Automated Live AI Journalism Bureau Agent
 // Powered by Live External Feeds (Google News RSS with exact recommended search terms) + Gemini AI Chief Editor
 let newsCache: { data: any; fetchedAt: number } | null = null;
-const NEWS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes for freshest headlines
+const NEWS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes once a fetch actually finds headlines
+// If the last refresh came back empty (feeds unreachable, everything
+// filtered out, etc.), don't sit on that "no news" result for a full 10
+// minutes — retry much sooner so the site self-heals quickly once the
+// feeds are reachable again, without needing a manual force-refresh.
+const NEWS_CACHE_FALLBACK_TTL_MS = 90 * 1000;
 
+// Consolidated from 13 near-duplicate queries down to 6 broader ones —
+// Google News RSS handles multi-term OR queries fine in a single request,
+// so merging overlapping searches (e.g. the 4 separate "Federal X College"
+// variants) loses no coverage while roughly halving request volume per
+// refresh cycle. Fewer, less bursty requests read less like automated
+// scraping to Google's anti-abuse systems.
 const LIVE_EXTERNAL_FEEDS = [
-  // Global feeds (all countries worldwide: USA, UK, Canada, Europe, Global Diaspora)
-  { url: 'https://news.google.com/rss/search?q=%22USOSA%22', defaultSource: 'Google News / USOSA Global' },
-  { url: 'https://news.google.com/rss/search?q=%22USOSA%22+OR+%22Unity+Schools%22+diaspora+OR+UK+OR+USA+OR+America+OR+Canada+OR+global', defaultSource: 'Google News / USOSA Diaspora' },
-  { url: 'https://news.google.com/rss/search?q=%22KCOBA%22+OR+%22QCOGA%22+OR+%22FEGOWOCO%22', defaultSource: 'Google News / Global Alumni' },
-  { url: 'https://news.google.com/rss/search?q=%22Unity+Schools%22+Old+Students', defaultSource: 'Google News / Unity Alumni' },
-  { url: 'https://news.google.com/rss/search?q=%22Federal+Unity+Colleges%22+OR+%22Federal+Unity+College%22', defaultSource: 'Google News / Unity Colleges' },
-  { url: 'https://news.google.com/rss/search?q=%22Federal+Government+College%22', defaultSource: 'Google News / FGC Global' },
-  { url: 'https://news.google.com/rss/search?q=%22Federal+Government+Girls+College%22+OR+%22FGGC%22', defaultSource: 'Google News / FGGC Global' },
-  { url: 'https://news.google.com/rss/search?q=%22Federal+Science+and+Technical+College%22+OR+%22FSTC%22', defaultSource: 'Google News / FSTC Global' },
-  { url: 'https://news.google.com/rss/search?q=%22Kings+College+Lagos%22+OR+%22Queens+College+Lagos%22', defaultSource: "Google News / Kings & Queens" },
   { url: 'https://news.google.com/rss/search?q=%22Team+Taraba%22+OR+%22USOSA+Taraba%22', defaultSource: 'Google News / Team Taraba' },
-  { url: 'https://news.google.com/rss/search?q=%22Suleja+Academy%22+OR+%22Federal+Academy+Suleja%22', defaultSource: 'Google News / Suleja Academy' },
-  // National edition feeds
-  { url: 'https://news.google.com/rss/search?q=%22USOSA%22&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: 'Google News / USOSA National' },
-  { url: 'https://news.google.com/rss/search?q=%22Unity+Schools%22&hl=en-NG&gl=NG&ceid=NG:en', defaultSource: 'Google News / Unity Schools' },
+  { url: 'https://news.google.com/rss/search?q=%22USOSA%22', defaultSource: 'Google News / USOSA' },
+  { url: 'https://news.google.com/rss/search?q=%22USOSA%22+OR+%22Unity+Schools%22+diaspora+OR+UK+OR+USA+OR+America+OR+Canada+OR+global', defaultSource: 'Google News / USOSA Diaspora' },
+  { url: 'https://news.google.com/rss/search?q=%22KCOBA%22+OR+%22QCOGA%22+OR+%22FEGOWOCO%22+OR+%22Unity+Schools%22+Old+Students', defaultSource: 'Google News / Alumni Associations' },
+  { url: 'https://news.google.com/rss/search?q=%22Federal+Unity+Colleges%22+OR+%22Federal+Unity+College%22+OR+%22Federal+Government+College%22+OR+%22Federal+Government+Girls+College%22+OR+%22FGGC%22+OR+%22Federal+Science+and+Technical+College%22+OR+%22FSTC%22', defaultSource: 'Google News / Federal Unity Colleges' },
+  { url: 'https://news.google.com/rss/search?q=%22Kings+College+Lagos%22+OR+%22Queens+College+Lagos%22+OR+%22Suleja+Academy%22+OR+%22Federal+Academy+Suleja%22', defaultSource: 'Google News / Named Schools' },
 ];
 
 /**
@@ -3585,7 +3587,8 @@ async function refreshNewsCache(): Promise<any> {
 
 app.get('/api/usosa-news', async (req: Request, res: Response) => {
   const isForce = req.query.force === 'true';
-  const isFresh = !isForce && !!newsCache && Date.now() - newsCache.fetchedAt < NEWS_CACHE_TTL_MS;
+  const cacheTtl = newsCache?.data?.fallback ? NEWS_CACHE_FALLBACK_TTL_MS : NEWS_CACHE_TTL_MS;
+  const isFresh = !isForce && !!newsCache && Date.now() - newsCache.fetchedAt < cacheTtl;
 
   if (isFresh) {
     return res.json(newsCache!.data);

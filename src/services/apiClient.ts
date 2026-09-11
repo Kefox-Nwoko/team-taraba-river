@@ -1344,19 +1344,16 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
   } catch {}
 
   // Step 2: Live Multi-Stream Search strictly across exact recommended Unity Colleges, USOSA, FGCs, FGGCs, FSTCs, King's & Queen's across ALL COUNTRIES
+  // Consolidated to match the server's 6-query set (server.ts LIVE_EXTERNAL_FEEDS)
+  // — fewer, broader OR queries instead of 11 near-duplicates, same coverage.
   try {
     const queryStreams = [
+      '"Team Taraba" OR "USOSA Taraba"',
       '"USOSA"',
       '"USOSA" diaspora OR UK OR USA OR America OR Canada OR global',
-      '"KCOBA" OR "QCOGA" OR "FEGOWOCO"',
-      '"Unity Schools" Old Students',
-      '"Federal Unity Colleges" OR "Federal Unity College"',
-      '"Federal Government College"',
-      '"Federal Government Girls College" OR "FGGC"',
-      '"Federal Science and Technical College" OR "FSTC"',
-      '"Kings College Lagos" OR "Queens College Lagos"',
-      '"Team Taraba" OR "USOSA Taraba"',
-      '"Suleja Academy" OR "Federal Academy Suleja"',
+      '"KCOBA" OR "QCOGA" OR "FEGOWOCO" OR "Unity Schools" Old Students',
+      '"Federal Unity Colleges" OR "Federal Unity College" OR "Federal Government College" OR "Federal Government Girls College" OR "FGGC" OR "Federal Science and Technical College" OR "FSTC"',
+      '"Kings College Lagos" OR "Queens College Lagos" OR "Suleja Academy" OR "Federal Academy Suleja"',
     ];
 
     const fetchPromises = queryStreams.map(async (queryStr) => {
