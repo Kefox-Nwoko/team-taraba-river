@@ -835,29 +835,148 @@ function cleanStorySnippet(raw: string, titleToStrip?: string): string {
   return clean;
 }
 
-function extractKeywords(str: string): Set<string> {
-  const stopWords = new Set([
-    "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "of", "with",
-    "by", "from", "as", "is", "are", "was", "were", "be", "this", "that", "it",
-    "its", "into", "over", "after", "out", "about", "all", "new", "says", "how",
-    "why", "who", "will", "can", "has", "have", "had", "more", "now", "just"
-  ]);
-  const words = str
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !stopWords.has(w));
-  return new Set(words);
+const DOMAIN_STOP_WORDS = new Set([
+  "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "of", "with",
+  "by", "from", "as", "is", "are", "was", "were", "be", "been", "being", "this",
+  "that", "it", "its", "into", "over", "after", "out", "about", "all", "new",
+  "says", "said", "how", "why", "who", "whom", "will", "can", "has", "have",
+  "had", "more", "now", "just", "check", "read", "full", "story", "news",
+  "update", "updates", "report", "reports", "reported", "breaking", "exclusive",
+  "today", "yesterday", "recent", "press", "release", "releases", "statement",
+  // Ubiquitous domain words that appear in virtually all USOSA & Unity Colleges news
+  "federal", "unity", "college", "colleges", "school", "schools", "education",
+  "ministry", "minister", "government", "nigeria", "nigerian", "students",
+  "student", "pupil", "pupils", "academic", "session", "nationwide", "country",
+  "state", "states", "national", "usosa", "alumni", "old", "association",
+  "council", "board", "chapter", "branch", "members", "member", "fg", "urges",
+  "calls", "directs"
+]);
+
+function extractDistinctiveKeywords(title: string): Set<string> {
+  return new Set(
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => {
+        if (w.length <= 2) return false;
+        if (DOMAIN_STOP_WORDS.has(w)) return false;
+        // Ignore calendar years
+        if (/^(19|20)\d\d$/.test(w)) return false;
+        return true;
+      })
+  );
 }
 
-function calculateSimilarity(setA: Set<string>, setB: Set<string>): number {
-  if (setA.size === 0 || setB.size === 0) return 0;
-  let intersection = 0;
-  for (const item of setA) {
-    if (setB.has(item)) intersection++;
+const SPECIFIC_SCHOOLS: { name: string; pattern: RegExp }[] = [
+  { name: "kings_college", pattern: /king['’]?s\s*college/i },
+  { name: "queens_college", pattern: /queen['’]?s\s*college/i },
+  { name: "fgc_warri", pattern: /fg[g]?c\s*warri|fegowoco/i },
+  { name: "fgc_kano", pattern: /fg[g]?c\s*kano/i },
+  { name: "fgc_kaduna", pattern: /fg[g]?c\s*kaduna/i },
+  { name: "fgc_enugu", pattern: /fg[g]?c\s*enugu/i },
+  { name: "fgc_ijanikin", pattern: /fg[g]?c\s*(lagos|ijanikin)/i },
+  { name: "fgc_okigwe", pattern: /fg[g]?c\s*okigwe/i },
+  { name: "fgc_ugwolawo", pattern: /fg[g]?c\s*ugwolawo/i },
+  { name: "fggc_bwari", pattern: /fggc\s*bwari/i },
+  { name: "fggc_oyo", pattern: /fggc\s*oyo/i },
+  { name: "fggc_sagamu", pattern: /fggc\s*sagamu/i },
+  { name: "fstc_yaba", pattern: /fstc\s*yaba/i },
+  { name: "fstc_usi", pattern: /fstc\s*usi/i },
+  { name: "fstc_otukpo", pattern: /fstc\s*otukpo/i },
+  { name: "suleja_academy", pattern: /suleja\s*academy/i },
+];
+
+function extractSpecificSchool(title: string): string | null {
+  for (const s of SPECIFIC_SCHOOLS) {
+    if (s.pattern.test(title)) return s.name;
   }
-  const union = new Set([...setA, ...setB]).size;
-  return intersection / union;
+  return null;
+}
+
+function extractDistinctiveNumbers(title: string): Set<string> {
+  const matches = title.match(/\d[\d,]*/g) || [];
+  return new Set(
+    matches
+      .map(n => n.replace(/,/g, ""))
+      .filter(n => {
+        const val = parseInt(n, 10);
+        // Exclude calendar years
+        if (val >= 1900 && val <= 2050) return false;
+        return val >= 10;
+      })
+  );
+}
+
+function areHeadlinesReportingSameEvent(titleA: string, titleB: string): boolean {
+  const normA = titleA.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  const normB = titleB.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+
+  if (normA === normB) return true;
+
+  // School isolation: if both name specific schools and they are different, NEVER combine!
+  const schoolA = extractSpecificSchool(titleA);
+  const schoolB = extractSpecificSchool(titleB);
+  if (schoolA && schoolB && schoolA !== schoolB) {
+    return false;
+  }
+
+  // Significant non-year number isolation: if both have numbers with zero overlap, they report different events
+  const numsA = extractDistinctiveNumbers(titleA);
+  const numsB = extractDistinctiveNumbers(titleB);
+  if (numsA.size > 0 && numsB.size > 0) {
+    let hasOverlap = false;
+    for (const na of numsA) {
+      if (numsB.has(na)) {
+        hasOverlap = true;
+        break;
+      }
+    }
+    if (!hasOverlap) return false;
+  }
+
+  // Substring matching for nearly identical syndicated titles
+  const shorter = normA.length < normB.length ? normA : normB;
+  const longer = normA.length < normB.length ? normB : normA;
+  if (shorter.length >= 25 && longer.includes(shorter)) {
+    return true;
+  }
+
+  const kwA = extractDistinctiveKeywords(titleA);
+  const kwB = extractDistinctiveKeywords(titleB);
+
+  if (kwA.size === 0 || kwB.size === 0) return false;
+
+  let intersection = 0;
+  for (const k of kwA) {
+    if (kwB.has(k)) intersection++;
+  }
+
+  const union = new Set([...kwA, ...kwB]).size;
+  const jaccard = intersection / union;
+  const minSize = Math.min(kwA.size, kwB.size);
+  const containment = intersection / minSize;
+
+  // Rule 1: High Jaccard similarity (>= 0.45) with at least 2 shared distinctive keywords
+  if (jaccard >= 0.45 && intersection >= 2) {
+    return true;
+  }
+
+  // Rule 2: Strong containment (>= 0.65) with at least 2 shared distinctive keywords
+  if (containment >= 0.65 && intersection >= 2) {
+    return true;
+  }
+
+  // Rule 3: Shared non-year number + at least 1 shared distinctive keyword
+  if (numsA.size > 0 && numsB.size > 0) {
+    for (const na of numsA) {
+      if (numsB.has(na) && intersection >= 1) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 async function humanizeHeadlinesWithGemini(
@@ -946,9 +1065,6 @@ export function safeguardClusterHeadlines(rawHeadlines: NewsHeadline[]): NewsHea
 
   interface ClusteredItem {
     headline: NewsHeadline;
-    keywords: Set<string>;
-    numbers: Set<string>;
-    normTitle: string;
     sourcesMap: Map<string, NewsSourceCoverage>;
     timestamp: number;
   }
@@ -958,51 +1074,12 @@ export function safeguardClusterHeadlines(rawHeadlines: NewsHeadline[]): NewsHea
   for (const h of rawHeadlines) {
     const { cleanTitle, extractedSource } = cleanStoryTitle(h.title);
     const sourceName = stripPublisherNames(extractedSource || h.source || "News Outlet") || "News Outlet";
-    const keywords = extractKeywords(cleanTitle + " " + (h.summary || ""));
-    const titleNumbers = new Set(
-      (cleanTitle.match(/\d[\d,]+/g) || [])
-        .map(n => n.replace(/,/g, ''))
-        .filter(n => parseInt(n, 10) >= 100)
-    );
-    const normTitle = cleanTitle.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
     const itemDate = h.publishedAt ? new Date(h.publishedAt).getTime() : Date.now();
     const itemTimestamp = !isNaN(itemDate) ? itemDate : Date.now();
 
     let matched: ClusteredItem | null = null;
     for (const cluster of clusters) {
-      const similarity = calculateSimilarity(keywords, cluster.keywords);
-      const isKeywordMatch = similarity > 0.22;
-
-      let sharedNumber = false;
-      for (const num of titleNumbers) {
-        if (cluster.numbers.has(num)) { sharedNumber = true; break; }
-      }
-      const isNumberMatch = sharedNumber && similarity > 0.15;
-
-      const topicPhrases = [
-        ["admission", "list"],
-        ["pta", "teachers"],
-        ["concession", "schools"],
-        ["privatiz", "schools"],
-        ["inter", "house", "sports"],
-        ["speech", "day"],
-        ["infrastructure", "upgrades"],
-      ];
-      let sharedPhrase = false;
-      for (const phrase of topicPhrases) {
-        const itemHas = phrase.every(p => normTitle.includes(p) || (h.summary || "").toLowerCase().includes(p));
-        const clusterHas = phrase.every(p => cluster.normTitle.includes(p) || (cluster.headline.summary || "").toLowerCase().includes(p));
-        if (itemHas && clusterHas) {
-          sharedPhrase = true;
-          break;
-        }
-      }
-
-      const shorter = normTitle.length < cluster.normTitle.length ? normTitle : cluster.normTitle;
-      const longer = normTitle.length < cluster.normTitle.length ? cluster.normTitle : normTitle;
-      const isSubstringMatch = shorter.length > 20 && longer.includes(shorter.slice(0, Math.floor(shorter.length * 0.6)));
-
-      if (isKeywordMatch || isNumberMatch || sharedPhrase || isSubstringMatch) {
+      if (areHeadlinesReportingSameEvent(cleanTitle, cluster.headline.title)) {
         matched = cluster;
         break;
       }
@@ -1024,8 +1101,6 @@ export function safeguardClusterHeadlines(rawHeadlines: NewsHeadline[]): NewsHea
           }
         }
       }
-      for (const k of keywords) matched.keywords.add(k);
-      for (const n of titleNumbers) matched.numbers.add(n);
       matched.timestamp = Math.max(matched.timestamp, itemTimestamp);
 
       // Prefer authoritative headline over "How to check..."
@@ -1058,9 +1133,6 @@ export function safeguardClusterHeadlines(rawHeadlines: NewsHeadline[]): NewsHea
           ...h,
           title: cleanTitle,
         },
-        keywords,
-        numbers: new Set(titleNumbers),
-        normTitle,
         sourcesMap,
         timestamp: itemTimestamp,
       });
@@ -1215,7 +1287,7 @@ function isRelevantToUsosaAndUnityColleges(title: string, snippet: string, sourc
   return false;
 }
 
-const USOSA_NEWS_CACHE_KEY = "taraba_usosa_news_cache_v3";
+const USOSA_NEWS_CACHE_KEY = "taraba_usosa_news_cache_v4";
 const USOSA_NEWS_CACHE_TTL_MS = 60 * 1000; // 1 minute for freshest headlines
 let inMemoryUsosaNews: UsosaNewsResponse | null = null;
 let inMemoryUsosaNewsTimestamp = 0;
@@ -1341,46 +1413,12 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
         const itemDate = item.pubDate ? new Date(item.pubDate) : new Date();
         const itemTimestamp = !isNaN(itemDate.getTime()) ? itemDate.getTime() : Date.now();
         const pubDate = itemDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-        const keywords = extractKeywords(cleanTitle + " " + cleanDesc);
         const schoolTag = detectSchoolTag(cleanTitle + " " + cleanDesc);
-
-        // Extract significant numbers from this headline (e.g. "11,700", "3,252")
-        const titleNumbers = new Set(
-          (cleanTitle.match(/\d[\d,]+/g) || [])
-            .map(n => n.replace(/,/g, ''))
-            .filter(n => parseInt(n, 10) >= 100)
-        );
-
-        // Normalize title for substring comparison
-        const normTitle = cleanTitle.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 
         // Find existing cluster with topic similarity
         let matchedCluster: TopicCluster | null = null;
         for (const cluster of clusterList) {
-          const similarity = calculateSimilarity(keywords, cluster.keywords);
-
-          // Check 1: Jaccard keyword similarity above threshold
-          const isKeywordMatch = similarity > 0.25;
-
-          // Check 2: Both headlines share a significant number (e.g. 11,700 teachers)
-          const clusterNumbers = new Set(
-            (cluster.representativeTitle.match(/\d[\d,]+/g) || [])
-              .map(n => n.replace(/,/g, ''))
-              .filter(n => parseInt(n, 10) >= 100)
-          );
-          let sharedNumber = false;
-          for (const num of titleNumbers) {
-            if (clusterNumbers.has(num)) { sharedNumber = true; break; }
-          }
-          const isNumberMatch = sharedNumber && similarity > 0.15;
-
-          // Check 3: One title is largely a substring of the other
-          const normClusterTitle = cluster.representativeTitle.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-          const shorter = normTitle.length < normClusterTitle.length ? normTitle : normClusterTitle;
-          const longer = normTitle.length < normClusterTitle.length ? normClusterTitle : normTitle;
-          const isSubstringMatch = shorter.length > 20 && longer.includes(shorter.slice(0, Math.floor(shorter.length * 0.6)));
-
-          if (isKeywordMatch || isNumberMatch || isSubstringMatch) {
+          if (areHeadlinesReportingSameEvent(cleanTitle, cluster.representativeTitle)) {
             matchedCluster = cluster;
             break;
           }
@@ -1395,11 +1433,18 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
         if (matchedCluster) {
           // Merge source into cluster
           matchedCluster.sourcesMap.set(sourceName.toLowerCase(), coverage);
-          // Update timestamp to the newest date among cluster sources
           matchedCluster.timestamp = Math.max(matchedCluster.timestamp, itemTimestamp);
           matchedCluster.publishedAt = new Date(matchedCluster.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-          // Expand cluster keywords
-          for (const k of keywords) matchedCluster.keywords.add(k);
+
+          // Prefer authoritative headline over "How to check..."
+          if (
+            cleanTitle.toLowerCase().startsWith("fg releases") ||
+            cleanTitle.toLowerCase().startsWith("federal government") ||
+            cleanTitle.toLowerCase().startsWith("ministry of education") ||
+            (cleanTitle.length > matchedCluster.representativeTitle.length && !cleanTitle.toLowerCase().startsWith("how to"))
+          ) {
+            matchedCluster.representativeTitle = cleanTitle;
+          }
         } else {
           // Create new cluster
           const sourcesMap = new Map<string, NewsSourceCoverage>();
@@ -1407,7 +1452,7 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
 
           clusterList.push({
             representativeTitle: cleanTitle,
-            keywords,
+            keywords: extractDistinctiveKeywords(cleanTitle),
             leadSource: sourceName,
             leadUrl: link,
             timestamp: itemTimestamp,
@@ -1440,8 +1485,8 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
         }
       }
 
-      // Convert clusters to top 15 distinct headlines
-      const clusteredHeadlines: NewsHeadline[] = clusterList.slice(0, 15).map((cluster) => {
+      // Convert clusters to top 20 distinct headlines
+      const clusteredHeadlines: NewsHeadline[] = clusterList.slice(0, 20).map((cluster) => {
         const sourcesList = Array.from(cluster.sourcesMap.values());
         let displaySource = cluster.leadSource;
 

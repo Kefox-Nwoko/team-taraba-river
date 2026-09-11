@@ -2958,60 +2958,81 @@ function formatRssDate(dateStr: string): string {
   } catch { return 'Recent'; }
 }
 
-// Fetch raw items from external feeds
+// Fetch raw items from external feeds. Feeds are fetched in parallel — with
+// 13 feeds and a 6s per-feed timeout, a sequential loop could take up to
+// ~78s in the worst case; in parallel it's bounded by the single slowest
+// feed (~6s worst case), which is what "loads superfast" actually requires.
 async function fetchLiveExternalNewsItems(): Promise<Array<{ title: string; snippet: string; url: string; source: string; pubDate: string; timestamp: number }>> {
-  const rawItems: Array<{ title: string; snippet: string; url: string; source: string; pubDate: string; timestamp: number }> = [];
-  const seenTitles = new Set<string>();
+  type RawItem = { title: string; snippet: string; url: string; source: string; pubDate: string; timestamp: number };
 
-  for (const feed of LIVE_EXTERNAL_FEEDS) {
-    try {
+  const perFeedResults = await Promise.allSettled(
+    LIVE_EXTERNAL_FEEDS.map(async (feed): Promise<RawItem[]> => {
+      const items: RawItem[] = [];
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch(feed.url, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-      });
-      clearTimeout(timeout);
-      if (!res.ok) continue;
-
-      const xml = await res.text();
-      const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-      let match;
-
-      while ((match = itemRegex.exec(xml)) !== null) {
-        const block = match[1];
-        const title = stripHtml(extractXmlTag(block, 'title'));
-        const rawDesc = extractXmlTag(block, 'description') || extractXmlTag(block, 'content:encoded') || '';
-        const snippet = stripHtml(rawDesc).slice(0, 500);
-        const link = stripHtml(extractXmlTag(block, 'link'));
-        const sourceTag = extractXmlTag(block, 'source');
-        const source = stripHtml(sourceTag) || feed.defaultSource;
-        const rawPubDate = extractXmlTag(block, 'pubDate');
-        const pubDate = formatRssDate(rawPubDate);
-        
-        let timestamp = Date.now();
-        if (rawPubDate) {
-          const t = new Date(rawPubDate).getTime();
-          if (!isNaN(t)) timestamp = t;
-        }
-
-        if (!title || seenTitles.has(title.toLowerCase())) continue;
-
-        // Apply all-country relevance gate: accept all countries bearing USOSA or related news
-        if (!isRelevantToUsosaAndUnityColleges(title, snippet)) continue;
-
-        seenTitles.add(title.toLowerCase());
-        rawItems.push({
-          title,
-          snippet: snippet || 'Read full coverage on external news portal.',
-          url: link || feed.url,
-          source,
-          pubDate,
-          timestamp
+      try {
+        const res = await fetch(feed.url, {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
         });
+        if (!res.ok) return items;
+
+        const xml = await res.text();
+        const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+        let match;
+
+        while ((match = itemRegex.exec(xml)) !== null) {
+          const block = match[1];
+          const title = stripHtml(extractXmlTag(block, 'title'));
+          const rawDesc = extractXmlTag(block, 'description') || extractXmlTag(block, 'content:encoded') || '';
+          const snippet = stripHtml(rawDesc).slice(0, 500);
+          const link = stripHtml(extractXmlTag(block, 'link'));
+          const sourceTag = extractXmlTag(block, 'source');
+          const source = stripHtml(sourceTag) || feed.defaultSource;
+          const rawPubDate = extractXmlTag(block, 'pubDate');
+          const pubDate = formatRssDate(rawPubDate);
+
+          let timestamp = Date.now();
+          if (rawPubDate) {
+            const t = new Date(rawPubDate).getTime();
+            if (!isNaN(t)) timestamp = t;
+          }
+
+          if (!title) continue;
+
+          // Apply all-country relevance gate: accept all countries bearing USOSA or related news
+          if (!isRelevantToUsosaAndUnityColleges(title, snippet)) continue;
+
+          items.push({
+            title,
+            snippet: snippet || 'Read full coverage on external news portal.',
+            url: link || feed.url,
+            source,
+            pubDate,
+            timestamp
+          });
+        }
+        return items;
+      } catch (e) {
+        serverLogger.warn(`External feed fetch warning [${feed.defaultSource}]`, { error: (e as Error).message });
+        return items;
+      } finally {
+        clearTimeout(timeout);
       }
-    } catch (e) {
-      serverLogger.warn(`External feed fetch warning [${feed.defaultSource}]`, { error: (e as Error).message });
+    })
+  );
+
+  // Merge in original feed order so cross-feed duplicate titles resolve the
+  // same way the old sequential loop did (earlier feed in the list wins).
+  const rawItems: RawItem[] = [];
+  const seenTitles = new Set<string>();
+  for (const result of perFeedResults) {
+    if (result.status !== 'fulfilled') continue;
+    for (const item of result.value) {
+      const key = item.title.toLowerCase();
+      if (seenTitles.has(key)) continue;
+      seenTitles.add(key);
+      rawItems.push(item);
     }
   }
 
@@ -3070,30 +3091,148 @@ function cleanStoryTitle(raw: string): { cleanTitle: string; extractedSource: st
   return { cleanTitle: title, extractedSource };
 }
 
-function extractKeywords(str: string): Set<string> {
-  const stopWords = new Set([
-    "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "of", "with",
-    "by", "from", "as", "is", "are", "was", "were", "be", "this", "that", "it",
-    "its", "into", "over", "after", "out", "about", "all", "new", "says", "how",
-    "why", "who", "will", "can", "has", "have", "had", "more", "now", "just",
-    "check", "read", "full", "story", "news"
-  ]);
-  const words = str
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !stopWords.has(w));
-  return new Set(words);
+const DOMAIN_STOP_WORDS = new Set([
+  "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "of", "with",
+  "by", "from", "as", "is", "are", "was", "were", "be", "been", "being", "this",
+  "that", "it", "its", "into", "over", "after", "out", "about", "all", "new",
+  "says", "said", "how", "why", "who", "whom", "will", "can", "has", "have",
+  "had", "more", "now", "just", "check", "read", "full", "story", "news",
+  "update", "updates", "report", "reports", "reported", "breaking", "exclusive",
+  "today", "yesterday", "recent", "press", "release", "releases", "statement",
+  // Ubiquitous domain words that appear in virtually all USOSA & Unity Colleges news
+  "federal", "unity", "college", "colleges", "school", "schools", "education",
+  "ministry", "minister", "government", "nigeria", "nigerian", "students",
+  "student", "pupil", "pupils", "academic", "session", "nationwide", "country",
+  "state", "states", "national", "usosa", "alumni", "old", "association",
+  "council", "board", "chapter", "branch", "members", "member", "fg", "urges",
+  "calls", "directs"
+]);
+
+function extractDistinctiveKeywords(title: string): Set<string> {
+  return new Set(
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => {
+        if (w.length <= 2) return false;
+        if (DOMAIN_STOP_WORDS.has(w)) return false;
+        // Ignore calendar years
+        if (/^(19|20)\d\d$/.test(w)) return false;
+        return true;
+      })
+  );
 }
 
-function calculateSimilarity(setA: Set<string>, setB: Set<string>): number {
-  if (setA.size === 0 || setB.size === 0) return 0;
-  let intersection = 0;
-  for (const item of setA) {
-    if (setB.has(item)) intersection++;
+const SPECIFIC_SCHOOLS: { name: string; pattern: RegExp }[] = [
+  { name: "kings_college", pattern: /king['’]?s\s*college/i },
+  { name: "queens_college", pattern: /queen['’]?s\s*college/i },
+  { name: "fgc_warri", pattern: /fg[g]?c\s*warri|fegowoco/i },
+  { name: "fgc_kano", pattern: /fg[g]?c\s*kano/i },
+  { name: "fgc_kaduna", pattern: /fg[g]?c\s*kaduna/i },
+  { name: "fgc_enugu", pattern: /fg[g]?c\s*enugu/i },
+  { name: "fgc_ijanikin", pattern: /fg[g]?c\s*(lagos|ijanikin)/i },
+  { name: "fgc_okigwe", pattern: /fg[g]?c\s*okigwe/i },
+  { name: "fgc_ugwolawo", pattern: /fg[g]?c\s*ugwolawo/i },
+  { name: "fggc_bwari", pattern: /fggc\s*bwari/i },
+  { name: "fggc_oyo", pattern: /fggc\s*oyo/i },
+  { name: "fggc_sagamu", pattern: /fggc\s*sagamu/i },
+  { name: "fstc_yaba", pattern: /fstc\s*yaba/i },
+  { name: "fstc_usi", pattern: /fstc\s*usi/i },
+  { name: "fstc_otukpo", pattern: /fstc\s*otukpo/i },
+  { name: "suleja_academy", pattern: /suleja\s*academy/i },
+];
+
+function extractSpecificSchool(title: string): string | null {
+  for (const s of SPECIFIC_SCHOOLS) {
+    if (s.pattern.test(title)) return s.name;
   }
-  const union = new Set([...setA, ...setB]).size;
-  return intersection / union;
+  return null;
+}
+
+function extractDistinctiveNumbers(title: string): Set<string> {
+  const matches = title.match(/\d[\d,]*/g) || [];
+  return new Set(
+    matches
+      .map(n => n.replace(/,/g, ""))
+      .filter(n => {
+        const val = parseInt(n, 10);
+        // Exclude calendar years
+        if (val >= 1900 && val <= 2050) return false;
+        return val >= 10;
+      })
+  );
+}
+
+function areHeadlinesReportingSameEvent(titleA: string, titleB: string): boolean {
+  const normA = titleA.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  const normB = titleB.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+
+  if (normA === normB) return true;
+
+  // School isolation: if both name specific schools and they are different, NEVER combine!
+  const schoolA = extractSpecificSchool(titleA);
+  const schoolB = extractSpecificSchool(titleB);
+  if (schoolA && schoolB && schoolA !== schoolB) {
+    return false;
+  }
+
+  // Significant non-year number isolation: if both have numbers with zero overlap, they report different events
+  const numsA = extractDistinctiveNumbers(titleA);
+  const numsB = extractDistinctiveNumbers(titleB);
+  if (numsA.size > 0 && numsB.size > 0) {
+    let hasOverlap = false;
+    for (const na of numsA) {
+      if (numsB.has(na)) {
+        hasOverlap = true;
+        break;
+      }
+    }
+    if (!hasOverlap) return false;
+  }
+
+  // Substring matching for nearly identical syndicated titles
+  const shorter = normA.length < normB.length ? normA : normB;
+  const longer = normA.length < normB.length ? normB : normA;
+  if (shorter.length >= 25 && longer.includes(shorter)) {
+    return true;
+  }
+
+  const kwA = extractDistinctiveKeywords(titleA);
+  const kwB = extractDistinctiveKeywords(titleB);
+
+  if (kwA.size === 0 || kwB.size === 0) return false;
+
+  let intersection = 0;
+  for (const k of kwA) {
+    if (kwB.has(k)) intersection++;
+  }
+
+  const union = new Set([...kwA, ...kwB]).size;
+  const jaccard = intersection / union;
+  const minSize = Math.min(kwA.size, kwB.size);
+  const containment = intersection / minSize;
+
+  // Rule 1: High Jaccard similarity (>= 0.45) with at least 2 shared distinctive keywords
+  if (jaccard >= 0.45 && intersection >= 2) {
+    return true;
+  }
+
+  // Rule 2: Strong containment (>= 0.65) with at least 2 shared distinctive keywords
+  if (containment >= 0.65 && intersection >= 2) {
+    return true;
+  }
+
+  // Rule 3: Shared non-year number + at least 1 shared distinctive keyword
+  if (numsA.size > 0 && numsB.size > 0) {
+    for (const na of numsA) {
+      if (numsB.has(na) && intersection >= 1) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 const UNITY_SCHOOL_TAGS: { pattern: RegExp; tag: string }[] = [
@@ -3166,55 +3305,11 @@ function clusterRawNewsItems(rawItems: Array<{ title: string; snippet: string; u
     const link = item.url || "https://news.google.com";
     const cleanDesc = cleanNewsHtmlAndJunk(item.snippet || "");
     const combinedText = `${cleanTitle} ${cleanDesc}`;
-    const keywords = extractKeywords(combinedText);
     const schoolTag = detectSchoolTag(combinedText);
-
-    const titleNumbers = new Set(
-      (cleanTitle.match(/\d[\d,]+/g) || [])
-        .map(n => n.replace(/,/g, ''))
-        .filter(n => parseInt(n, 10) >= 100)
-    );
-
-    const normTitle = cleanTitle.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 
     let matchedCluster: ServerTopicCluster | null = null;
     for (const cluster of clusters) {
-      const similarity = calculateSimilarity(keywords, cluster.keywords);
-      const isKeywordMatch = similarity > 0.22;
-
-      let sharedNumber = false;
-      for (const num of titleNumbers) {
-        if (cluster.numbers.has(num)) {
-          sharedNumber = true;
-          break;
-        }
-      }
-      const isNumberMatch = sharedNumber && similarity > 0.15;
-
-      const topicPhrases = [
-        ["admission", "list"],
-        ["pta", "teachers"],
-        ["concession", "schools"],
-        ["privatiz", "schools"],
-        ["inter", "house", "sports"],
-        ["speech", "day"],
-        ["infrastructure", "upgrades"],
-      ];
-      let sharedPhrase = false;
-      for (const phrase of topicPhrases) {
-        const itemHas = phrase.every(p => normTitle.includes(p) || cleanDesc.toLowerCase().includes(p));
-        const clusterHas = phrase.every(p => cluster.normTitle.includes(p) || cluster.rawSnippet.toLowerCase().includes(p));
-        if (itemHas && clusterHas) {
-          sharedPhrase = true;
-          break;
-        }
-      }
-
-      const shorter = normTitle.length < cluster.normTitle.length ? normTitle : cluster.normTitle;
-      const longer = normTitle.length < cluster.normTitle.length ? cluster.normTitle : normTitle;
-      const isSubstringMatch = shorter.length > 20 && longer.includes(shorter.slice(0, Math.floor(shorter.length * 0.6)));
-
-      if (isKeywordMatch || isNumberMatch || sharedPhrase || isSubstringMatch) {
+      if (areHeadlinesReportingSameEvent(cleanTitle, cluster.representativeTitle)) {
         matchedCluster = cluster;
         break;
       }
@@ -3228,8 +3323,6 @@ function clusterRawNewsItems(rawItems: Array<{ title: string; snippet: string; u
 
     if (matchedCluster) {
       matchedCluster.sourcesMap.set(sourceName.toLowerCase(), coverage);
-      for (const k of keywords) matchedCluster.keywords.add(k);
-      for (const n of titleNumbers) matchedCluster.numbers.add(n);
       matchedCluster.timestamp = Math.max(matchedCluster.timestamp, item.timestamp);
       matchedCluster.publishedAt = item.pubDate || matchedCluster.publishedAt;
 
@@ -3248,14 +3341,14 @@ function clusterRawNewsItems(rawItems: Array<{ title: string; snippet: string; u
 
       clusters.push({
         representativeTitle: cleanTitle,
-        normTitle,
+        normTitle: cleanTitle.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim(),
         leadSource: sourceName,
         leadUrl: link,
         publishedAt: item.pubDate || "Recent",
         timestamp: item.timestamp,
         rawSnippet: cleanDesc,
-        keywords,
-        numbers: new Set(titleNumbers),
+        keywords: extractDistinctiveKeywords(cleanTitle),
+        numbers: extractDistinctiveNumbers(cleanTitle),
         schoolTag,
         sourcesMap,
       });
@@ -3272,7 +3365,7 @@ async function aiChiefEditorCurate(rawItems: Array<{ title: string; snippet: str
   const clusters = clusterRawNewsItems(rawItems);
   if (clusters.length === 0) return [];
 
-  const topClusters = clusters.slice(0, 15);
+  const topClusters = clusters.slice(0, 20);
   const ai = getGeminiClient();
 
   if (ai) {
@@ -3307,11 +3400,17 @@ Return ONLY valid JSON (no markdown fences):
   ]
 }`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: prompt,
-        config: { temperature: 0.15 },
-      });
+      // A hanging AI call must never stall the whole response — 9s leaves
+      // headroom under the client's own 10s abort timeout while still
+      // falling back to the clustered heuristic result well before that.
+      const response = await Promise.race([
+        ai.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: prompt,
+          config: { temperature: 0.15 },
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('AI Chief Editor timed out')), 9000)),
+      ]);
 
       const rawText = (response.text || '').replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(rawText);
@@ -3381,35 +3480,62 @@ Return ONLY valid JSON (no markdown fences):
   });
 }
 
+let newsCacheRefreshing = false;
+
+async function refreshNewsCache(): Promise<any> {
+  // Step 1: Gather live external feeds from Google News & major news outlets
+  const rawExternalItems = await fetchLiveExternalNewsItems();
+
+  // Step 2: Pass through AI Chief Editor with 50+ years journalism experience
+  const headlines = await aiChiefEditorCurate(rawExternalItems);
+
+  const result = {
+    headlines,
+    fetchedAt: new Date().toISOString(),
+    fallback: headlines.length === 0,
+    message: headlines.length === 0 ? "Live external news feeds are refreshing. Please check back in a moment." : undefined,
+  };
+
+  newsCache = { data: result, fetchedAt: Date.now() };
+  return result;
+}
+
 app.get('/api/usosa-news', async (req: Request, res: Response) => {
   const isForce = req.query.force === 'true';
+  const isFresh = !isForce && !!newsCache && Date.now() - newsCache.fetchedAt < NEWS_CACHE_TTL_MS;
 
-  if (isForce) {
-    newsCache = null;
+  if (isFresh) {
+    return res.json(newsCache!.data);
   }
 
-  if (!isForce && newsCache && Date.now() - newsCache.fetchedAt < NEWS_CACHE_TTL_MS) {
+  // Stale-while-revalidate: fetching + AI curation can take several seconds
+  // even in the best case, and a user-facing request should never block on
+  // that when there's already a reasonable (if slightly stale) result to
+  // show. Refresh happens in the background so the *next* request gets the
+  // new data; this one returns instantly.
+  if (!isForce && newsCache) {
+    if (!newsCacheRefreshing) {
+      newsCacheRefreshing = true;
+      refreshNewsCache()
+        .catch((err) => serverLogger.warn("Background USOSA news refresh warning", { error: (err as Error).message }))
+        .finally(() => { newsCacheRefreshing = false; });
+    }
     return res.json(newsCache.data);
   }
 
+  // No cache yet at all (cold start), or an explicit force-refresh — this
+  // one has to wait for real data.
   try {
-    // Step 1: Gather live external feeds from Google News & major news outlets
-    const rawExternalItems = await fetchLiveExternalNewsItems();
-
-    // Step 2: Pass through AI Chief Editor with 50+ years journalism experience
-    const headlines = await aiChiefEditorCurate(rawExternalItems);
-
-    const result = {
-      headlines,
-      fetchedAt: new Date().toISOString(),
-      fallback: headlines.length === 0,
-      message: headlines.length === 0 ? "Live external news feeds are refreshing. Please check back in a moment." : undefined,
-    };
-
-    newsCache = { data: result, fetchedAt: Date.now() };
+    const result = await refreshNewsCache();
     return res.json(result);
   } catch (error) {
-      serverLogger.error("USOSA News endpoint error", error);
+    serverLogger.error("USOSA News endpoint error", error);
+    // Prefer serving the last known-good data over a hard failure —
+    // "100% success" means a force-refresh failure shouldn't wipe out a
+    // perfectly good previous result.
+    if (newsCache) {
+      return res.json(newsCache.data);
+    }
     return res.status(500).json({
       headlines: [],
       fetchedAt: new Date().toISOString(),
