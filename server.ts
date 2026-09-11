@@ -3383,17 +3383,18 @@ ${JSON.stringify(topClusters.map((c, i) => ({
 })), null, 2)}
 
 CRITICAL EDITORIAL RULES:
-1. COMBINE SIMILAR STORIES: Each topic cluster must be represented by exactly ONE major, overarching headline. NEVER output repetitive or duplicate headlines about the same news event (e.g. admission lists, PTA teacher absorption, alumni protests, speech days).
-2. For each cluster, write an authoritative, clean, human headline WITHOUT any publisher names or trailing tags (e.g. write "FG Releases 2026/2027 Admission List for Federal Unity Colleges", DO NOT add "- Vanguard" or "- The Guardian").
-3. Write a comprehensive narrative story summary of 10 to 15 lines (about 120-180 words, formatted across 2 to 3 fluid paragraphs). Detail what happened, official reactions from the Federal Ministry of Education or USOSA, key context, and next steps.
-4. STRICT RULE: DO NOT use analytical section headers (DO NOT write "Executive Summary:", "Context:", "Strategic Implications:", or bullet points). Write pure, readable journalistic prose.
-5. Order items strictly from newest to oldest.
+1. COMBINE SIMILAR STORIES ACROSS CLUSTERS: these clusters were pre-grouped by a simple keyword-overlap heuristic, which misses cases where the SAME real-world event is worded very differently across outlets (e.g. one outlet writes "KCOBA Defends King's College Concession" while another writes "FG Hands Over Management of King's College to Old Boys' Association" — those are the SAME event and MUST become ONE headline). Read the suggestedTitle and context of every cluster and merge ANY set of clusters describing the same underlying event, decision, or announcement into a single headline entry, listing every merged cluster's index in "sourceIndices". Do not merge clusters that are genuinely different events just because they mention the same school.
+2. Every input index must appear in exactly one output entry's sourceIndices — never dropped, never duplicated across entries.
+3. For each merged entry, write an authoritative, clean, human headline WITHOUT any publisher names or trailing tags (e.g. write "FG Hands Over King's College Lagos Management to KCOBA", DO NOT add "- Vanguard" or "- The Guardian").
+4. Write a comprehensive narrative story summary of 10 to 15 lines (about 120-180 words, formatted across 2 to 3 fluid paragraphs). Detail what happened, official reactions from the Federal Ministry of Education or USOSA, key context, and next steps.
+5. STRICT RULE: DO NOT use analytical section headers (DO NOT write "Executive Summary:", "Context:", "Strategic Implications:", or bullet points). Write pure, readable journalistic prose.
+6. Order items strictly from newest to oldest.
 
 Return ONLY valid JSON (no markdown fences):
 {
   "headlines": [
     {
-      "index": 0,
+      "sourceIndices": [0, 3],
       "title": "Clean Authoritative Major Headline",
       "summary": "10-15 line narrative story summary in 2-3 fluid paragraphs without analytical headers."
     }
@@ -3416,40 +3417,77 @@ Return ONLY valid JSON (no markdown fences):
       const parsed = JSON.parse(rawText);
 
       if (Array.isArray(parsed.headlines) && parsed.headlines.length > 0) {
-        const resultMap = new Map<number, { title: string; summary: string }>();
+        const usedIndices = new Set<number>();
+        const merged: Array<{ title: string; summary: string; source: string; url: string; publishedAt: string; timestamp: number; schoolTag: string; otherSources: Array<{ sourceName: string; title: string; url: string }> }> = [];
+
         for (const item of parsed.headlines) {
-          if (typeof item.index === "number" && item.title && item.summary) {
-            resultMap.set(item.index, {
-              title: stripPublisherNames(cleanNewsHtmlAndJunk(cleanText(item.title))),
-              summary: cleanNewsHtmlAndJunk(cleanText(item.summary)),
-            });
+          const rawIndices: unknown[] = Array.isArray(item.sourceIndices) ? item.sourceIndices : (typeof item.index === "number" ? [item.index] : []);
+          const indices = rawIndices.filter((i): i is number => typeof i === "number" && !!topClusters[i] && !usedIndices.has(i));
+          if (indices.length === 0 || !item.title || !item.summary) continue;
+
+          const sourcesMap = new Map<string, { sourceName: string; title: string; url: string }>();
+          let leadUrl = "";
+          let leadPublishedAt = "Recent";
+          let leadSchoolTag = "";
+          let latestTimestamp = 0;
+
+          for (const i of indices) {
+            usedIndices.add(i);
+            const cluster = topClusters[i];
+            for (const [key, coverage] of cluster.sourcesMap) sourcesMap.set(key, coverage);
+            if (cluster.timestamp >= latestTimestamp) {
+              latestTimestamp = cluster.timestamp;
+              leadUrl = cluster.leadUrl;
+              leadPublishedAt = cluster.publishedAt;
+            }
+            if (!leadSchoolTag) leadSchoolTag = cluster.schoolTag;
           }
-        }
 
-        return topClusters.map((cluster, idx) => {
-          const aiItem = resultMap.get(idx);
-          const finalTitle = aiItem?.title || cluster.representativeTitle;
-          const sourcesList = Array.from(cluster.sourcesMap.values());
-
-          let displaySource = cluster.leadSource;
+          const sourcesList = Array.from(sourcesMap.values());
+          let displaySource = sourcesList[0]?.sourceName || "News Outlet";
           if (sourcesList.length === 2) {
             displaySource = `${sourcesList[0].sourceName} & ${sourcesList[1].sourceName}`;
           } else if (sourcesList.length > 2) {
             displaySource = `${sourcesList[0].sourceName}, ${sourcesList[1].sourceName} & ${sourcesList.length - 2} other outlets`;
           }
 
-          const summary = aiItem?.summary || buildComprehensiveSummary(finalTitle, cluster.rawSnippet, cluster.schoolTag);
+          merged.push({
+            title: stripPublisherNames(cleanNewsHtmlAndJunk(cleanText(item.title))),
+            summary: cleanNewsHtmlAndJunk(cleanText(item.summary)),
+            source: displaySource,
+            url: leadUrl,
+            publishedAt: leadPublishedAt,
+            timestamp: latestTimestamp,
+            schoolTag: leadSchoolTag,
+            otherSources: sourcesList,
+          });
+        }
 
-          return {
-            title: finalTitle,
-            summary,
+        // Safety net: any cluster the AI didn't place anywhere still needs to
+        // appear rather than silently vanishing.
+        topClusters.forEach((cluster, idx) => {
+          if (usedIndices.has(idx)) return;
+          const sourcesList = Array.from(cluster.sourcesMap.values());
+          let displaySource = cluster.leadSource;
+          if (sourcesList.length === 2) {
+            displaySource = `${sourcesList[0].sourceName} & ${sourcesList[1].sourceName}`;
+          } else if (sourcesList.length > 2) {
+            displaySource = `${sourcesList[0].sourceName}, ${sourcesList[1].sourceName} & ${sourcesList.length - 2} other outlets`;
+          }
+          merged.push({
+            title: cluster.representativeTitle,
+            summary: buildComprehensiveSummary(cluster.representativeTitle, cluster.rawSnippet, cluster.schoolTag),
             source: displaySource,
             url: cluster.leadUrl,
             publishedAt: cluster.publishedAt,
+            timestamp: cluster.timestamp,
             schoolTag: cluster.schoolTag,
             otherSources: sourcesList,
-          };
+          });
         });
+
+        merged.sort((a, b) => b.timestamp - a.timestamp);
+        return merged.map(({ timestamp, ...rest }) => rest);
       }
     } catch (e) {
       serverLogger.warn("AI Chief Editor processing warning, using clustered fallback", { error: (e as Error).message });
