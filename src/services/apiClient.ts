@@ -360,11 +360,19 @@ export async function fetchEvents(): Promise<GroupEvent[]> {
         const combinedAttendees = Array.from(new Set([...(remote.attendeeIds || []), ...(sanitized.attendeeIds || [])]));
         const combinedMaybe = Array.from(new Set([...(remote.maybeIds || []), ...(sanitized.maybeIds || [])]));
         const combinedDeclined = Array.from(new Set([...(remote.declinedIds || []), ...(sanitized.declinedIds || [])]));
+        const combinedPhotos = Array.from(new Set([...(sanitized.driveImageUrls || []), ...(remote.driveImageUrls || [])])).filter(Boolean);
+        const combinedVideos = Array.from(new Set([
+          ...(sanitized.youtubeVideoUrls || (sanitized.youtubeVideoUrl ? [sanitized.youtubeVideoUrl] : [])),
+          ...(remote.youtubeVideoUrls || (remote.youtubeVideoUrl ? [remote.youtubeVideoUrl] : []))
+        ])).filter(Boolean);
 
         eventMap.set(e.id, {
-          ...sanitized,
           ...remote,
+          ...sanitized,
           id: e.id,
+          driveImageUrls: combinedPhotos,
+          youtubeVideoUrls: combinedVideos,
+          youtubeVideoUrl: combinedVideos[0] || sanitized.youtubeVideoUrl || remote.youtubeVideoUrl || "",
           attendeeIds: combinedAttendees,
           maybeIds: combinedMaybe,
           declinedIds: combinedDeclined,

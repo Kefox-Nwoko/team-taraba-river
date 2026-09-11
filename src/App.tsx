@@ -334,7 +334,26 @@ export default function App() {
         const localE = AppStateManager.getEvents();
         const eMap = new Map<string, GroupEvent>();
         for (const ev of localE) { if (ev?.id) eMap.set(ev.id, ev); }
-        for (const ev of updatedEvents) { if (ev?.id) eMap.set(ev.id, ev); }
+        for (const ev of updatedEvents) {
+          if (!ev?.id) continue;
+          if (!eMap.has(ev.id)) {
+            eMap.set(ev.id, ev);
+          } else {
+            const local = eMap.get(ev.id)!;
+            const combinedPhotos = Array.from(new Set([...(local.driveImageUrls || []), ...(ev.driveImageUrls || [])])).filter(Boolean);
+            const combinedVideos = Array.from(new Set([
+              ...(local.youtubeVideoUrls || (local.youtubeVideoUrl ? [local.youtubeVideoUrl] : [])),
+              ...(ev.youtubeVideoUrls || (ev.youtubeVideoUrl ? [ev.youtubeVideoUrl] : []))
+            ])).filter(Boolean);
+            eMap.set(ev.id, {
+              ...ev,
+              ...local,
+              driveImageUrls: combinedPhotos,
+              youtubeVideoUrls: combinedVideos,
+              youtubeVideoUrl: combinedVideos[0] || local.youtubeVideoUrl || ev.youtubeVideoUrl || "",
+            });
+          }
+        }
         const cleanEvents = Array.from(eMap.values()).filter(
           (ev) =>
             !ev.id.startsWith("evt_arch_") &&
@@ -430,7 +449,26 @@ export default function App() {
       const localE = AppStateManager.getEvents();
       const eMap = new Map<string, GroupEvent>();
       for (const ev of localE) { if (ev?.id) eMap.set(ev.id, ev); }
-      for (const ev of e) { if (ev?.id) eMap.set(ev.id, ev); }
+      for (const ev of e) {
+        if (!ev?.id) continue;
+        if (!eMap.has(ev.id)) {
+          eMap.set(ev.id, ev);
+        } else {
+          const local = eMap.get(ev.id)!;
+          const combinedPhotos = Array.from(new Set([...(local.driveImageUrls || []), ...(ev.driveImageUrls || [])])).filter(Boolean);
+          const combinedVideos = Array.from(new Set([
+            ...(local.youtubeVideoUrls || (local.youtubeVideoUrl ? [local.youtubeVideoUrl] : [])),
+            ...(ev.youtubeVideoUrls || (ev.youtubeVideoUrl ? [ev.youtubeVideoUrl] : []))
+          ])).filter(Boolean);
+          eMap.set(ev.id, {
+            ...ev,
+            ...local,
+            driveImageUrls: combinedPhotos,
+            youtubeVideoUrls: combinedVideos,
+            youtubeVideoUrl: combinedVideos[0] || local.youtubeVideoUrl || ev.youtubeVideoUrl || "",
+          });
+        }
+      }
       if (savedEvent && savedEvent.id) {
         eMap.set(savedEvent.id, savedEvent);
       }

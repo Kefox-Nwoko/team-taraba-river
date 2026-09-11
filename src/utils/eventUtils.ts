@@ -75,7 +75,10 @@ export function sanitizeEventRecord(event: Partial<GroupEvent>): GroupEvent {
     description: (event.description || "").trim(),
     driveImageUrls: Array.isArray(event.driveImageUrls) ? event.driveImageUrls.filter(Boolean) : [],
     driveFolderId: (event.driveFolderId || "").trim() || `drive_folder_${Date.now()}`,
-    youtubeVideoUrl: (event.youtubeVideoUrl || "").trim(),
+    youtubeVideoUrls: Array.isArray(event.youtubeVideoUrls)
+      ? event.youtubeVideoUrls.filter((u): u is string => typeof u === "string" && Boolean(u.trim()))
+      : (event.youtubeVideoUrl && event.youtubeVideoUrl.trim() ? [event.youtubeVideoUrl.trim()] : []),
+    youtubeVideoUrl: (event.youtubeVideoUrl || "").trim() || (Array.isArray(event.youtubeVideoUrls) && event.youtubeVideoUrls[0] ? event.youtubeVideoUrls[0] : ""),
     youtubeTitle: (event.youtubeTitle || "").trim(),
     createdBy: (event.createdBy || "").trim() || "Community Member",
     createdById: (event.createdById || "").trim() || "mem_admin",

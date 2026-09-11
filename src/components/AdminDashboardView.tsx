@@ -680,7 +680,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
-  const handleApprovePhoto = async (req: PhotoApprovalRequest) => {
+  const handleApprovePhoto = async (req: PhotoApprovalRequest, shouldRefresh: boolean = true) => {
     // 1. Award activity points to the uploading member. Atomic increment —
     // approving several items from the same member in quick succession
     // (each an independent, unserialized click) must not clobber earlier
@@ -691,6 +691,18 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       AppStateManager.saveMembers(members);
       FirebaseSyncManager.incrementMemberActivityPoints(req.memberId, 20).catch(() => {});
     }
+
+    // Robust video detection: honor type="video" or inspect video URL patterns
+    const isVideo = req.type === "video" || (!req.type && Boolean(
+      req.photoUrl && (
+        req.photoUrl.includes("youtube.com") ||
+        req.photoUrl.includes("youtu.be") ||
+        req.photoUrl.includes(".mp4") ||
+        req.photoUrl.includes(".mov") ||
+        req.photoUrl.includes(".webm") ||
+        req.photoUrl.includes("/videos/")
+      )
+    ));
 
     // 2. Attach media to the target event — atomic arrayUnion (see
     // FirebaseSyncManager.attachApprovedMedia). Approving many photos from
@@ -719,17 +731,20 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     try {
       await FirebaseSyncManager.attachApprovedMedia({
         eventId,
-        photoUrl: req.type === "photo" ? req.photoUrl : undefined,
-        videoUrl: req.type === "video" ? req.photoUrl : undefined,
+        photoUrl: !isVideo ? req.photoUrl : undefined,
+        videoUrl: isVideo ? req.photoUrl : undefined,
         createFields,
       });
-    } catch (e) {}
+    } catch (e) {
+      logger.warn("attachApprovedMedia notice:", e);
+    }
 
     // Optimistic local update for instant UI feedback in this browser only —
     // the real-time Firestore listener reconciles it with the authoritative
     // state moments later, so this doesn't need to be race-safe itself.
+    let updatedEvt: GroupEvent;
     if (targetEvt) {
-      if (req.type === "video") {
+      if (isVideo) {
         const existingVideos = targetEvt.youtubeVideoUrls || (targetEvt.youtubeVideoUrl ? [targetEvt.youtubeVideoUrl] : []);
         if (!existingVideos.includes(req.photoUrl)) {
           targetEvt.youtubeVideoUrls = [req.photoUrl, ...existingVideos];
@@ -741,15 +756,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           targetEvt.driveImageUrls = [req.photoUrl, ...existingImgs];
         }
       }
+      updatedEvt = targetEvt;
     } else {
       const newEvt: GroupEvent = {
         id: eventId,
         ...createFields,
-        driveImageUrls: req.type === "photo" ? [req.photoUrl] : [],
-        youtubeVideoUrl: req.type === "video" ? req.photoUrl : "",
-        youtubeVideoUrls: req.type === "video" ? [req.photoUrl] : [],
+        driveImageUrls: !isVideo ? [req.photoUrl] : [],
+        youtubeVideoUrl: isVideo ? req.photoUrl : "",
+        youtubeVideoUrls: isVideo ? [req.photoUrl] : [],
       } as GroupEvent;
       allEvents.unshift(newEvt);
+      updatedEvt = newEvt;
     }
     AppStateManager.saveEvents(allEvents);
 
@@ -761,7 +778,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
 
     setPendingApprovals((prev) => prev.filter((r) => r.id !== req.id));
-    onRefreshData();
+    if (shouldRefresh) {
+      await Promise.resolve(onRefreshData(updatedEvt));
+    }
+    return updatedEvt;
   };
 
   const handleRejectPhoto = async (req: PhotoApprovalRequest) => {
@@ -841,11 +861,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     const itemsToApprove = pendingApprovals.filter((r) => selectedMediaIds.has(r.id));
     if (itemsToApprove.length === 0) return;
     setIsBatchProcessing(true);
+    let lastEvent: GroupEvent | undefined;
     for (const req of itemsToApprove) {
-      await handleApprovePhoto(req);
+      lastEvent = await handleApprovePhoto(req, false);
     }
     setSelectedMediaIds(new Set());
     setIsBatchProcessing(false);
+    if (lastEvent) {
+      await Promise.resolve(onRefreshData(lastEvent));
+    } else {
+      await Promise.resolve(onRefreshData());
+    }
   };
 
   const handleBatchReject = () => {
