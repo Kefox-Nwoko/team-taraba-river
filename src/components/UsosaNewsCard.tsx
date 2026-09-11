@@ -432,7 +432,8 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
               </h3>
               {fetchedAt && activeTab === "Headlines" && (
                 <p className="text-xs sm:text-sm font-normal text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                  Latest 15 Stories · Updated {formatFetchedAt(fetchedAt)}
+                  Latest {sortedHeadlines.length > 0 ? `${sortedHeadlines.length} ` : ""}
+                  {sortedHeadlines.length === 1 ? "Story" : "Stories"} · Updated {formatFetchedAt(fetchedAt)}
                 </p>
               )}
               {activeTab === "Networking" && (
@@ -547,7 +548,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
               {newsLoading && (
                 <div className="flex flex-col items-center justify-center py-12 space-y-3 text-slate-400">
                   <Loader2 className="w-7 h-7 animate-spin text-amber-500" />
-                  <p className="text-sm">Gathering latest 15 stories across Unity Colleges…</p>
+                  <p className="text-sm">Gathering latest stories across Unity Colleges…</p>
                 </div>
               )}
 
