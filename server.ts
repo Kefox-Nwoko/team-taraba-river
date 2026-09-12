@@ -405,6 +405,15 @@ function hasMediaAssets(e: GroupEvent): boolean {
 async function purgeExpiredEvents(): Promise<{ deletedCount: number }> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  // Match the home page's own display window (isOfficialFutureEvent in
+  // src/utils/eventUtils.ts): a just-passed event still needs to be visible
+  // there for 7 days after its date so admins have time to attach media
+  // before it's gone. Purging same-day (the old behavior) deleted every
+  // media-less pre-announcement — including future events, the moment their
+  // date arrived — before anyone could react, with no activity log entry
+  // and no recovery path.
+  const purgeCutoff = new Date(today);
+  purgeCutoff.setDate(purgeCutoff.getDate() - 7);
 
   let list: GroupEvent[] = [];
   if (isFirestoreAvailable()) {
@@ -418,7 +427,7 @@ async function purgeExpiredEvents(): Promise<{ deletedCount: number }> {
     list = [...fallbackEvents];
   }
 
-  const expiredIds = new Set<string>();
+  const expired: GroupEvent[] = [];
   for (const e of list) {
     // CRITICAL: NEVER delete or purge any event that contains media or is an album folder
     if (hasMediaAssets(e)) {
@@ -432,10 +441,12 @@ async function purgeExpiredEvents(): Promise<{ deletedCount: number }> {
       if (fromTitle) parsed = new Date(fromTitle);
     }
     if (!parsed) continue;
-    if (parsed.getTime() < today.getTime()) {
-      expiredIds.add(e.id);
+    if (parsed.getTime() < purgeCutoff.getTime()) {
+      expired.push(e);
     }
   }
+
+  const expiredIds = new Set(expired.map((e) => e.id));
 
   if (expiredIds.size > 0 && isFirestoreAvailable()) {
     const deletePromises = Array.from(expiredIds).map((id) => {
@@ -444,6 +455,17 @@ async function purgeExpiredEvents(): Promise<{ deletedCount: number }> {
       });
     });
     await Promise.all(deletePromises);
+
+    for (const e of expired) {
+      await addActivityLog({
+        id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        memberId: 'system',
+        memberName: 'System (auto-purge)',
+        action: `Auto-purged expired media-less event: ${e.title} (${e.id})`,
+        timestamp: new Date().toISOString(),
+        pointsEarned: 0,
+      }).catch(() => {});
+    }
   }
 
   fallbackEvents = fallbackEvents.filter((e) => !expiredIds.has(e.id));
