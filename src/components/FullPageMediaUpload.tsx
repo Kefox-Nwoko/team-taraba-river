@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { DatePicker } from "./DatePicker";
 import { logger } from "../lib/logger";
 import { GroupEvent, Member, PhotoApprovalRequest } from "../types";
@@ -33,6 +33,7 @@ import { uploadImageDirectToDrive } from "../services/googleDriveDirectUpload";
 import { AppStateManager } from "../services/storage";
 import { EventLocationMap } from "./EventLocationMap";
 import { EngagementTracker } from "../services/EngagementTracker";
+import { isChapterEvent } from "../utils/eventUtils";
 
 interface MediaItem {
   id: string;
@@ -78,11 +79,16 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   onSuccess,
 }) => {
   const { notify } = useToast();
+  // Media galleries only — pre-announcement/chapter events (evt_*) are never
+  // valid upload targets. Media lives exclusively in gallery folders
+  // (gdrive_*, folder_*, media_*, album_*); announcements are ephemeral
+  // notice-board entries with no media attached, ever.
+  const folderEvents = useMemo(() => (events || []).filter((e) => e && !isChapterEvent(e)), [events]);
   const [folderMode, setFolderMode] = useState<"existing" | "new">(
     initialFolderId ? "existing" : "new"
   );
   const [selectedFolderId, setSelectedFolderId] = useState<string>(
-    initialFolderId || (events && events.length > 0 ? events[0].id : "")
+    initialFolderId || (folderEvents.length > 0 ? folderEvents[0].id : "")
   );
   const [newFolderTitle, setNewFolderTitle] = useState("");
   const [newDate, setNewDate] = useState(() => new Date().toISOString().split("T")[0]);
@@ -152,10 +158,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     if (initialFolderId) {
       setSelectedFolderId(initialFolderId);
       setFolderMode("existing");
-    } else if (events && events.length > 0 && !selectedFolderId) {
-      setSelectedFolderId(events[0].id);
+    } else if (folderEvents.length > 0 && !selectedFolderId) {
+      setSelectedFolderId(folderEvents[0].id);
     }
-  }, [initialFolderId, events, selectedFolderId]);
+  }, [initialFolderId, folderEvents, selectedFolderId]);
 
   const blobToDataUrl = (blob: Blob): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -1309,7 +1315,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                   onChange={(e) => setSelectedFolderId(e.target.value)}
                   className="w-full px-4 py-2.5 text-sm rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 >
-                  {(events || []).map((evt) => (
+                  {folderEvents.map((evt) => (
                     <option key={evt?.id || Math.random().toString()} value={evt?.id || ""}>
                       📁 {evt?.title || "Untitled"} ({evt?.date || "No Date"})
                     </option>

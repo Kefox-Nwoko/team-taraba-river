@@ -382,19 +382,27 @@ function parseDateFromTitle(title: string): string | null {
   return null;
 }
 
-function hasMediaAssets(e: GroupEvent): boolean {
+// A media folder/gallery (Drive-synced album, member-uploaded folder, or
+// archived record) — identified purely by ID convention. These are
+// permanent and are NEVER purged on a date-based schedule, regardless of
+// their date field.
+function isMediaFolder(e: GroupEvent): boolean {
   if (!e) return false;
   const id = (e.id || "").toLowerCase();
-  if (
+  return (
     id.startsWith("gdrive_") ||
     id.startsWith("yt_") ||
     id.startsWith("folder_") ||
     id.startsWith("media_") ||
     id.startsWith("album_") ||
+    id.startsWith("evt_arch_") ||
     id === "evt_taraba_gdrive"
-  ) {
-    return true;
-  }
+  );
+}
+
+function hasMediaAssets(e: GroupEvent): boolean {
+  if (!e) return false;
+  if (isMediaFolder(e)) return true;
   if (Array.isArray(e.driveImageUrls) && e.driveImageUrls.length > 0) return true;
   if (Array.isArray(e.youtubeVideoUrls) && e.youtubeVideoUrls.length > 0) return true;
   if (e.youtubeVideoUrl && e.youtubeVideoUrl.trim().length > 0) return true;
@@ -405,15 +413,11 @@ function hasMediaAssets(e: GroupEvent): boolean {
 async function purgeExpiredEvents(): Promise<{ deletedCount: number }> {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  // Match the home page's own display window (isOfficialFutureEvent in
-  // src/utils/eventUtils.ts): a just-passed event still needs to be visible
-  // there for 7 days after its date so admins have time to attach media
-  // before it's gone. Purging same-day (the old behavior) deleted every
-  // media-less pre-announcement — including future events, the moment their
-  // date arrived — before anyone could react, with no activity log entry
-  // and no recovery path.
-  const purgeCutoff = new Date(today);
-  purgeCutoff.setDate(purgeCutoff.getDate() - 7);
+  // Announcements (pre-announced chapter events) are deliberately disconnected
+  // from media galleries: there is no legitimate path for media to attach to
+  // one, so an announcement purges the day after its activity/event is over —
+  // no grace window, no media-based exception. Only actual media
+  // folders/galleries (isMediaFolder) are permanent and skipped here.
 
   let list: GroupEvent[] = [];
   if (isFirestoreAvailable()) {
@@ -429,8 +433,8 @@ async function purgeExpiredEvents(): Promise<{ deletedCount: number }> {
 
   const expired: GroupEvent[] = [];
   for (const e of list) {
-    // CRITICAL: NEVER delete or purge any event that contains media or is an album folder
-    if (hasMediaAssets(e)) {
+    // Media folders/galleries are permanent — never date-purged.
+    if (isMediaFolder(e)) {
       continue;
     }
 
@@ -441,7 +445,7 @@ async function purgeExpiredEvents(): Promise<{ deletedCount: number }> {
       if (fromTitle) parsed = new Date(fromTitle);
     }
     if (!parsed) continue;
-    if (parsed.getTime() < purgeCutoff.getTime()) {
+    if (parsed.getTime() < today.getTime()) {
       expired.push(e);
     }
   }
@@ -461,7 +465,7 @@ async function purgeExpiredEvents(): Promise<{ deletedCount: number }> {
         id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         memberId: 'system',
         memberName: 'System (auto-purge)',
-        action: `Auto-purged expired media-less event: ${e.title} (${e.id})`,
+        action: `Auto-purged expired event announcement: ${e.title} (${e.id})`,
         timestamp: new Date().toISOString(),
         pointsEarned: 0,
       }).catch(() => {});

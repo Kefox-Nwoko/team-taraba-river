@@ -99,18 +99,18 @@ export function sanitizeEventRecord(event: Partial<GroupEvent>): GroupEvent {
 /**
  * Returns true if an event is an official chapter event for the Notice Board / Calendar.
  * Rules:
- * 1. Excludes all media folders, historical photo albums, and Google Drive synced folders.
- * 2. Includes all upcoming events, today's events, ongoing multi-day activities, and recent activities from the past 7 days.
+ * 1. Excludes all media folders, historical photo albums, and Google Drive synced folders
+ *    — announcements are deliberately disconnected from media galleries entirely.
+ * 2. Includes upcoming events, today's events, and ongoing multi-day activities.
+ * 3. Disappears immediately the day after the activity/event is over — no grace window,
+ *    since a pre-announcement has no media to wait around for.
  */
 export function isOfficialFutureEvent(event: GroupEvent): boolean {
   if (!isChapterEvent(event)) return false;
   if (!event.date) return false;
 
-  // Window check: include ongoing, future, today, and last 7 days
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const sevenDaysAgo = new Date(today);
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
   // If multi-day event, use endDate for determining if the event has completely elapsed
   const effectiveEndStr = event.endDate && event.endDate.trim() ? event.endDate.trim() : event.date.trim();
@@ -120,7 +120,7 @@ export function isOfficialFutureEvent(event: GroupEvent): boolean {
     return true;
   }
 
-  return eventDateObj.getTime() >= sevenDaysAgo.getTime();
+  return eventDateObj.getTime() >= today.getTime();
 }
 
 /**
