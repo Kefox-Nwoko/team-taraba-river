@@ -41,9 +41,10 @@ import {
   base64ToBuffer,
   initDriveUploadSession,
   makeDriveFilePublic,
-  initYouTubeUploadSession,
-  deleteYouTubeVideoServer,
-  getDriveAuthClient,
+   initYouTubeUploadSession,
+   deleteYouTubeVideoServer,
+   generateVideoThumbnail,
+   getDriveAuthClient,
 } from "./server/mediaPipeline";
 import { isMemberCredentialMatch } from "./src/lib/authMatching";
 import { CSV_SEED_MEMBERS } from "./src/data/csvMembers";
@@ -2638,6 +2639,24 @@ app.get("/api/media/image/:fileId", async (req: Request, res: Response) => {
     return;
   } catch (error: any) {
     serverLogger.warn(`[Image Proxy] Could not stream file ${fileId}, redirecting to CDN`, { error: error?.message || error });
+    res.redirect(`https://lh3.googleusercontent.com/d/${fileId}`);
+  }
+});
+
+// 14e. Media Pipeline: Generate & serve a single-frame video thumbnail from Google Drive
+app.get("/api/media/video-thumbnail/:fileId", async (req: Request, res: Response) => {
+  const { fileId } = req.params;
+  try {
+    const result = await generateVideoThumbnail(fileId);
+    if (!result) {
+      res.redirect(`https://lh3.googleusercontent.com/d/${fileId}`);
+      return;
+    }
+    res.setHeader('Content-Type', result.mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=43200');
+    res.send(result.buffer);
+  } catch (error: any) {
+    serverLogger.warn(`[Video Thumbnail] Failed for ${fileId}`, { error: error?.message || error });
     res.redirect(`https://lh3.googleusercontent.com/d/${fileId}`);
   }
 });

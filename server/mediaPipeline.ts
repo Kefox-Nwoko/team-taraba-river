@@ -719,3 +719,72 @@ export async function deleteYouTubeVideoServer(req: Request, res: Response): Pro
   }
 }
 
+// ===================================================================
+//  Video Thumbnail Generation — extracts a single frame from a
+//  Google Drive-hosted video and caches it server-side.
+//  Silicon Valley standard: every video asset gets a real preview
+//  frame instead of a generic placeholder image.
+// ===================================================================
+
+interface ThumbnailCacheEntry {
+  buffer: Buffer;
+  mimeType: string;
+  createdAt: number;
+}
+
+const THUMBNAIL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const thumbnailCache = new Map<string, ThumbnailCacheEntry>();
+
+export async function generateVideoThumbnail(fileId: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  const cacheKey = `thumb_${fileId}`;
+  const cached = thumbnailCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && now - cached.createdAt < THUMBNAIL_CACHE_TTL_MS) {
+    return { buffer: cached.buffer, mimeType: cached.mimeType };
+  }
+
+  const auth = await getDriveAuthClient();
+  const drive = google.drive({ version: 'v3', auth });
+
+  const inputPath = path.join(process.cwd(), `tmp_thumb_${fileId}_${Date.now()}.mp4`);
+  const outputPath = path.join(process.cwd(), `tmp_thumb_frame_${fileId}_${Date.now()}.webp`);
+
+  try {
+    const driveRes = await drive.files.get(
+      { fileId, alt: 'media' },
+      { responseType: 'stream', headers: { Range: 'bytes=0-2097152' } }
+    );
+
+    const writeStream = fs.createWriteStream(inputPath);
+    await new Promise<void>((resolve, reject) => {
+      driveRes.data.pipe(writeStream);
+      writeStream.on('finish', resolve);
+      writeStream.on('error', reject);
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(inputPath)
+        .seekInput('0.5')
+        .duration(0.1)
+        .outputOptions(['-frames:v', '1', '-q:v', '2'])
+        .format('webp')
+        .save(outputPath)
+        .on('end', resolve)
+        .on('error', reject);
+    });
+
+    const buffer = fs.readFileSync(outputPath);
+    const result = { buffer, mimeType: 'image/webp' };
+    thumbnailCache.set(cacheKey, { ...result, createdAt: now });
+    return result;
+  } catch (err: any) {
+    serverLogger.warn(`[Thumbnail] Failed to generate thumbnail for ${fileId}: ${err?.message || err}`);
+    return null;
+  } finally {
+    try {
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+    } catch {}
+  }
+}
+

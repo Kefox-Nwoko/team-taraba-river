@@ -142,6 +142,29 @@ function sanitizeUIField(val: string | undefined): string {
   return clean;
 }
 
+function extractDriveFileId(videoUrl: string): string | null {
+  const match = videoUrl.match(/(\/d\/|googleusercontent\.com\/d\/|video-thumbnail\/)([a-zA-Z0-9_-]{25,})/);
+  if (match) return match[2];
+  const apiMatch = videoUrl.match(/\/api\/media\/image\/([a-zA-Z0-9_-]+)/);
+  if (apiMatch) return apiMatch[1];
+  return null;
+}
+
+function getVideoThumbnailUrl(videoUrl: string): string {
+  if (videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be")) {
+    return getYouTubeThumbnail(videoUrl) || `https://img.youtube.com/vi/${extractYouTubeId(videoUrl)}/hqdefault.jpg`;
+  }
+  const fileId = extractDriveFileId(videoUrl);
+  if (fileId) {
+    return `/api/media/video-thumbnail/${fileId}`;
+  }
+  return "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80";
+}
+
+const TOUCH_HOLD_DELAY_MS = 1000;
+const TOUCH_AUTO_STOP_MS = 2000;
+const HOVER_DELAY_MS = 60;
+
 const VideoHoverCard: React.FC<{
   videoUrl: string;
   title: string;
@@ -150,9 +173,12 @@ const VideoHoverCard: React.FC<{
   showPlayBadge?: boolean;
   forcePlay?: boolean;
 }> = ({ videoUrl, title, className = "w-full h-full object-cover", aspectClass = "w-full h-full", showPlayBadge = true, forcePlay }) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const hoverTimeoutRef = useRef<any>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+   const videoRef = useRef<HTMLVideoElement>(null);
+   const hoverTimeoutRef = useRef<any>(null);
+   const touchStartTimerRef = useRef<any>(null);
+   const touchAutoStopRef = useRef<any>(null);
+   const longTouchActiveRef = useRef(false);
+   const [isPlaying, setIsPlaying] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isYtPreviewActive, setIsYtPreviewActive] = useState(false);
   const [isYtLoaded, setIsYtLoaded] = useState(false);
@@ -161,10 +187,12 @@ const VideoHoverCard: React.FC<{
   const isYt = videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be");
   const ytId = isYt ? extractYouTubeId(videoUrl) : null;
   const ytThumb = isYt ? getYouTubeThumbnail(videoUrl) : null;
+  const thumbnailUrl = isYt ? ytThumb : getVideoThumbnailUrl(videoUrl);
 
   const videoSrc = videoUrl.includes("#t=") ? videoUrl : `${videoUrl}#t=0.5`;
 
-  // Start video playback
+  const isStandalone = forcePlay === undefined;
+
   const startPlayback = () => {
     if (hasError) return;
     setIsHovered(true);
@@ -183,10 +211,12 @@ const VideoHoverCard: React.FC<{
     }
   };
 
-  // Stop video playback
-  const stopPlayback = () => {
-    setIsHovered(false);
-    clearTimeout(hoverTimeoutRef.current);
+   const stopPlayback = () => {
+     setIsHovered(false);
+     longTouchActiveRef.current = false;
+     clearTimeout(hoverTimeoutRef.current);
+     clearTimeout(touchStartTimerRef.current);
+     clearTimeout(touchAutoStopRef.current);
 
     if (isYt) {
       setIsYtPreviewActive(false);
@@ -204,24 +234,59 @@ const VideoHoverCard: React.FC<{
   };
 
   const handleMouseEnter = () => {
+    if (!isStandalone) return;
     clearTimeout(hoverTimeoutRef.current);
     hoverTimeoutRef.current = setTimeout(() => {
       startPlayback();
-    }, 60);
+    }, HOVER_DELAY_MS);
   };
 
   const handleMouseLeave = () => {
+    if (!isStandalone) return;
     clearTimeout(hoverTimeoutRef.current);
     stopPlayback();
   };
 
-  const handleTouchStart = () => {
-    if (isPlaying || isYtPreviewActive) {
-      stopPlayback();
-    } else {
-      startPlayback();
-    }
-  };
+   const handleTouchStart = () => {
+     if (!isStandalone) return;
+     longTouchActiveRef.current = false;
+     if (isPlaying || isYtPreviewActive) {
+       stopPlayback();
+       return;
+     }
+     clearTimeout(touchStartTimerRef.current);
+     touchStartTimerRef.current = setTimeout(() => {
+       startPlayback();
+       longTouchActiveRef.current = true;
+     }, TOUCH_HOLD_DELAY_MS);
+   };
+
+   const handleTouchEnd = () => {
+     if (!isStandalone) return;
+     clearTimeout(touchStartTimerRef.current);
+
+     if (isPlaying || isYtPreviewActive) {
+       clearTimeout(touchAutoStopRef.current);
+       touchAutoStopRef.current = setTimeout(() => {
+         stopPlayback();
+       }, TOUCH_AUTO_STOP_MS);
+     }
+   };
+
+   const handleRootClick = (e: React.MouseEvent) => {
+     if (longTouchActiveRef.current) {
+       e.preventDefault();
+       e.stopPropagation();
+       longTouchActiveRef.current = false;
+     }
+   };
+
+   const handleTouchCancel = () => {
+     if (!isStandalone) return;
+     longTouchActiveRef.current = false;
+     clearTimeout(touchStartTimerRef.current);
+     clearTimeout(touchAutoStopRef.current);
+   };
 
   useEffect(() => {
     if (forcePlay === undefined) return;
@@ -235,6 +300,14 @@ const VideoHoverCard: React.FC<{
   useEffect(() => {
     return () => {
       clearTimeout(hoverTimeoutRef.current);
+      clearTimeout(touchStartTimerRef.current);
+      clearTimeout(touchAutoStopRef.current);
+      longTouchActiveRef.current = false;
+      if (videoRef.current) {
+        try {
+          videoRef.current.pause();
+        } catch {}
+      }
     };
   }, []);
 
@@ -246,6 +319,9 @@ const VideoHoverCard: React.FC<{
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
+        onClick={handleRootClick}
       >
         {/* High-res Static Poster */}
         <img
@@ -300,17 +376,48 @@ const VideoHoverCard: React.FC<{
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
+      onClick={handleRootClick}
     >
       {!hasError ? (
         <>
+          {/* Static Thumbnail — shown when not playing */}
+          {!isPlaying && (
+            <>
+              {thumbnailUrl ? (
+                <img
+                  src={thumbnailUrl}
+                  alt={title}
+                  className={`${className} transition-all duration-500`}
+                  loading="lazy"
+                  onError={handleGoogleDriveImageError}
+                />
+              ) : (
+                <div className="w-full h-full bg-slate-900 flex items-center justify-center">
+                  <Video className="w-8 h-8 text-slate-600" />
+                </div>
+              )}
+
+              {showPlayBadge && (
+                <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none transition-opacity duration-300">
+                  <div className="w-8 h-8 rounded-full bg-black/60 backdrop-blur-xs text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                    <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Playing Video — absolutely positioned, hidden when not playing */}
           <video
             ref={videoRef}
             src={videoSrc}
-            className={`${className} transition-all duration-500 ${isPlaying ? "scale-100 opacity-100" : "group-hover:scale-105 opacity-90"}`}
+            className={`absolute inset-0 w-full h-full ${className} transition-opacity duration-300 ${isPlaying ? "opacity-100" : "opacity-0"}`}
             muted
             playsInline
             loop
-            preload="auto"
+            preload={isPlaying ? "auto" : "none"}
             onError={() => setHasError(true)}
           />
 
@@ -326,14 +433,6 @@ const VideoHoverCard: React.FC<{
         <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-slate-400 p-2">
           <Play className="w-6 h-6 text-slate-500 mb-1" />
           <span className="text-[10px] text-slate-400 truncate max-w-full">{title}</span>
-        </div>
-      )}
-
-      {showPlayBadge && !hasError && !isPlaying && (
-        <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none transition-opacity duration-300">
-          <div className="w-8 h-8 rounded-full bg-black/60 backdrop-blur-xs text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-            <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-          </div>
         </div>
       )}
     </div>
@@ -406,24 +505,16 @@ const FolderCollagePreview: React.FC<{
   const mediaList: Array<{ src: string; isVideo?: boolean; videoUrl?: string }> = [];
 
   allYtUrls.forEach((ytUrl) => {
-    const isDirect =
-      ytUrl.startsWith("data:video") ||
-      ytUrl.toLowerCase().includes(".mp4") ||
-      ytUrl.toLowerCase().includes(".webm") ||
-      ytUrl.toLowerCase().includes(".mov") ||
-      ytUrl.includes("firebasestorage.googleapis.com") ||
-      ytUrl.includes("googleusercontent.com");
-    const videoThumb = !isDirect
-      ? (getYouTubeThumbnail(ytUrl) || "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80")
-      : (ytUrl.includes("lh3.googleusercontent.com") ? ytUrl : "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80");
+    const videoThumb = getVideoThumbnailUrl(ytUrl);
     mediaList.push({ src: videoThumb, videoUrl: ytUrl, isVideo: true });
   });
 
   (images || []).forEach((img) => {
     if (!img || typeof img !== "string") return;
     const isDirectVideo = img.startsWith("data:video") || img.toLowerCase().includes(".mp4") || img.toLowerCase().includes(".webm") || img.toLowerCase().includes(".mov") || (img.includes("/events%2F") && img.includes(".mp4"));
-    if (isDirectVideo) {
-      mediaList.push({ src: "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80", videoUrl: img, isVideo: true });
+    const isYouTubeUrl = img.includes("youtube.com") || img.includes("youtu.be");
+    if (isDirectVideo || isYouTubeUrl) {
+      mediaList.push({ src: getVideoThumbnailUrl(img), videoUrl: img, isVideo: true });
     } else {
       mediaList.push({ src: img, isVideo: false });
     }
@@ -498,6 +589,46 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
 }) => {
   const { notify } = useToast();
   const [hoveredFolderId, setHoveredFolderId] = useState<string | null>(null);
+  const [touchHoverFolderId, setTouchHoverFolderId] = useState<string | null>(null);
+  const touchStartTimerRef = useRef<any>(null);
+  const touchStopTimerRef = useRef<any>(null);
+  const longTouchActiveRef = useRef(false);
+
+  const handleFolderTouchStart = (folderId: string) => {
+    longTouchActiveRef.current = false;
+    clearTimeout(touchStartTimerRef.current);
+    clearTimeout(touchStopTimerRef.current);
+    touchStartTimerRef.current = setTimeout(() => {
+      setTouchHoverFolderId(folderId);
+      longTouchActiveRef.current = true;
+    }, TOUCH_HOLD_DELAY_MS);
+  };
+
+  const handleFolderTouchEnd = (folderId: string) => {
+    clearTimeout(touchStartTimerRef.current);
+    if (touchHoverFolderId === folderId) {
+      touchStopTimerRef.current = setTimeout(() => {
+        setTouchHoverFolderId(null);
+      }, TOUCH_AUTO_STOP_MS);
+    } else {
+      longTouchActiveRef.current = false;
+      setTouchHoverFolderId(null);
+    }
+  };
+
+  const clearAllTouchTimers = useCallback(() => {
+    clearTimeout(touchStartTimerRef.current);
+    clearTimeout(touchStopTimerRef.current);
+    longTouchActiveRef.current = false;
+    setTouchHoverFolderId(null);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearAllTouchTimers();
+    };
+  }, [clearAllTouchTimers]);
+
   const mappedEvents = useMemo(() => {
     return (events || []).map((event) => {
       if (!event) return event;
@@ -651,10 +782,9 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     );
 
     allVideoUrls.forEach((vUrl, i) => {
-      const ytThumb = getYouTubeThumbnail(vUrl);
       items.push({
         type: "video",
-        url: ytThumb || "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80",
+        url: getVideoThumbnailUrl(vUrl),
         videoUrl: vUrl,
         title: allVideoUrls.length > 1
           ? `${activeFolder.title} Video ${i + 1}`
@@ -673,7 +803,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       if (isDirectVideo) {
         items.push({
           type: "video",
-          url: imgUrl,
+          url: getVideoThumbnailUrl(imgUrl),
           videoUrl: imgUrl,
           title: `${activeFolder.title} Video ${allVideoUrls.length + i + 1}`,
         });
@@ -1306,24 +1436,33 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                 const mediaCount = (folder.driveImageUrls?.length || 0) + totalVideos;
                 return (
                   <div
-                    key={folder.id}
-                    onClick={() => setSelectedFolder(folder)}
-                    onMouseEnter={() => setHoveredFolderId(folder.id)}
-                    onMouseLeave={() => setHoveredFolderId(null)}
-                    onTouchStart={() => setHoveredFolderId(folder.id)}
-                    onTouchEnd={() => setHoveredFolderId(null)}
-                    className="group relative bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 shadow-sm hover:shadow-md transition cursor-pointer flex flex-col justify-between space-y-4"
-                  >
-                    <div className="space-y-3">
-                      <div className="aspect-video w-full overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800 relative">
-                        <FolderCollagePreview
-                          images={folder.driveImageUrls || []}
-                          youtubeVideoUrl={folder.youtubeVideoUrl}
-                          youtubeVideoUrls={folder.youtubeVideoUrls}
-                          eventTitle={folder.title}
-                          heightClass="h-full w-full"
-                          forcePlay={hoveredFolderId === folder.id}
-                        />
+                     key={folder.id}
+                      onClick={(e) => {
+                        if (longTouchActiveRef.current) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          longTouchActiveRef.current = false;
+                        } else {
+                          setSelectedFolder(folder);
+                        }
+                      }}
+                      onMouseEnter={() => setHoveredFolderId(folder.id)}
+                      onMouseLeave={() => setHoveredFolderId(null)}
+                      onTouchStart={() => handleFolderTouchStart(folder.id)}
+                      onTouchEnd={() => handleFolderTouchEnd(folder.id)}
+                      onTouchCancel={clearAllTouchTimers}
+                      className="group relative bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-5 shadow-sm hover:shadow-md transition cursor-pointer flex flex-col justify-between space-y-4"
+                   >
+                     <div className="space-y-3">
+                       <div className="aspect-video w-full overflow-hidden rounded-2xl bg-slate-100 dark:bg-slate-800 relative">
+                         <FolderCollagePreview
+                           images={folder.driveImageUrls || []}
+                           youtubeVideoUrl={folder.youtubeVideoUrl}
+                           youtubeVideoUrls={folder.youtubeVideoUrls}
+                           eventTitle={folder.title}
+                           heightClass="h-full w-full"
+                           forcePlay={hoveredFolderId === folder.id || touchHoverFolderId === folder.id}
+                         />
                       </div>
                       <div className="flex items-start justify-between gap-3 pt-0.5">
                         <div className="min-w-0 flex-1 space-y-0.5">
@@ -1358,24 +1497,33 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                 const mediaCount = (folder.driveImageUrls?.length || 0) + totalVideos;
                 return (
                   <div
-                    key={folder.id}
-                    onClick={() => setSelectedFolder(folder)}
-                    onMouseEnter={() => setHoveredFolderId(folder.id)}
-                    onMouseLeave={() => setHoveredFolderId(null)}
-                    onTouchStart={() => setHoveredFolderId(folder.id)}
-                    onTouchEnd={() => setHoveredFolderId(null)}
-                    className="p-4 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl flex items-center justify-between hover:border-cyan-500 transition cursor-pointer"
-                  >
-                    <div className="flex items-center gap-4 min-w-0">
-                      <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0">
-                        <FolderCollagePreview
-                          images={folder.driveImageUrls || []}
-                          youtubeVideoUrl={folder.youtubeVideoUrl}
-                          youtubeVideoUrls={folder.youtubeVideoUrls}
-                          eventTitle={folder.title}
-                          heightClass="w-full h-full"
-                          forcePlay={hoveredFolderId === folder.id}
-                        />
+                     key={folder.id}
+                      onClick={(e) => {
+                        if (longTouchActiveRef.current) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          longTouchActiveRef.current = false;
+                        } else {
+                          setSelectedFolder(folder);
+                        }
+                      }}
+                      onMouseEnter={() => setHoveredFolderId(folder.id)}
+                      onMouseLeave={() => setHoveredFolderId(null)}
+                      onTouchStart={() => handleFolderTouchStart(folder.id)}
+                      onTouchEnd={() => handleFolderTouchEnd(folder.id)}
+                      onTouchCancel={clearAllTouchTimers}
+                      className="p-4 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl flex items-center justify-between hover:border-cyan-500 transition cursor-pointer"
+                   >
+                     <div className="flex items-center gap-4 min-w-0">
+                       <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800 shrink-0">
+                         <FolderCollagePreview
+                           images={folder.driveImageUrls || []}
+                           youtubeVideoUrl={folder.youtubeVideoUrl}
+                           youtubeVideoUrls={folder.youtubeVideoUrls}
+                           eventTitle={folder.title}
+                           heightClass="w-full h-full"
+                           forcePlay={hoveredFolderId === folder.id || touchHoverFolderId === folder.id}
+                         />
                       </div>
                       <div className="min-w-0">
                         <h4 className="font-medium text-sm text-slate-900 dark:text-white truncate">{folder.title}</h4>
