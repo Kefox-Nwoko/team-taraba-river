@@ -50,11 +50,13 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // Events collection — visible to any signed-in member; only admins
-    // create/update/delete via the dashboard (RSVP goes through the
-    // authenticated Express API, which uses the Admin SDK, not this path).
+    // Events collection — public read (community media galleries are
+    // viewable by anonymous visitors, e.g. on mobile devices without a
+    // persisted Firebase session); only admins create/update/delete via
+    // the dashboard (RSVP goes through the authenticated Express API,
+    // which uses the Admin SDK, not this path).
     match /events/{eventId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow create, update, delete: if isAdmin();
     }
 

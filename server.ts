@@ -547,6 +547,39 @@ function conditionalAuth(req: Request, res: Response, next: NextFunction): void 
   authMiddleware(req, res, next);
 }
 
+// Like conditionalAuth but allows unauthenticated requests to proceed.
+// Used for public read-only endpoints (e.g. GET /api/events) so that
+// anonymous visitors — including mobile users without a persisted
+// Firebase session — can still load community content. Authenticated
+// users still get their decoded user attached to req.user.
+function optionalAuth(req: Request, res: Response, next: NextFunction): void {
+  if (!isFirestoreAvailable()) {
+    if (isDeployedEnv) {
+      res.status(503).json({ error: 'Service temporarily unavailable (Firestore Admin not connected).' });
+      return;
+    }
+    req.user = { uid: 'local_dev', email: 'dev@local', role: 'admin' };
+    next();
+    return;
+  }
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const idToken = authHeader.split('Bearer ')[1];
+    adminAuth
+      .verifyIdToken(idToken)
+      .then((decodedToken) => {
+        const role = decodedToken.role === 'admin' || isAdminEmail(decodedToken.email || '')
+          ? 'admin' as const
+          : 'member' as const;
+        req.user = { uid: decodedToken.uid, email: decodedToken.email, role };
+        next();
+      })
+      .catch(() => next());
+  } else {
+    next();
+  }
+}
+
 function conditionalRequireAdmin(req: Request, res: Response, next: NextFunction): void {
   if (!isFirestoreAvailable()) {
     if (isDeployedEnv) {
@@ -1446,7 +1479,7 @@ app.post("/api/admin/members/restore", conditionalAuth, conditionalRequireAdmin,
 });
 
 // 7. Events Service: List
-app.get("/api/events", conditionalAuth, async (req: Request, res: Response) => {
+app.get("/api/events", optionalAuth, async (req: Request, res: Response) => {
   try {
     const events = await getEvents();
     res.json({ events });

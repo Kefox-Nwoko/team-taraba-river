@@ -152,9 +152,9 @@ describe.skipIf(!testEnv)("firestore.rules", () => {
   });
 
   describe("events", () => {
-    it("denies anonymous read", async () => {
+    it("allows anonymous read (public event media galleries)", async () => {
       const anon = testEnv!.unauthenticatedContext();
-      await assertFails(anon.firestore().collection("events").doc("evt_1").get());
+      await assertSucceeds(anon.firestore().collection("events").doc("evt_1").get());
     });
 
     it("allows any signed-in member to read events", async () => {
