@@ -788,3 +788,51 @@ export async function generateVideoThumbnail(fileId: string): Promise<{ buffer: 
   }
 }
 
+export async function generateVideoThumbnailFromUrl(videoUrl: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  const cacheKey = `thumb_url_${videoUrl}`;
+  const cached = thumbnailCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && now - cached.createdAt < THUMBNAIL_CACHE_TTL_MS) {
+    return { buffer: cached.buffer, mimeType: cached.mimeType };
+  }
+
+  const inputPath = path.join(process.cwd(), `tmp_thumb_url_${Date.now()}.mp4`);
+  const outputPath = path.join(process.cwd(), `tmp_thumb_frame_url_${Date.now()}.webp`);
+
+  try {
+    const response = await fetch(videoUrl, {
+      headers: { Range: 'bytes=0-2097152' },
+    });
+    if (!response.ok) {
+      serverLogger.warn(`[Thumbnail URL] HTTP ${response.status} for ${videoUrl}`);
+      return null;
+    }
+    const arrayBuffer = await response.arrayBuffer();
+    fs.writeFileSync(inputPath, Buffer.from(arrayBuffer));
+
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(inputPath)
+        .seekInput('0.5')
+        .duration(0.1)
+        .outputOptions(['-frames:v', '1', '-q:v', '2'])
+        .format('webp')
+        .save(outputPath)
+        .on('end', resolve)
+        .on('error', reject);
+    });
+
+    const buffer = fs.readFileSync(outputPath);
+    const result = { buffer, mimeType: 'image/webp' };
+    thumbnailCache.set(cacheKey, { ...result, createdAt: now });
+    return result;
+  } catch (err: any) {
+    serverLogger.warn(`[Thumbnail URL] Failed to generate thumbnail for ${videoUrl}: ${err?.message || err}`);
+    return null;
+  } finally {
+    try {
+      if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
+      if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+    } catch {}
+  }
+}
+

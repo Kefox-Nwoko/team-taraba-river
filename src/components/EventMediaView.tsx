@@ -150,6 +150,22 @@ function extractDriveFileId(videoUrl: string): string | null {
   return null;
 }
 
+function isExternalVideoUrl(videoUrl: string): boolean {
+  if (!videoUrl || typeof videoUrl !== "string") return false;
+  const low = videoUrl.toLowerCase();
+  return (
+    low.includes("firebasestorage.googleapis.com") ||
+    low.endsWith(".mp4") ||
+    low.endsWith(".webm") ||
+    low.endsWith(".mov") ||
+    low.endsWith(".m4v") ||
+    low.endsWith(".avi") ||
+    low.endsWith(".mkv") ||
+    low.includes("data:video") ||
+    low.includes("blob:")
+  );
+}
+
 function getVideoThumbnailUrl(videoUrl: string): string {
   if (videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be")) {
     return getYouTubeThumbnail(videoUrl) || `https://img.youtube.com/vi/${extractYouTubeId(videoUrl)}/hqdefault.jpg`;
@@ -157,6 +173,9 @@ function getVideoThumbnailUrl(videoUrl: string): string {
   const fileId = extractDriveFileId(videoUrl);
   if (fileId) {
     return `/api/media/video-thumbnail/${fileId}`;
+  }
+  if (isExternalVideoUrl(videoUrl)) {
+    return `/api/media/video-thumbnail-url?url=${encodeURIComponent(videoUrl)}`;
   }
   return "https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=800&auto=format&fit=crop&q=80";
 }
@@ -359,7 +378,7 @@ const VideoHoverCard: React.FC<{
 
         {/* Play Icon Badge */}
         {showPlayBadge && !isYtPreviewActive && (
-          <div className="absolute inset-0 bg-black/25 flex items-center justify-center pointer-events-none group-hover:bg-black/15 transition-colors">
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none group-hover:bg-black/40 transition-colors">
             <div className="w-8 h-8 rounded-full bg-red-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
               <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
             </div>
@@ -400,7 +419,7 @@ const VideoHoverCard: React.FC<{
               )}
 
               {showPlayBadge && (
-                <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none transition-opacity duration-300">
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none transition-opacity duration-300">
                   <div className="w-8 h-8 rounded-full bg-black/60 backdrop-blur-xs text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                     <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
                   </div>
@@ -470,7 +489,7 @@ const MediaPreviewItem: React.FC<{
         decoding="async"
       />
       {item.isVideo && (
-        <div className="absolute inset-0 bg-black/30 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
           <Play className="w-6 h-6 text-white fill-current" />
         </div>
       )}

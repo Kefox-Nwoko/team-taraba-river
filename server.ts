@@ -43,8 +43,9 @@ import {
   makeDriveFilePublic,
    initYouTubeUploadSession,
    deleteYouTubeVideoServer,
-   generateVideoThumbnail,
-   getDriveAuthClient,
+    generateVideoThumbnail,
+    generateVideoThumbnailFromUrl,
+    getDriveAuthClient,
 } from "./server/mediaPipeline";
 import { isMemberCredentialMatch } from "./src/lib/authMatching";
 import { CSV_SEED_MEMBERS } from "./src/data/csvMembers";
@@ -2658,6 +2659,27 @@ app.get("/api/media/video-thumbnail/:fileId", async (req: Request, res: Response
   } catch (error: any) {
     serverLogger.warn(`[Video Thumbnail] Failed for ${fileId}`, { error: error?.message || error });
     res.redirect(`https://lh3.googleusercontent.com/d/${fileId}`);
+  }
+});
+
+app.get("/api/media/video-thumbnail-url", async (req: Request, res: Response) => {
+  const { url } = req.query;
+  if (!url || typeof url !== "string") {
+    res.status(400).send("Missing or invalid 'url' query parameter");
+    return;
+  }
+  try {
+    const result = await generateVideoThumbnailFromUrl(url);
+    if (!result) {
+      res.status(502).send("Thumbnail generation failed");
+      return;
+    }
+    res.setHeader('Content-Type', result.mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=43200');
+    res.send(result.buffer);
+  } catch (error: any) {
+    serverLogger.warn(`[Video Thumbnail URL] Failed for ${url}`, { error: error?.message || error });
+    res.status(500).send("Thumbnail generation failed");
   }
 });
 
