@@ -3,7 +3,7 @@ import { DatePicker } from "./DatePicker";
 import { logger } from "../lib/logger";
 import { GroupEvent, Member, PhotoApprovalRequest } from "../types";
 import { FirebaseSyncManager } from "../services/firebaseService";
-import { storage } from "../lib/firebase";
+import { storage, auth } from "../lib/firebase";
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 import { ReturnButton } from "./ReturnButton";
 import { useToast } from "./ui/Toast";
@@ -842,6 +842,21 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     if (folderMode === "new" && newDate > todayStr) {
       setErrorMessage("Future dates are restricted. Media uploads must be for past or present (same day) events.");
       notify("⚠️ Future dates are restricted. Media uploads must be for past or present (same day) events.", "error");
+      return;
+    }
+
+    // Uploading writes directly to Firebase Storage via the client SDK,
+    // which requires a live Firebase Auth session (storage.rules requires
+    // request.auth != null). A member can be fully "logged in" at the app
+    // level (their profile loaded from the server) while that session never
+    // got established — e.g. a slow custom-token mint on the server during
+    // login silently left them without one. Catching it here, once, up
+    // front turns that into one clear instruction instead of every file in
+    // the batch failing with a cryptic storage/unauthorized error.
+    if (!auth.currentUser) {
+      const msg = "Your session needs a quick refresh before uploading. Please log out and log back in, then try again.";
+      setErrorMessage(msg);
+      notify(`⚠️ ${msg}`, "error");
       return;
     }
 

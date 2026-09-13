@@ -1017,13 +1017,30 @@ app.post("/api/auth/login/verify-code", rateLimiter, async (req: Request, res: R
 
     await db.collection(COLLECTIONS.members).doc(memberDocId).update(updates);
 
+    // NOTE: on Cloud Run with ADC (no bundled service-account key), signing a
+    // custom token is a real network round-trip to the IAM Credentials API
+    // (signBlob) — not an instant in-memory operation. A short race here that
+    // silently falls back to `null` used to leave members "logged in" at the
+    // app level with zero Firebase Auth session, breaking every client-side
+    // Storage/Firestore write (e.g. video/photo uploads) with
+    // storage/unauthorized, with no visible symptom until the next upload.
+    // This request has no client-side abort timeout, so it's safe to give
+    // the real signing call room to complete instead of racing it away.
     let customToken: string | null = null;
     try {
-      customToken = await Promise.race([
+      const TIMED_OUT = Symbol('timed_out');
+      const result = await Promise.race([
         adminAuth.createCustomToken(memberDocId, { role: 'member' }),
-        new Promise<null>((r) => setTimeout(() => r(null), 1200))
+        new Promise<typeof TIMED_OUT>((r) => setTimeout(() => r(TIMED_OUT), 8000))
       ]);
-    } catch {
+      if (result === TIMED_OUT) {
+        serverLogger.warn("[Auth] createCustomToken timed out (>8s) for code-verified member — Storage/Firestore writes will be unauthorized until next login");
+        customToken = null;
+      } else {
+        customToken = result;
+      }
+    } catch (err) {
+      serverLogger.warn("[Auth] createCustomToken failed for code-verified member — Storage/Firestore writes will be unauthorized until next login", { error: (err as Error).message });
       customToken = null;
     }
 
@@ -1323,13 +1340,25 @@ app.post("/api/members", rateLimiter, async (req: Request, res: Response) => {
       pointsEarned: 20,
     });
 
+    // See the identical note in /api/auth/login/verify-code: ADC-based
+    // signing is a real IAM API round-trip, not instant, so this needs real
+    // headroom rather than a short race that silently strands the new
+    // member with no Firebase Auth session.
     let customToken: string | null = null;
     try {
-      customToken = await Promise.race([
+      const TIMED_OUT = Symbol('timed_out');
+      const result = await Promise.race([
         adminAuth.createCustomToken(memberId, { role: 'member' }),
-        new Promise<null>((r) => setTimeout(() => r(null), 1200))
+        new Promise<typeof TIMED_OUT>((r) => setTimeout(() => r(TIMED_OUT), 8000))
       ]);
-    } catch {
+      if (result === TIMED_OUT) {
+        serverLogger.warn("[Auth] createCustomToken timed out (>8s) for newly registered member — Storage/Firestore writes will be unauthorized until next login");
+        customToken = null;
+      } else {
+        customToken = result;
+      }
+    } catch (err) {
+      serverLogger.warn("[Auth] createCustomToken failed for newly registered member — Storage/Firestore writes will be unauthorized until next login", { error: (err as Error).message });
       customToken = null;
     }
 
