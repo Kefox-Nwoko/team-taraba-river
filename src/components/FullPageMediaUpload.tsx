@@ -28,7 +28,7 @@ import {
   StopCircle,
   XCircle,
 } from "lucide-react";
-import { uploadVideoDirectToYouTube, deleteYouTubeVideo } from "../services/youtubeDirectUpload";
+import { deleteYouTubeVideo } from "../services/youtubeDirectUpload";
 import { uploadImageDirectToDrive } from "../services/googleDriveDirectUpload";
 import { AppStateManager } from "../services/storage";
 import { EventLocationMap } from "./EventLocationMap";
@@ -242,52 +242,23 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
     const isVideo = item.type === "video";
 
-    // 1. For Videos: High-Assurance Resumable Pipeline (YouTube Primary -> Google Drive Fallback -> Cloud Storage Safety Net)
+    // For Videos: straight to Firebase Cloud Storage. The YouTube tier
+    // (invalid_client — dead OAuth refresh token) and Google Drive tier
+    // (403 storageQuotaExceeded — service accounts have no Drive storage
+    // quota) are both confirmed failing on every single attempt in
+    // production logs, not intermittently — so trying them first was just
+    // two guaranteed network round-trips of dead weight slowing down every
+    // video before it ever reached the tier that actually works.
     if (isVideo) {
-      // Tier 1: Primary Stream directly to YouTube Channel with 97%+ Resumable Assurance
-      try {
-        const ytUrl = await uploadVideoDirectToYouTube(item.file, folderName, onFileProgress, signal);
-        return ytUrl;
-      } catch (ytErr: any) {
-        if (ytErr?.name === "AbortError" || signal?.aborted) {
-          throw ytErr;
-        }
-        logger.warn(`[MediaUpload] YouTube primary upload notice (${ytErr?.message || ytErr}), engaging Google Drive direct fallback:`, ytErr);
-      }
-
-      if (signal?.aborted) {
-        const err = new Error("Upload aborted by user.");
-        err.name = "AbortError";
-        throw err;
-      }
-
       const cleanVideoName = (item.file.name.replace(/\.[^/.]+$/, "") || `video_${index + 1}`).replace(/[^a-zA-Z0-9._-]/g, "_") + ".mp4";
 
-      // Tier 2: Fallback Stream directly to Google Drive Event Folder
-      try {
-        const driveUrl = await uploadImageDirectToDrive(
-          item.file,
-          cleanVideoName,
-          folderName,
-          onFileProgress,
-          signal
-        );
-        logger.info(`[MediaUpload] ✅ Video successfully uploaded via Google Drive fallback: ${driveUrl}`);
-        return driveUrl;
-      } catch (driveErr: any) {
-        if (driveErr?.name === "AbortError" || signal?.aborted) {
-          throw driveErr;
-        }
-        logger.warn("[MediaUpload] Google Drive video fallback notice, engaging secondary Firebase Cloud Storage:", driveErr);
-      }
-
       if (signal?.aborted) {
         const err = new Error("Upload aborted by user.");
         err.name = "AbortError";
         throw err;
       }
 
-      // Tier 3: Safety Net - Firebase Cloud Storage
+      // Firebase Cloud Storage
       try {
         const storageRef = ref(storage, `events/${eventId}/videos/${Date.now()}_${index + 1}_${cleanVideoName}`);
         const downloadUrl = await new Promise<string>((resolve, reject) => {
