@@ -763,7 +763,18 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
         );
       })
       .sort((a, b) => {
-        if (sortBy === "oldest") return (a.date || "").localeCompare(b.date || "");
+        // "newest"/"oldest" rank by createdAt — the folder's own creation
+        // timestamp, which attachApprovedMedia() also re-stamps on every
+        // newly approved photo/video — so a folder that just received fresh
+        // media jumps to the top even if its nominal activity `date` is old.
+        // Falls back to `date` only for legacy records with no createdAt.
+        const recencyOf = (e: GroupEvent) => {
+          const t = e.createdAt ? new Date(e.createdAt).getTime() : NaN;
+          if (!isNaN(t)) return t;
+          const d = e.date ? new Date(e.date).getTime() : NaN;
+          return isNaN(d) ? 0 : d;
+        };
+        if (sortBy === "oldest") return recencyOf(a) - recencyOf(b);
         if (sortBy === "name") return (a.title || "").localeCompare(b.title || "");
         if (sortBy === "mediaCount") {
           const vidsA = a.youtubeVideoUrls?.length || (a.youtubeVideoUrl ? 1 : 0);
@@ -772,7 +783,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
           const countB = (b.driveImageUrls?.length || 0) + vidsB;
           return countB - countA;
         }
-        return (b.date || "").localeCompare(a.date || "");
+        return recencyOf(b) - recencyOf(a);
       });
   }, [completedEvents, searchQuery, sortBy]);
 
