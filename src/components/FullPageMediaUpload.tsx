@@ -1468,16 +1468,6 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                   <span className="font-mono font-bold text-cyan-700 dark:text-cyan-300 text-sm">
                     {activeFileProgress}%
                   </span>
-                  <button
-                    type="button"
-                    onClick={handleStopUpload}
-                    disabled={isCancelling}
-                    title="Stop active upload"
-                    className="px-3 py-1 text-xs font-semibold rounded-xl bg-red-500/15 hover:bg-red-500/25 active:scale-95 text-red-600 dark:text-red-400 border border-red-500/30 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
-                  >
-                    <StopCircle className="w-3.5 h-3.5" />
-                    <span>{isCancelling ? "Stopping..." : "Stop Upload"}</span>
-                  </button>
                 </div>
               </div>
 
