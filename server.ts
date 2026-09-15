@@ -23,6 +23,7 @@ import {
   DriveSyncSchema,
   YouTubeParseSchema,
   EventPosterParseSchema,
+  AiXploraQuerySchema,
   LoginCredentialSchema,
   LoginCodeVerifySchema,
   AdminAISearchSchema,
@@ -56,6 +57,7 @@ import { getEmailConfig, updateEmailConfig, sendEmail } from "./server/emailServ
 import { createLoginCode, verifyLoginCode } from "./server/loginCodes";
 import { parseEventDateObj } from "./src/utils/eventUtils";
 import { EVENT_CATEGORY_OPTIONS } from "./src/constants/eventCategories";
+import { USOSA_KNOWLEDGE_SYSTEM_INSTRUCTION } from "./src/constants/aiXploraPrompt";
 
 dotenv.config();
 
@@ -335,7 +337,7 @@ const serverStartTime = Date.now();
 
 // Lazy Gemini AI initialization
 function getGeminiClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey || apiKey.includes("MY_GEMINI_API_KEY") || apiKey.includes("YOUR_") || apiKey === "placeholder" || apiKey.length < 15) {
     return null;
   }
@@ -3824,25 +3826,25 @@ app.get('/api/usosa-news', async (req: Request, res: Response) => {
 });
 
 
-// 17. AI Xplora — Pure Live Gemini AI connected directly to the web
+// 17. AI Xplora — Live Gemini AI connected to the web, server-side only
+// (never called directly from the browser — see SECURITY.md).
 app.post("/api/ai-xplora", async (req: Request, res: Response) => {
-  const { query, userName, apiKey } = req.body || {};
-  if (!query || typeof query !== "string") {
-    return res.status(400).json({ error: "query is required" });
+  const validation = validateBody(AiXploraQuerySchema, req.body);
+  if (!validation.success) {
+    res.status(400).json({ error: (validation as any).error });
+    return;
   }
+  const { query, userName, history } = validation.data;
 
-  const customKey = apiKey || (req.headers["x-gemini-api-key"] as string);
-  const activeKey = customKey || process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-
-  if (!activeKey || activeKey.includes("MY_GEMINI_API_KEY") || activeKey.includes("YOUR_") || activeKey.length < 15) {
+  const ai = getGeminiClient();
+  if (!ai) {
     return res.json({
-      answer: `⚠️ Direct Web Gemini AI requires a valid Gemini API Key.\n\nPlease add a valid \`GEMINI_API_KEY\` from Google AI Studio (https://aistudio.google.com) into your \`.env\` file to enable unconstrained live web search!`,
+      answer: `⚠️ AI Xplora requires a valid Gemini API Key.\n\nAn administrator needs to add a valid \`GEMINI_API_KEY\` from Google AI Studio (https://aistudio.google.com) to the server's \`.env\` file to enable this feature.`,
       sources: [],
       error: "MISSING_API_KEY"
     });
   }
 
-  const ai = new GoogleGenAI({ apiKey: activeKey });
   const isAdmin = await checkAdminRole(req);
 
   // Privacy protection: prevent exposing member private contact data to non-admins
@@ -3857,9 +3859,14 @@ app.post("/api/ai-xplora", async (req: Request, res: Response) => {
   try {
     const privacyPrompt = isAdmin
       ? ""
-      : "PRIVACY RULE: You MUST NOT disclose or search for any member's private contact details or personal info (phone numbers, email addresses, residential addresses, next of kin, exact birth dates).";
+      : "\n\nPRIVACY RULE: You MUST NOT disclose or search for any member's private contact details or personal info (phone numbers, email addresses, residential addresses, next of kin, exact birth dates).";
+    const userGreeting = userName ? ` The current user is named ${userName}.` : "";
+    const systemInstruction = USOSA_KNOWLEDGE_SYSTEM_INSTRUCTION + userGreeting + privacyPrompt;
 
-    const prompt = `${privacyPrompt}\n\nUser Question: ${query}`;
+    // Carry the conversation's prior turns so follow-up questions ("what
+    // about him?") actually have context, instead of answering each message
+    // in isolation.
+    const contents = [...history, { role: "user" as const, parts: [{ text: query }] }];
 
     let response: any = null;
     let usedSearch = true;
@@ -3868,8 +3875,9 @@ app.post("/api/ai-xplora", async (req: Request, res: Response) => {
       // Attempt 1: Gemini 3.6 Flash with Live Google Search Grounding
       response = await ai.models.generateContent({
         model: "gemini-3.6-flash",
-        contents: prompt,
+        contents,
         config: {
+          systemInstruction,
           tools: [{ googleSearch: {} }],
           temperature: 0.7,
         }
@@ -3880,8 +3888,9 @@ app.post("/api/ai-xplora", async (req: Request, res: Response) => {
       // Attempt 2: Standard Gemini 3.6 Flash model without search tool
       response = await ai.models.generateContent({
         model: "gemini-3.6-flash",
-        contents: prompt,
+        contents,
         config: {
+          systemInstruction,
           temperature: 0.7,
         }
       });

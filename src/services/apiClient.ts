@@ -787,8 +787,6 @@ export interface UsosaNewsResponse {
   message?: string;
 }
 
-const DEFAULT_GEMINI_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
-
 // Canonical list of major Unity Schools for auto-tagging
 const UNITY_SCHOOL_TAGS: { pattern: RegExp; tag: string }[] = [
   { pattern: /king['’]?s\s*college/i, tag: "King's College Lagos" },
@@ -1015,68 +1013,6 @@ function areHeadlinesReportingSameEvent(titleA: string, titleB: string): boolean
   }
 
   return false;
-}
-
-async function humanizeHeadlinesWithGemini(
-  clusters: Array<{ title: string; rawSnippet: string; leadSource: string; schoolTag: string; otherSources: string[] }>,
-  apiKey: string
-): Promise<Map<string, { title: string; summary: string }>> {
-  const models = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-flash-latest"];
-  const prompt = `You are a human journalist and senior editor reporting on Nigerian Federal Unity Colleges (FGC, FGGC, FSTC, King's College, Queen's College) and USOSA.
-
-Here are ${clusters.length} current news items:
-${JSON.stringify(clusters.map((c, i) => ({ index: i, title: c.title, context: c.rawSnippet, school: c.schoolTag })), null, 2)}
-
-Instructions for each item:
-1. Write a clean, human headline without any publisher names.
-2. Write a comprehensive, human narrative story summary of 10 to 15 lines (about 120-180 words, formatted across 2 to 3 fluid paragraphs).
-3. Tell the story naturally as a human journalist: Explain what happened, why parents/students/alumni are reacting (e.g. protests against privatization/concessioning of King's College Lagos, teacher absorptions, strikes, facility upgrades), what government officials or USOSA leaders said, and what will happen next.
-4. STRICT RULES:
-   - NO corporate/analytical headers (DO NOT write "Executive Summary:", "Context:", "Strategic Implications:", or bullet points).
-   - DO NOT include publisher names in the story text (e.g. do NOT say "Vanguard News reported...").
-   - DO NOT use robotic boilerplate templates (e.g. do NOT write "This significant development highlights the ongoing focus among educational administrators...").
-   - Write genuine, fluent, human storytelling with empathy, substance, and clarity.
-
-Return ONLY valid JSON (no markdown fences):
-[
-  {
-    "index": 0,
-    "title": "Clean Human Headline",
-    "summary": "10-15 line narrative story summary in 2-3 paragraphs."
-  }
-]`;
-
-  for (const model of models) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-        }),
-      });
-      const data = await res.json();
-      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (rawText) {
-        const cleanedJson = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        const parsed = JSON.parse(cleanedJson);
-        const map = new Map<string, { title: string; summary: string }>();
-        if (Array.isArray(parsed)) {
-          for (const item of parsed) {
-            if (typeof item.index === "number" && clusters[item.index]) {
-              map.set(clusters[item.index].title, {
-                title: item.title || clusters[item.index].title,
-                summary: item.summary,
-              });
-            }
-          }
-          return map;
-        }
-      }
-    } catch {}
-  }
-  return new Map();
 }
 
 function buildComprehensiveSummary(title: string, rawSnippet: string, sources: NewsSourceCoverage[], schoolTag: string = "Federal Unity Colleges"): string {
@@ -1502,23 +1438,12 @@ export async function fetchUsosaNews(force = false): Promise<UsosaNewsResponse> 
       // Sort clusters strictly from newest to oldest
       clusterList.sort((a, b) => b.timestamp - a.timestamp);
 
-      // Attempt Live Gemini AI Story Humanization on top clusters
-      let humanizedMap = new Map<string, { title: string; summary: string }>();
-      const activeGeminiKey = localStorage.getItem("gemini_api_key") || DEFAULT_GEMINI_KEY;
-      if (activeGeminiKey && clusterList.length > 0) {
-        try {
-          const topClustersForAi = clusterList.slice(0, 8).map(c => ({
-            title: c.representativeTitle,
-            rawSnippet: c.rawSnippet,
-            leadSource: c.leadSource,
-            schoolTag: c.schoolTag,
-            otherSources: Array.from(c.sourcesMap.values()).map(s => s.sourceName),
-          }));
-          humanizedMap = await humanizeHeadlinesWithGemini(topClustersForAi, activeGeminiKey);
-        } catch (e) {
-          console.warn("Gemini headline humanization skipped:", e);
-        }
-      }
+      // Headline "humanization" (AI rewrite of scraped titles/summaries) only
+      // ever runs server-side now — this client-side fallback path (used
+      // when /api/usosa-news itself is unreachable) falls back to the
+      // algorithmic buildComprehensiveSummary formatting below instead of
+      // calling Gemini directly from the browser.
+      const humanizedMap = new Map<string, { title: string; summary: string }>();
 
       // Convert clusters to top 20 distinct headlines
       const clusteredHeadlines: NewsHeadline[] = clusterList.slice(0, 20).map((cluster) => {
@@ -1581,102 +1506,20 @@ export interface AiXploraResponse {
   fallback: boolean;
 }
 
-export const USOSA_KNOWLEDGE_SYSTEM_INSTRUCTION = `You are Gemini AI Xplora — an intelligent, highly knowledgeable, and conversational AI assistant for USOSA and URIP (Unity Schools Revitalisation Initiative / Regional Integration Programs).
-
-CORE KNOWLEDGE BASE & SYSTEMIC GROUNDING:
-1. USOSA (Unity Schools Old Students Association): The apex umbrella association uniting alumni across all 115 Federal Unity Colleges in Nigeria. Motto: "Pro Unitate" (For Unity).
-2. URIP: The USOSA Unity Schools Revitalisation Initiative / Regional Integration Programs.
-3. Team Taraba River: The specific official name of this URIP team within the USOSA / URIP structure. It is a designated URIP team.
-4. The 115 Federal Unity Colleges:
-   - Federal Government Colleges (FGC) across all 36 states and FCT.
-   - Federal Government Girls' Colleges (FGGC).
-   - Federal Science and Technical Colleges (FSTC).
-   - Flagship institutions: King's College Lagos (KCOBA), Queen's College Lagos (QCOGA), Federal Academy Suleja.
-5. Unity Schools Traditions: House systems, Inter-House sports, set/class alumni coordination, collegiate principals, and mutual old students support.
-
-INSTRUCTION RULES:
-1. "CHECK INSIDE FIRST": Whenever a query relates to unity schools, USOSA, URIP, Team Taraba River (as a URIP team), alumni activities, or education, connect and ground your response in the context of USOSA, URIP, and Unity Schools heritage FIRST before checking outside.
-2. ACCURATE TEAM TARABA RIVER CONTEXT: "Team Taraba River" is purely the name of a URIP team within the USOSA/URIP structure.
-3. GENERAL KNOWLEDGE: For general queries (science, coding, business, philosophy, technology, sports, lifestyle, global topics), answer thoroughly, accurately, and intelligently like a standard top-tier Gemini AI without artificial constraints.
-4. TONE & STYLE: Direct, articulate, conversational, and natural. No robotic boilerplate.`;
-
-async function queryDirectGemini(
-  query: string,
-  apiKey: string,
-  history?: ChatHistoryTurn[],
-  userName?: string
-): Promise<AiXploraResponse> {
-  const models = ["gemini-3.6-flash", "gemini-3.7-flash", "gemini-flash-latest"];
-  const userGreeting = userName ? ` The current user is named ${userName}.` : "";
-  const dynamicInstruction = USOSA_KNOWLEDGE_SYSTEM_INSTRUCTION + userGreeting;
-
-  const contentsPayload: any[] = [];
-  if (Array.isArray(history) && history.length > 0) {
-    contentsPayload.push(...history);
-  }
-  contentsPayload.push({
-    role: "user",
-    parts: [{ text: query }],
-  });
-
-  for (const model of models) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: dynamicInstruction }],
-          },
-          contents: contentsPayload,
-        }),
-      });
-      const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) {
-        // Extract web search sources if available from grounding metadata
-        const sources: { title: string; url: string }[] = [];
-        const chunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-        for (const chunk of chunks) {
-          if (chunk.web?.uri && chunk.web?.title) {
-            sources.push({ title: chunk.web.title, url: chunk.web.uri });
-          }
-        }
-        return {
-          answer: text,
-          sources,
-          fallback: false,
-        };
-      }
-    } catch {}
-  }
-  throw new Error("Direct Gemini AI query attempt failed");
-}
-
 export async function queryAiXplora(
   query: string,
   userName?: string,
   history?: ChatHistoryTurn[]
 ): Promise<AiXploraResponse> {
-  const storedKey = localStorage.getItem("gemini_api_key") || DEFAULT_GEMINI_KEY;
-
-  // Step 1: Direct Live Google Gemini AI Call (Full Unrestricted Intelligence with USOSA Context Grounding)
-  if (storedKey) {
-    try {
-      return await queryDirectGemini(query, storedKey, history, userName);
-    } catch (directErr) {
-      console.warn("Direct Gemini call attempt failed, checking backend fallback:", directErr);
-    }
-  }
-
-  // Step 2: Try backend endpoint if reachable
+  // All Gemini calls go through the server exclusively — never call the
+  // Gemini API directly from the browser, which would require shipping an
+  // API key inside the public client bundle (see SECURITY.md).
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(apiUrl("/api/ai-xplora"), {
       method: "POST",
       headers,
-      body: JSON.stringify({ query, userName, apiKey: storedKey, history }),
+      body: JSON.stringify({ query, userName, history }),
     });
     const contentType = res.headers.get("content-type") || "";
     if (res.ok && contentType.includes("application/json")) {
@@ -1895,103 +1738,6 @@ export function performClientSemanticMemberSearch(allMembers: Member[], query: s
     .map((s) => s.member);
 }
 
-async function queryDirectGeminiMemberSearch(
-  allMembers: Member[],
-  query: string,
-  apiKey: string
-): Promise<MemberSearchResult[] | null> {
-  const models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-3.6-flash", "gemini-flash-latest"];
-  const memberDb = allMembers.map((m) => ({
-    id: m.id,
-    name: `${m.title ? `${m.title} ` : ""}${m.fullName || ""}`.trim(),
-    occupation: m.occupation || "",
-    skills: Array.isArray(m.skills) ? m.skills.join(", ") : "",
-    school: m.schoolName || "",
-    gradYear: m.gradYear || "",
-    location: [m.area, m.otherArea, m.estateName, m.streetName].filter(Boolean).join(", "),
-    phone: m.phoneNumber || "",
-    email: m.email || "",
-  }));
-
-  const prompt = `You are an intelligent contact & networking AI assistant for the Team Taraba River USOSA member database.
-Your task: Understand the user's search prompt or natural language question and return ALL matching team members.
-
-MEMBERS DATABASE:
-${JSON.stringify(memberDb)}
-
-RULES & CAPABILITIES:
-1. Interpret conversational and general requests:
-   - "list all those with occupation in the database" -> Return all members who have a listed occupation/profession.
-   - "show all members in the database" / "who is in the database" -> Return all members.
-   - "I need a doctor for emergency" -> Return doctors, physicians, healthcare workers.
-   - "Who works in tech, engineering, programming?" -> Return engineers, software developers, technical professionals.
-   - "Who is a lawyer or legal counsel?" -> Return lawyers, attorneys, barristers.
-   - "Members who attended FGGC or graduated in 2007" -> Return matching schools/years.
-2. Return ONLY a JSON array of matching member IDs, e.g. ["mem_1", "mem_2"]. No markdown ticks, no commentary.
-3. If no members match, return [].
-
-User prompt: "${query}"`;
-
-  // Each model attempt gets a hard 6s cutoff — without one, a single hung
-  // request blocks not just this model but every later fallback (the next
-  // model name, the server search, and the instant local search below),
-  // leaving the UI spinning indefinitely instead of degrading gracefully.
-  for (const model of models) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6000);
-      let res: Response;
-      try {
-        res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 0.2,
-            },
-          }),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeout);
-      }
-      const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) {
-        const parsed = JSON.parse(text.replace(/```json/g, "").replace(/```/g, "").trim());
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const idSet = new Set(parsed);
-          const matched = allMembers
-            .filter((m) => idSet.has(m.id))
-            .map((rawM) => {
-              const m = sanitizeMemberRecord(rawM);
-              return {
-                id: m.id,
-                fullName: m.fullName || "Community Member",
-                firstName: m.firstName,
-                surname: m.surname,
-                occupation: m.occupation || "",
-                skills: Array.isArray(m.skills) ? m.skills : [],
-                phoneNumber: m.phoneNumber || "",
-                whatsappNumber: m.whatsappNumber || m.phoneNumber || "",
-                email: m.email || "",
-                photoUrl: m.photoUrl || "",
-                title: m.title || "",
-                schoolName: m.schoolName || "",
-                gradYear: m.gradYear ? String(m.gradYear) : "",
-              };
-            });
-          if (matched.length > 0) return matched;
-        }
-      }
-    } catch {}
-  }
-  return null;
-}
-
 // Absolute ceiling on the whole search — Steps 1 and 2 each have their own
 // per-request timeouts, but this is the single, explicit answer to "when
 // does it stop searching": no matter how many fallback steps are involved,
@@ -2003,26 +1749,9 @@ export async function searchMembers(query: string): Promise<MemberSearchResponse
   const localMembers = AppStateManager.getMembers();
 
   const runSteps = async (): Promise<MemberSearchResponse> => {
-    const storedKey = localStorage.getItem("gemini_api_key") || DEFAULT_GEMINI_KEY;
-
-    // Step 1: Try direct Gemini AI search if key is available. This always
-    // searches the FULL current member list (localMembers, no slicing/
-    // pagination), so results cover every registered contact, not a subset.
-    if (storedKey && localMembers.length > 0) {
-      try {
-        const directAiResults = await queryDirectGeminiMemberSearch(localMembers, query, storedKey);
-        if (directAiResults && directAiResults.length > 0) {
-          return {
-            members: directAiResults,
-            total: directAiResults.length,
-            aiPowered: true,
-          };
-        }
-      } catch {}
-    }
-
-    // Step 2: Try backend API — also time-boxed so a slow server-side AI call
-    // can't leave this stuck; Step 3 below always completes instantly.
+    // Step 1: Try the backend API — the only place Gemini is ever called
+    // from (see SECURITY.md). Time-boxed so a slow server-side AI call can't
+    // leave this stuck; Step 2 below always completes instantly.
     try {
       const headers = await getAuthHeaders();
       const controller = new AbortController();
@@ -2051,9 +1780,9 @@ export async function searchMembers(query: string): Promise<MemberSearchResponse
       }
     } catch {}
 
-    // Step 3: Fast client-side semantic search engine — synchronous over the
+    // Step 2: Fast client-side semantic search engine — synchronous over the
     // full local member list, so it always finishes immediately and always
-    // covers every contact regardless of how Steps 1/2 went.
+    // covers every contact regardless of how Step 1 went.
     const fallbackResults = performClientSemanticMemberSearch(localMembers, query);
     return {
       members: fallbackResults,
@@ -2075,18 +1804,6 @@ export async function searchMembers(query: string): Promise<MemberSearchResponse
 
 export async function adminAISearch(query: string): Promise<Member[]> {
   const localMembers = AppStateManager.getMembers();
-  const storedKey = localStorage.getItem("gemini_api_key") || DEFAULT_GEMINI_KEY;
-
-  // Try direct Gemini first
-  if (storedKey && localMembers.length > 0) {
-    try {
-      const directAiResults = await queryDirectGeminiMemberSearch(localMembers, query, storedKey);
-      if (directAiResults && directAiResults.length > 0) {
-        const idSet = new Set(directAiResults.map((r) => r.id));
-        return localMembers.filter((m) => idSet.has(m.id));
-      }
-    } catch {}
-  }
 
   try {
     const headers = await getAuthHeaders();

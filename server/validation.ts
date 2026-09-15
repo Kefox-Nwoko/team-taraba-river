@@ -69,6 +69,15 @@ export const EventPosterParseSchema = z.object({
   mimeType: z.string().min(1).default('image/jpeg'),
 });
 
+export const AiXploraQuerySchema = z.object({
+  query: z.string().min(1, 'query is required').max(4000),
+  userName: z.string().max(200).optional(),
+  history: z.array(z.object({
+    role: z.enum(['user', 'model']),
+    parts: z.array(z.object({ text: z.string().max(8000) })).max(10),
+  })).max(20).optional().default([]),
+});
+
 // --- Approval Schemas ---
 
 export const ApprovalDecisionSchema = z.object({

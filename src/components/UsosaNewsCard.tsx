@@ -88,6 +88,28 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
   const [activeTab, setActiveTab] = useState<Tab>("Headlines");
   const [isCollapsedOnMobile, setIsCollapsedOnMobile] = useState(true);
   const [showCapabilitiesBanner, setShowCapabilitiesBanner] = useState(false);
+  const capabilitiesBannerDismissedKey = `taraba_ai_capabilities_dismissed_v1_${currentUser?.id || "guest"}`;
+
+  // Show the "what can AI Xplora / Networking do" explainer the first time a
+  // user visits either tab, then remember the dismissal per-user so it
+  // doesn't keep reappearing every time they switch tabs.
+  useEffect(() => {
+    if (activeTab !== "AI Xplora" && activeTab !== "Networking") return;
+    try {
+      if (!localStorage.getItem(capabilitiesBannerDismissedKey)) {
+        setShowCapabilitiesBanner(true);
+      }
+    } catch {
+      setShowCapabilitiesBanner(true);
+    }
+  }, [activeTab, capabilitiesBannerDismissedKey]);
+
+  const handleDismissCapabilitiesBanner = () => {
+    setShowCapabilitiesBanner(false);
+    try {
+      localStorage.setItem(capabilitiesBannerDismissedKey, "1");
+    } catch {}
+  };
 
   // ---------- Headlines state ----------
   const [headlines, setHeadlines] = useState<NewsHeadline[]>([]);
@@ -525,7 +547,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                   Platform Special AI Capabilities
                 </span>
                 <button
-                  onClick={() => setShowCapabilitiesBanner(false)}
+                  onClick={handleDismissCapabilitiesBanner}
                   className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
                 >
                   ✕
@@ -843,6 +865,29 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                       <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                         Prompt or search for members across <strong>any field of work, profession, or life skill</strong> (Healthcare, Legal, Engineering, Tech, Finance, Real Estate, Agriculture, Media, Education), locations, verified skills, phone numbers, or emails.
                       </p>
+                    </div>
+
+                    {/* Quick-search suggestion chips */}
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                      {[
+                        { label: "Healthcare", query: "doctor", icon: Stethoscope },
+                        { label: "Education", query: "teacher", icon: GraduationCap },
+                        { label: "Legal Help", query: "lawyer", icon: ShieldAlert },
+                        { label: "Browse All", query: "show all members in the database", icon: Zap },
+                      ].map(({ label, query, icon: Icon }) => (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => {
+                            setContactQuery(query);
+                            executeContactSearch(query);
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:border-teal-400 hover:text-teal-700 dark:hover:text-teal-400 transition cursor-pointer shadow-xs"
+                        >
+                          <Icon className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
+                          {label}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
