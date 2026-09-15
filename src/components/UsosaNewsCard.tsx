@@ -88,17 +88,16 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
   const [activeTab, setActiveTab] = useState<Tab>("Headlines");
   const [isCollapsedOnMobile, setIsCollapsedOnMobile] = useState(true);
   const [showCapabilitiesBanner, setShowCapabilitiesBanner] = useState(false);
-  const capabilitiesBannerDismissedKey = `taraba_ai_capabilities_dismissed_v1_${currentUser?.id || "guest"}`;
+  const capabilitiesBannerDismissedKey = `taraba_ai_capabilities_dismissed_v1_${currentUser?.id || "guest"}_${activeTab}`;
 
-  // Show the "what can AI Xplora / Networking do" explainer the first time a
-  // user visits either tab, then remember the dismissal per-user so it
-  // doesn't keep reappearing every time they switch tabs.
+  // Show the "what can this tab do" explainer the first time a user visits
+  // AI Xplora or Networking, then remember the dismissal per-user AND
+  // per-tab — dismissing the AI Xplora explainer shouldn't also hide the
+  // (different) Networking one the user hasn't seen yet, or vice versa.
   useEffect(() => {
     if (activeTab !== "AI Xplora" && activeTab !== "Networking") return;
     try {
-      if (!localStorage.getItem(capabilitiesBannerDismissedKey)) {
-        setShowCapabilitiesBanner(true);
-      }
+      setShowCapabilitiesBanner(!localStorage.getItem(capabilitiesBannerDismissedKey));
     } catch {
       setShowCapabilitiesBanner(true);
     }
@@ -553,19 +552,22 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                   ✕
                 </button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-700 dark:text-slate-300">
-                <div className="p-2 rounded-xl bg-white/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800">
-                  <span className="font-bold text-amber-700 dark:text-amber-400 block mb-0.5">
-                    🌐 Live Web Intelligence (AI Xplora)
-                  </span>
-                  Real-time web browsing across global current affairs, science, research, coding, and general knowledge.
-                </div>
-                <div className="p-2 rounded-xl bg-white/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800">
-                  <span className="font-bold text-teal-700 dark:text-teal-400 block mb-0.5">
-                    👥 Member Database AI (Networking)
-                  </span>
-                  Scoped exclusively to full registered member database for occupation, skills, phone, and email matching for emergencies & networking.
-                </div>
+              <div className="text-slate-700 dark:text-slate-300">
+                {activeTab === "AI Xplora" ? (
+                  <div className="p-2 rounded-xl bg-white/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800">
+                    <span className="font-bold text-amber-700 dark:text-amber-400 block mb-0.5">
+                      🌐 Live Web Intelligence (AI Xplora)
+                    </span>
+                    Real-time web browsing across global current affairs, science, research, coding, and general knowledge.
+                  </div>
+                ) : (
+                  <div className="p-2 rounded-xl bg-white/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800">
+                    <span className="font-bold text-teal-700 dark:text-teal-400 block mb-0.5">
+                      👥 Member Database AI (Networking)
+                    </span>
+                    Scoped exclusively to full registered member database for occupation, skills, phone, and email matching for emergencies & networking.
+                  </div>
+                )}
               </div>
             </div>
           )}
