@@ -10,7 +10,7 @@ import { serverLogger } from "./server/logger";
 import { config, isAdminEmail } from "./server/config";
 
 // Server modules
-import { db, adminAuth, checkFirestoreConnection, isFirestoreAvailable, FieldValue } from "./server/firebaseAdmin";
+import { db, adminAuth, checkFirestoreConnection, isFirestoreAvailable, FieldValue, deleteStorageFileByUrl } from "./server/firebaseAdmin";
 import { authMiddleware, requireAdmin } from "./server/authMiddleware";
 import {
   validateBody,
@@ -451,6 +451,16 @@ async function purgeExpiredEvents(): Promise<{ deletedCount: number }> {
   }
 
   const expiredIds = new Set(expired.map((e) => e.id));
+
+  // No recycle bin for expired announcements — the Firestore record and its
+  // poster image are permanently deleted together so nothing orphaned is
+  // left behind. Deliberately touches ONLY posterUrl, never driveImageUrls/
+  // youtubeVideoUrls — those belong to media folders/galleries, a completely
+  // separate flow (guarded above by the isMediaFolder skip) that must never
+  // be reachable from announcement cleanup.
+  for (const e of expired) {
+    await deleteStorageFileByUrl(e.posterUrl);
+  }
 
   if (expiredIds.size > 0 && isFirestoreAvailable()) {
     const deletePromises = Array.from(expiredIds).map((id) => {
@@ -1568,6 +1578,7 @@ app.post("/api/events", conditionalAuth, conditionalRequireAdmin, async (req: Re
       category: data.category || 'meeting',
       driveImageUrls: data.driveImageUrls || [],
       driveFolderId: data.driveFolderId || "",
+      posterUrl: data.posterUrl || '',
       youtubeVideoUrls: data.youtubeVideoUrls || (data.youtubeVideoUrl ? [data.youtubeVideoUrl] : []),
       youtubeVideoUrl: data.youtubeVideoUrl || (data.youtubeVideoUrls && data.youtubeVideoUrls[0] ? data.youtubeVideoUrls[0] : ''),
       youtubeTitle: data.youtubeVideoUrl ? `${data.title} Video Recording` : '',
@@ -1649,6 +1660,7 @@ app.put("/api/events/:id", conditionalAuth, conditionalRequireAdmin, async (req:
       category: data.category || 'meeting',
       driveImageUrls: data.driveImageUrls !== undefined ? data.driveImageUrls : (existing.driveImageUrls || []),
       driveFolderId: data.driveFolderId || existing.driveFolderId,
+      posterUrl: data.posterUrl !== undefined ? data.posterUrl : (existing.posterUrl || ''),
       youtubeVideoUrls: data.youtubeVideoUrls !== undefined ? data.youtubeVideoUrls : (existing.youtubeVideoUrls || (existing.youtubeVideoUrl ? [existing.youtubeVideoUrl] : [])),
       youtubeVideoUrl: data.youtubeVideoUrl !== undefined ? data.youtubeVideoUrl : (existing.youtubeVideoUrl || ''),
       youtubeTitle: data.youtubeVideoUrl ? `${data.title} Video Recording` : (existing.youtubeTitle || ''),
@@ -1685,12 +1697,24 @@ app.put("/api/events/:id", conditionalAuth, conditionalRequireAdmin, async (req:
 app.delete("/api/events/:id", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
-    const existing = fallbackEvents.find((e) => e.id === id);
-    const eventTitle = existing ? existing.title : id;
+    let existing = fallbackEvents.find((e) => e.id === id) || null;
     if (isFirestoreAvailable()) {
       const eventRef = db.collection(COLLECTIONS.events).doc(id);
+      if (!existing) {
+        const eventDoc = await eventRef.get();
+        if (eventDoc.exists) existing = { id: eventDoc.id, ...eventDoc.data() } as GroupEvent;
+      }
+      // No recycle bin for announcements — permanently delete the poster
+      // image along with the record. Gated on !isMediaFolder and scoped to
+      // posterUrl only: media folders/galleries (driveImageUrls,
+      // youtubeVideoUrls) are a completely separate flow and must never be
+      // touched here, even though this same route also deletes those.
+      if (existing && !isMediaFolder(existing)) {
+        await deleteStorageFileByUrl(existing.posterUrl);
+      }
       await eventRef.delete();
     }
+    const eventTitle = existing ? existing.title : id;
     fallbackEvents = fallbackEvents.filter((e) => e.id !== id);
     _eventsCache = null;
 
@@ -4129,9 +4153,26 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     serverLogger.info(`Team Taraba River Server running on http://localhost:${PORT}`);
   });
+
+  // Let in-flight requests (e.g. a media upload) finish before exiting on a
+  // Cloud Run redeploy/scale-down SIGTERM, instead of cutting them off.
+  const shutdown = (signal: string) => {
+    serverLogger.info(`${signal} received — closing server gracefully.`);
+    server.close(() => {
+      serverLogger.info('Server closed, exiting.');
+      process.exit(0);
+    });
+    // Force-exit if requests haven't finished before Cloud Run's SIGKILL grace period.
+    setTimeout(() => {
+      serverLogger.warn('Graceful shutdown timed out — forcing exit.');
+      process.exit(1);
+    }, 9_000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 startServer();

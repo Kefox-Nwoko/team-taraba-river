@@ -93,6 +93,11 @@ export function sanitizeEventRecord(event: Partial<GroupEvent>): GroupEvent {
     cleanEvent.endDate = cleanEndDate;
   }
 
+  const cleanPosterUrl = (event.posterUrl || "").trim();
+  if (cleanPosterUrl) {
+    cleanEvent.posterUrl = cleanPosterUrl;
+  }
+
   return cleanEvent;
 }
 

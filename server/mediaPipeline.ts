@@ -14,6 +14,20 @@ ffmpeg.setFfmpegPath(ffmpegPath as string);
 // In-memory fallback store for media items when Firestore is unavailable
 const inMemoryMediaStore = new Map<string, MediaItem>();
 
+// Entries here hold full base64 payloads (up to 50MB each); without eviction
+// a prolonged Firestore outage would grow this unbounded and risk an OOM
+// crash on the 512MB host. Sweep anything older than an hour — well past
+// the time a normal upload-then-finalize round trip should take.
+const MEDIA_STORE_TTL_MS = 60 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, item] of inMemoryMediaStore.entries()) {
+    if (now - new Date(item.createdAt).getTime() > MEDIA_STORE_TTL_MS) {
+      inMemoryMediaStore.delete(id);
+    }
+  }
+}, 10 * 60_000);
+
 const MEDIA_COLLECTION = 'mediaItems';
 
 export interface MediaItem {

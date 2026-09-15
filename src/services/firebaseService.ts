@@ -13,6 +13,7 @@ import {
   increment,
   serverTimestamp,
   arrayUnion,
+  arrayRemove,
 } from "firebase/firestore";
 import {
   signInWithPopup,
@@ -294,6 +295,50 @@ export class FirebaseSyncManager {
       update.youtubeVideoUrl = params.videoUrl;
     }
     await setDoc(doc(db, "events", params.eventId), update, { merge: true });
+  }
+
+  /**
+   * Same atomic guarantee as attachApprovedMedia above, batched for a whole
+   * upload session (admin direct-upload-to-existing-folder) instead of one
+   * item at a time. A plain read-modify-write here — read the folder's
+   * current URLs from a local snapshot, merge in the new ones, setDoc the
+   * whole array back — silently drops any upload that landed in Firestore
+   * after that snapshot was taken but before this write lands (e.g. a
+   * second upload session to the same folder started before the first
+   * one's result had propagated back into local state). arrayUnion/
+   * arrayRemove side-step that entirely: each is a field transform Firestore
+   * applies against its own current value, not against whatever the client
+   * last saw.
+   */
+  public static async attachMediaBatch(params: {
+    eventId: string;
+    addPhotoUrls?: string[];
+    addVideoUrls?: string[];
+    removePhotoUrls?: string[];
+    removeVideoUrls?: string[];
+    createFields?: Partial<GroupEvent>;
+  }): Promise<void> {
+    const addPhotos = (params.addPhotoUrls || []).filter(Boolean);
+    const addVideos = (params.addVideoUrls || []).filter(Boolean);
+    const removePhotos = (params.removePhotoUrls || []).filter(Boolean);
+    const removeVideos = (params.removeVideoUrls || []).filter(Boolean);
+    const ref = doc(db, "events", params.eventId);
+
+    // arrayUnion and arrayRemove can't both target the same field in one
+    // write, so removals (in-place replacements) go first, then additions.
+    if (removePhotos.length > 0 || removeVideos.length > 0) {
+      const removeUpdate: Record<string, any> = {};
+      if (removePhotos.length > 0) removeUpdate.driveImageUrls = arrayRemove(...removePhotos);
+      if (removeVideos.length > 0) removeUpdate.youtubeVideoUrls = arrayRemove(...removeVideos);
+      await setDoc(ref, removeUpdate, { merge: true });
+    }
+
+    if (addPhotos.length > 0 || addVideos.length > 0 || params.createFields) {
+      const addUpdate: Record<string, any> = { ...(params.createFields || {}), id: params.eventId };
+      if (addPhotos.length > 0) addUpdate.driveImageUrls = arrayUnion(...addPhotos);
+      if (addVideos.length > 0) addUpdate.youtubeVideoUrls = arrayUnion(...addVideos);
+      await setDoc(ref, addUpdate, { merge: true });
+    }
   }
 
   /**

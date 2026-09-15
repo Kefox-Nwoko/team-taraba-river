@@ -50,6 +50,7 @@ export interface GroupEvent {
   category: string;
   driveImageUrls: string[]; // Google Drive links or direct image URLs
   driveFolderId?: string;
+  posterUrl?: string; // Digital announcement poster shown on the Home/Events page
   youtubeVideoUrl?: string; // YouTube video link or video ID
   youtubeVideoUrls?: string[]; // Multiple YouTube video links
   youtubeTitle?: string;

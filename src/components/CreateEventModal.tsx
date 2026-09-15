@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { DatePicker } from "./DatePicker";
 import { logger } from "../lib/logger";
 import { Member, GroupEvent } from "../types";
 import { createEvent, updateEvent } from "../services/apiClient";
 import { AppStateManager } from "../services/storage";
 import { FirebaseSyncManager } from "../services/firebaseService";
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
+import { storage } from "../lib/firebase";
 import {
   X,
   Calendar as CalendarIcon,
@@ -15,6 +17,9 @@ import {
   Sparkles,
   ChevronDown,
   Edit,
+  Image as ImageIcon,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import { CategoryMultiSelect } from "./CategoryMultiSelect";
 import { parseEventCategories, formatEventCategories } from "../constants/eventCategories";
@@ -44,6 +49,13 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Digital announcement poster — uploaded directly to Firebase Storage so
+  // the form always holds a ready-to-save URL, same pattern as media uploads.
+  const [posterUrl, setPosterUrl] = useState("");
+  const [posterUploadPct, setPosterUploadPct] = useState<number | null>(null);
+  const [posterError, setPosterError] = useState<string | null>(null);
+  const posterInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (eventToEdit) {
       setEventTitle(eventToEdit.title || "");
@@ -53,6 +65,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
       setEventLocation(eventToEdit.location || "");
       setSelectedCategories(parseEventCategories(eventToEdit.category));
       setEventDescription(eventToEdit.description || "");
+      setPosterUrl(eventToEdit.posterUrl || "");
     } else {
       setEventTitle("");
       setEventDate(new Date().toISOString().split("T")[0]);
@@ -61,8 +74,67 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
       setEventLocation("");
       setSelectedCategories(["Meeting"]);
       setEventDescription("");
+      setPosterUrl("");
     }
+    setPosterUploadPct(null);
+    setPosterError(null);
   }, [eventToEdit, isOpen]);
+
+  const handlePosterFileSelect = async (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setPosterError("Please select an image file (JPG, PNG, or WEBP).");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setPosterError("Poster image must be under 8MB.");
+      return;
+    }
+    setPosterError(null);
+    setPosterUploadPct(0);
+    try {
+      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const storageRef = ref(storage, `events/posters/${Date.now()}_${cleanName}`);
+      const uploadTask = uploadBytesResumable(storageRef, file, { contentType: file.type });
+
+      const downloadUrl = await new Promise<string>((resolve, reject) => {
+        uploadTask.on(
+          "state_changed",
+          (snapshot) => {
+            if (snapshot.totalBytes > 0) {
+              setPosterUploadPct(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100));
+            }
+          },
+          reject,
+          async () => {
+            try {
+              resolve(await getDownloadURL(uploadTask.snapshot.ref));
+            } catch (e) {
+              reject(e);
+            }
+          }
+        );
+      });
+
+      setPosterUrl(downloadUrl);
+    } catch (err: any) {
+      logger.error("Poster upload error", err);
+      setPosterError(err?.message || "Poster upload failed. Please try again.");
+    } finally {
+      setPosterUploadPct(null);
+    }
+  };
+
+  const handleRemovePoster = () => {
+    if (posterUrl && posterUrl.includes("firebasestorage.googleapis.com")) {
+      try {
+        deleteObject(ref(storage, posterUrl)).catch(() => {});
+      } catch {}
+    }
+    setPosterUrl("");
+    setPosterError(null);
+    if (posterInputRef.current) posterInputRef.current.value = "";
+  };
 
   if (!isOpen) return null;
 
@@ -100,6 +172,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           driveImageUrls: eventToEdit.driveImageUrls || [],
           driveFolderId: eventToEdit.driveFolderId || '',
           youtubeVideoUrl: eventToEdit.youtubeVideoUrl || '',
+          posterUrl: posterUrl || '',
         });
         const currentEvents = AppStateManager.getEvents();
         const idx = currentEvents.findIndex((ev) => ev.id === eventToEdit.id);
@@ -125,6 +198,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           description: eventDescription.trim(),
           driveImageUrls: [],
           youtubeVideoUrl: "",
+          posterUrl: posterUrl || "",
           createdBy: currentUser ? currentUser.fullName : "Community Member",
           createdById: currentUser ? currentUser.id : "mem_admin",
         });
@@ -326,6 +400,83 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 className="w-full bg-slate-50 dark:bg-[#2A2A2A] border-none rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition resize-none shadow-sm"
               />
             </div>
+          </div>
+
+          {/* Section 2: Digital Poster */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-400 border-b border-slate-100 dark:border-slate-800 pb-2">
+              2. Digital Poster (Optional)
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Add a flyer or announcement graphic to feature this event on the Home page.
+            </p>
+
+            <input
+              ref={posterInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => handlePosterFileSelect(e.target.files?.[0])}
+            />
+
+            {posterUrl ? (
+              <div className="flex flex-col sm:flex-row gap-4 p-4 bg-slate-50 dark:bg-[#2A2A2A] rounded-2xl">
+                <img
+                  src={posterUrl}
+                  alt="Event poster preview"
+                  className="w-full sm:w-40 h-40 object-cover rounded-xl border border-slate-200 dark:border-slate-700 shrink-0"
+                />
+                <div className="flex flex-col justify-between gap-3">
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
+                    This poster will display on the Home page announcement card — image beside the event details on larger screens, image above the details on phones.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => posterInputRef.current?.click()}
+                      className="px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 transition cursor-pointer"
+                    >
+                      Replace
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRemovePoster}
+                      className="px-3.5 py-1.5 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 hover:text-rose-600 dark:hover:text-rose-400 text-slate-700 dark:text-slate-300 text-xs font-medium rounded-xl border border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-800 transition cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => posterInputRef.current?.click()}
+                disabled={posterUploadPct !== null}
+                className="w-full flex flex-col items-center justify-center gap-2 py-8 bg-slate-50 dark:bg-[#2A2A2A] hover:bg-slate-100 dark:hover:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl transition cursor-pointer disabled:opacity-60"
+              >
+                {posterUploadPct !== null ? (
+                  <>
+                    <Loader2 className="w-6 h-6 text-teal-600 dark:text-teal-400 animate-spin" />
+                    <span className="text-xs text-slate-600 dark:text-slate-300">Uploading… {posterUploadPct}%</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-11 h-11 rounded-full bg-teal-50 dark:bg-teal-950/50 text-teal-600 dark:text-teal-400 flex items-center justify-center">
+                      <ImageIcon className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Upload className="w-3.5 h-3.5" /> Upload Poster Image
+                    </span>
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500">JPG, PNG, or WEBP — up to 8MB</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {posterError && (
+              <p className="text-xs text-rose-600 dark:text-rose-400">{posterError}</p>
+            )}
           </div>
 
           {/* Action Footer */}

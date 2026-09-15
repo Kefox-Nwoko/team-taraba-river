@@ -1,6 +1,7 @@
 import { initializeApp, getApps, App } from 'firebase-admin/app';
 import { getFirestore, Firestore, FieldValue } from 'firebase-admin/firestore';
 import { getAuth, Auth } from 'firebase-admin/auth';
+import { getStorage } from 'firebase-admin/storage';
 import { cert, applicationDefault } from 'firebase-admin';
 
 import fs from 'fs';
@@ -114,6 +115,29 @@ export async function checkFirestoreConnection(): Promise<boolean> {
 
 export function isFirestoreAvailable(): boolean {
   return firestoreAvailable;
+}
+
+/**
+ * Permanently deletes a Firebase Storage file given its download URL (the
+ * `https://firebasestorage.googleapis.com/...` form). No-ops on anything
+ * else (Google Drive/YouTube links, empty strings) so callers can pass any
+ * event image field through unconditionally. Used to ensure purged
+ * announcements (e.g. an expired event's poster) leave no orphaned file
+ * behind in Storage — there is no recycle bin for this, it's gone for good.
+ */
+export async function deleteStorageFileByUrl(url: string | undefined | null): Promise<void> {
+  if (!url || !app || !firestoreAvailable) return;
+  const marker = '/o/';
+  const idx = url.indexOf(marker);
+  if (!url.includes('firebasestorage.googleapis.com') || idx === -1) return;
+  try {
+    const afterMarker = url.slice(idx + marker.length);
+    const encodedPath = afterMarker.split('?')[0];
+    const filePath = decodeURIComponent(encodedPath);
+    await getStorage(app).bucket().file(filePath).delete();
+  } catch (err) {
+    serverLogger.warn('deleteStorageFileByUrl: failed to delete file', { url, error: String(err) });
+  }
 }
 
 export { db, adminAuth, FieldValue };

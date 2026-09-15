@@ -307,7 +307,16 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                           <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-amber-400 to-orange-500" />
                         ) : null}
 
-                      {/* Left: Compact Date Tag & Event Details */}
+                      {/* Poster (if set) + Compact Date Tag & Event Details */}
+                      <div className={`flex flex-col ${event.posterUrl ? "sm:flex-row" : ""} gap-3 sm:gap-4 min-w-0 flex-1`}>
+                        {event.posterUrl && (
+                          <img
+                            src={event.posterUrl}
+                            alt={`${event.title} announcement poster`}
+                            loading="lazy"
+                            className="w-full h-40 sm:w-40 sm:h-auto md:w-48 object-cover rounded-xl border border-slate-200/70 dark:border-slate-800 shrink-0"
+                          />
+                        )}
                       <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 pl-1">
                         {/* Compact Date Box */}
                         {durationInfo.isMultiDay ? (
@@ -401,6 +410,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                               )}
                           </div>
                         </div>
+                      </div>
                       </div>
 
                       {/* Right: Inline RSVP Buttons (Members Only) */}

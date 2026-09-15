@@ -1071,7 +1071,17 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
               youtubeVideoUrl: updatedYtList[0] || "",
             };
 
-            await FirebaseSyncManager.saveEvent(targetEvent);
+            // Atomic arrayUnion/arrayRemove against Firestore's own current
+            // value, NOT a full overwrite computed from the (possibly
+            // stale) `existingEvent` snapshot above — that snapshot is only
+            // used for the optimistic local `targetEvent` UI object.
+            await FirebaseSyncManager.attachMediaBatch({
+              eventId: targetEvent.id,
+              addPhotoUrls: photoFinalUrls,
+              addVideoUrls: videoFinalUrls,
+              removePhotoUrls: replacementsToExecute.filter((r) => r.type === "photo").map((r) => r.replaceUrl),
+              removeVideoUrls: replacementsToExecute.filter((r) => r.type === "video").map((r) => r.replaceUrl),
+            });
             const currentEvents = AppStateManager.getEvents();
             const existingIndex = currentEvents.findIndex((e) => e.id === targetEvent.id);
             if (existingIndex !== -1) {

@@ -312,7 +312,7 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                 className="px-3.5 py-1.5 bg-teal-700 hover:bg-teal-800 text-white text-xs rounded-xl transition shadow-md flex items-center justify-center space-x-2 group cursor-pointer shrink-0 font-medium"
               >
                 <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-                <span>Back to {originatingPageName}</span>
+                <span>Return</span>
               </button>
             )}
           </div>
@@ -600,7 +600,7 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
             </label>
           </div>
 
-          <div className="flex items-center justify-between pt-6 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex flex-wrap items-center justify-center sm:justify-between gap-3 pt-6 border-t border-slate-200 dark:border-slate-800">
             {!isForceUpdate ? (
               <button
                 type="button"
@@ -608,7 +608,7 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                 className="px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition flex items-center space-x-2 font-normal cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4" />
-                <span>Back to {originatingPageName}</span>
+                <span>Return</span>
               </button>
             ) : (
               <div />

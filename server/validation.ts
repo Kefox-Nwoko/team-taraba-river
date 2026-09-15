@@ -55,6 +55,7 @@ export const EventCreationSchema = z.object({
   ]).optional().default('meeting'),
   driveImageUrls: z.array(z.string()).optional().default([]),
   driveFolderId: z.string().max(200).optional(),
+  posterUrl: z.string().max(2000).optional(),
   youtubeVideoUrls: z.array(z.string()).optional().default([]),
   youtubeVideoUrl: z.string().optional().default(''),
   youtubeTitle: z.string().max(300).optional(),
