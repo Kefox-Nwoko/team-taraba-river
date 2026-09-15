@@ -513,6 +513,38 @@ export async function updateEvent(id: string, eventData: Partial<GroupEvent>): P
   return updatedEvent;
 }
 
+export interface ParsedPosterDetails {
+  title: string;
+  date: string;
+  endDate: string;
+  time: string;
+  location: string;
+  description: string;
+  category: string;
+  confidence: number;
+}
+
+/**
+ * Sends a poster/flyer image to the server's Gemini vision endpoint and gets
+ * back structured event details read off it (title, date, time, location,
+ * etc.) to autofill the Create Event form. Throws on failure — callers
+ * decide how to surface that (this is a convenience assist, never blocking).
+ */
+export async function parseEventPosterWithAI(imageBase64: string, mimeType: string): Promise<ParsedPosterDetails> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/ai/parse-event-poster"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ imageBase64, mimeType }),
+  });
+  const contentType = res.headers.get("content-type") || "";
+  const data = contentType.includes("application/json") ? await res.json() : null;
+  if (!res.ok || !data || data.success === false) {
+    throw new Error(data?.error || "Could not read the poster with AI.");
+  }
+  return data as ParsedPosterDetails;
+}
+
 export async function deleteEvent(id: string): Promise<void> {
   try {
     const headers = await getAuthHeaders();

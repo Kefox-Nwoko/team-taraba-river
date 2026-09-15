@@ -22,6 +22,7 @@ import {
   AIQuerySchema,
   DriveSyncSchema,
   YouTubeParseSchema,
+  EventPosterParseSchema,
   LoginCredentialSchema,
   LoginCodeVerifySchema,
   AdminAISearchSchema,
@@ -54,6 +55,7 @@ import { buildMonthlyDigestEmailHtml, buildDailyEveAlertEmailHtml, buildTestEmai
 import { getEmailConfig, updateEmailConfig, sendEmail } from "./server/emailService";
 import { createLoginCode, verifyLoginCode } from "./server/loginCodes";
 import { parseEventDateObj } from "./src/utils/eventUtils";
+import { EVENT_CATEGORY_OPTIONS } from "./src/constants/eventCategories";
 
 dotenv.config();
 
@@ -69,7 +71,7 @@ process.on('uncaughtException', (err) => {
 });
 
 // Adaptive body-size limits — 50MB for media upload routes, 2MB for everything else
-const MEDIA_UPLOAD_PATHS = ['/api/media/upload', '/api/media/finalize', '/api/media/upload-video-to-youtube'];
+const MEDIA_UPLOAD_PATHS = ['/api/media/upload', '/api/media/finalize', '/api/media/upload-video-to-youtube', '/api/ai/parse-event-poster'];
 const smallJsonParser = express.json({ limit: '2mb' });
 const largeJsonParser = express.json({ limit: '50mb' });
 const smallUrlParser = express.urlencoded({ limit: '2mb', extended: true });
@@ -3035,6 +3037,73 @@ Provide a JSON object with:
       trendAnalysis: "Community activity continues to scale across programs.",
       aiConfidence: 0.92
     });
+  }
+});
+
+// 15b. AI Event Poster Reader — vision-reads an uploaded announcement poster
+// and extracts structured event details to autofill the Create Event form.
+app.post("/api/ai/parse-event-poster", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
+  const validation = validateBody(EventPosterParseSchema, req.body);
+  if (!validation.success) {
+    res.status(400).json({ error: (validation as any).error });
+    return;
+  }
+  const { imageBase64, mimeType } = validation.data;
+  const ai = getGeminiClient();
+
+  if (!ai) {
+    res.status(503).json({ error: 'AI poster reading is not configured on this server.' });
+    return;
+  }
+
+  try {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const categoryLabels = EVENT_CATEGORY_OPTIONS.map((c) => c.label).join(', ');
+
+    const prompt = `You are reading a community event announcement poster/flyer image for "Team Taraba River", a Nigerian community/alumni group in Port Harcourt. Extract only what is actually visible/printed on the poster — never invent or guess missing details.
+
+Today's date is ${todayStr}. If a printed date has no year, assume the nearest upcoming occurrence.
+
+Return a JSON object with:
+1. title: the event's headline/name as printed on the poster (concise, no extra marketing text)
+2. date: event start date in YYYY-MM-DD format, or "" if not legible/present
+3. endDate: event end date in YYYY-MM-DD format if the poster shows a date range/multi-day event, else ""
+4. time: event start time in 24-hour HH:MM format, or "" if not legible/present
+5. location: venue/address exactly as printed, or ""
+6. description: a 1-3 sentence summary of any agenda/instructions/details printed on the poster, or ""
+7. category: the single best match from this exact list: ${categoryLabels} — or "" if none clearly fit
+8. confidence: number from 0 to 1 rating overall extraction confidence`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: [
+        { text: prompt },
+        { inlineData: { mimeType, data: imageBase64 } },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            date: { type: Type.STRING },
+            endDate: { type: Type.STRING },
+            time: { type: Type.STRING },
+            location: { type: Type.STRING },
+            description: { type: Type.STRING },
+            category: { type: Type.STRING },
+            confidence: { type: Type.NUMBER },
+          },
+          required: ["title", "date", "endDate", "time", "location", "description", "category", "confidence"],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.text || '{}');
+    res.json({ success: true, ...parsed });
+  } catch (error) {
+    serverLogger.error("Gemini AI Poster Parse Error", error as Error);
+    res.status(500).json({ error: 'Failed to read poster with AI. You can still fill in the form manually.' });
   }
 });
 

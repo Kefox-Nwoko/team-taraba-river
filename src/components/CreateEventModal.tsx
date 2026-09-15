@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { DatePicker } from "./DatePicker";
 import { logger } from "../lib/logger";
 import { Member, GroupEvent } from "../types";
-import { createEvent, updateEvent } from "../services/apiClient";
+import { createEvent, updateEvent, parseEventPosterWithAI } from "../services/apiClient";
 import { AppStateManager } from "../services/storage";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
@@ -20,6 +20,7 @@ import {
   Image as ImageIcon,
   Upload,
   Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { CategoryMultiSelect } from "./CategoryMultiSelect";
 import { parseEventCategories, formatEventCategories } from "../constants/eventCategories";
@@ -54,7 +55,10 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const [posterUrl, setPosterUrl] = useState("");
   const [posterUploadPct, setPosterUploadPct] = useState<number | null>(null);
   const [posterError, setPosterError] = useState<string | null>(null);
+  const [isReadingPoster, setIsReadingPoster] = useState(false);
+  const [posterAiMessage, setPosterAiMessage] = useState<string | null>(null);
   const posterInputRef = useRef<HTMLInputElement>(null);
+  const posterFileRef = useRef<File | null>(null);
 
   useEffect(() => {
     if (eventToEdit) {
@@ -78,7 +82,78 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     }
     setPosterUploadPct(null);
     setPosterError(null);
+    setPosterAiMessage(null);
+    setIsReadingPoster(false);
+    posterFileRef.current = null;
   }, [eventToEdit, isOpen]);
+
+  const fileToBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const commaIdx = result.indexOf(",");
+        resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  // Reads a poster image with Gemini vision and autofills whatever fields
+  // are still blank (title/location/description) — plus date/time/category
+  // when creating a brand-new event, never overwriting an existing one's
+  // real schedule on edit. Independent of the Storage upload; safe to retry.
+  const readPosterWithAI = async (file: File) => {
+    setIsReadingPoster(true);
+    setPosterAiMessage(null);
+    try {
+      const base64 = await fileToBase64(file);
+      const details = await parseEventPosterWithAI(base64, file.type || "image/jpeg");
+      const filled: string[] = [];
+
+      if (details.title && !eventTitle.trim()) {
+        setEventTitle(details.title);
+        filled.push("title");
+      }
+      if (details.location && !eventLocation.trim()) {
+        setEventLocation(details.location);
+        filled.push("location");
+      }
+      if (details.description && !eventDescription.trim()) {
+        setEventDescription(details.description);
+        filled.push("description");
+      }
+      if (!eventToEdit) {
+        if (details.date) {
+          setEventDate(details.date);
+          filled.push("date");
+        }
+        if (details.endDate && details.endDate !== details.date) {
+          setEventEndDate(details.endDate);
+          filled.push("end date");
+        }
+        if (details.time) {
+          setEventTime(details.time);
+          filled.push("time");
+        }
+        if (details.category) {
+          setSelectedCategories(parseEventCategories(details.category));
+          filled.push("category");
+        }
+      }
+
+      setPosterAiMessage(
+        filled.length > 0
+          ? `✨ AI read the poster and filled in: ${filled.join(", ")}. Please review before publishing.`
+          : "AI read the poster but found nothing new to add — review the fields below."
+      );
+    } catch (err: any) {
+      logger.error("AI poster read error", err);
+      setPosterAiMessage(err?.message || "Couldn't read the poster with AI. You can still fill in the form manually.");
+    } finally {
+      setIsReadingPoster(false);
+    }
+  };
 
   const handlePosterFileSelect = async (file: File | undefined) => {
     if (!file) return;
@@ -91,6 +166,9 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
       return;
     }
     setPosterError(null);
+    setPosterAiMessage(null);
+    posterFileRef.current = file;
+    readPosterWithAI(file);
     setPosterUploadPct(0);
     try {
       const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -133,6 +211,8 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     }
     setPosterUrl("");
     setPosterError(null);
+    setPosterAiMessage(null);
+    posterFileRef.current = null;
     if (posterInputRef.current) posterInputRef.current.value = "";
   };
 
@@ -408,7 +488,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               2. Digital Poster (Optional)
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Add a flyer or announcement graphic to feature this event on the Home page.
+              Add a flyer or announcement graphic to feature this event on the Home page. AI will read it and help fill in the details below.
             </p>
 
             <input
@@ -427,10 +507,16 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   className="w-full sm:w-40 h-40 object-cover rounded-xl border border-slate-200 dark:border-slate-700 shrink-0"
                 />
                 <div className="flex flex-col justify-between gap-3">
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
-                    This poster will display on the Home page announcement card — image beside the event details on larger screens, image above the details on phones.
-                  </p>
-                  <div className="flex gap-2">
+                  {isReadingPoster ? (
+                    <p className="text-xs text-teal-700 dark:text-teal-400 flex items-center gap-1.5 font-medium">
+                      <Sparkles className="w-3.5 h-3.5 animate-pulse" /> Reading poster with AI…
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                      This poster will display on the Home page announcement card — image beside the event details on larger screens, image above the details on phones.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() => posterInputRef.current?.click()}
@@ -438,6 +524,16 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                     >
                       Replace
                     </button>
+                    {posterFileRef.current && (
+                      <button
+                        type="button"
+                        onClick={() => posterFileRef.current && readPosterWithAI(posterFileRef.current)}
+                        disabled={isReadingPoster}
+                        className="px-3.5 py-1.5 bg-teal-50 dark:bg-teal-950/40 hover:bg-teal-100 dark:hover:bg-teal-900/50 text-teal-700 dark:text-teal-400 text-xs font-medium rounded-xl border border-teal-200 dark:border-teal-800/60 transition cursor-pointer disabled:opacity-60 flex items-center gap-1.5"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isReadingPoster ? "animate-spin" : ""}`} /> Re-scan with AI
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={handleRemovePoster}
@@ -476,6 +572,13 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
             {posterError && (
               <p className="text-xs text-rose-600 dark:text-rose-400">{posterError}</p>
+            )}
+
+            {posterAiMessage && !isReadingPoster && (
+              <div className="p-3 bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/60 rounded-xl text-xs text-teal-800 dark:text-teal-300 flex items-start gap-2">
+                <Sparkles className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{posterAiMessage}</span>
+              </div>
             )}
           </div>
 

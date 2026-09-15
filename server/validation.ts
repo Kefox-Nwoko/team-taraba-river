@@ -64,6 +64,11 @@ export const EventCreationSchema = z.object({
   maxCapacity: z.number().int().positive().optional().default(100),
 }).passthrough();
 
+export const EventPosterParseSchema = z.object({
+  imageBase64: z.string().min(1, 'imageBase64 is required'),
+  mimeType: z.string().min(1).default('image/jpeg'),
+});
+
 // --- Approval Schemas ---
 
 export const ApprovalDecisionSchema = z.object({
