@@ -20,6 +20,7 @@ import {
   signInWithRedirect,
   getRedirectResult,
   signInWithCustomToken as firebaseSignInWithCustomToken,
+  onAuthStateChanged,
   User,
 } from "firebase/auth";
 import { db, auth, googleProvider } from "../lib/firebase";
@@ -152,6 +153,17 @@ export async function getCurrentIdToken(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Fires once Firebase finishes rehydrating any persisted auth session on
+ * page load (auth.currentUser is unreliable before this — Firebase restores
+ * it from IndexedDB asynchronously). Used to re-verify a locally cached
+ * member's role against the server the moment a real ID token is available,
+ * instead of trusting whatever role was cached at last login indefinitely.
+ */
+export function onAuthReady(callback: (user: User | null) => void): () => void {
+  return onAuthStateChanged(auth, callback);
 }
 
 // Converts Month Name & Day to YYYY-MM-DD

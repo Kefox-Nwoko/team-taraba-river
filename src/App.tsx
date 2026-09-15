@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { logger } from "./lib/logger";
 import { Member, GroupEvent, PhotoApprovalRequest } from "./types";
 import { AppStateManager } from "./services/storage";
-import { fetchMembers, fetchEvents, fetchApprovals, fetchVisitMetrics, deleteMember, fetchUsosaNews } from "./services/apiClient";
+import { fetchMembers, fetchEvents, fetchApprovals, fetchVisitMetrics, deleteMember, fetchUsosaNews, verifySession } from "./services/apiClient";
 import { formatMemberDirectoryName } from "./utils/nameUtils";
-import { FirebaseSyncManager, FirebaseService, triggerGoogleAdminSignIn } from "./services/firebaseService";
+import { FirebaseSyncManager, FirebaseService, triggerGoogleAdminSignIn, onAuthReady } from "./services/firebaseService";
 import { EngagementTracker } from "./services/EngagementTracker";
 import { ChevronUp } from "lucide-react";
 import { ViewSkeleton } from "./components/ui/Skeleton";
@@ -104,6 +104,31 @@ export default function App() {
       try { localStorage.setItem("taraba_active_tab", "profile"); } catch {}
     }
   }, [currentUser]);
+
+  // Re-verify the cached session's role against the server the moment a
+  // real Firebase ID token is available on page load, instead of trusting
+  // whatever role was cached at last login indefinitely. Without this, an
+  // account promoted to (or already on) ADMIN_EMAILS could stay stuck
+  // showing as a regular member forever if its role was ever cached as
+  // "member" — the server (server/config.ts's isAdminEmail) is the single
+  // source of truth for role, never the locally cached copy.
+  useEffect(() => {
+    const unsubscribe = onAuthReady((fbUser) => {
+      if (!fbUser) return;
+      verifySession()
+        .then((serverMember) => {
+          if (!serverMember) return;
+          setCurrentUser((prev) => {
+            if (!prev || prev.role === serverMember.role) return prev;
+            const corrected: Member = { ...prev, role: serverMember.role };
+            AppStateManager.setCurrentUser(corrected);
+            return corrected;
+          });
+        })
+        .catch(() => {});
+    });
+    return unsubscribe;
+  }, []);
   const [members, setMembers] = useState<Member[]>(AppStateManager.getMembers());
   const [events, setEvents] = useState<GroupEvent[]>(AppStateManager.getEvents());
   const [approvals, setApprovals] = useState<PhotoApprovalRequest[]>(
