@@ -4043,6 +4043,25 @@ app.delete("/api/media/youtube/:videoId", conditionalAuth, conditionalRequireAdm
   await deleteYouTubeVideoServer(req, res);
 });
 
+// Direct-to-Google uploads (YouTube/Drive) happen entirely browser-to-Google;
+// this server never sees that traffic, so failures there are otherwise
+// invisible in Cloud Run logs. The client beacons a short diagnostic here
+// on chunk failure / attempt exhaustion so real device behavior is visible
+// server-side instead of requiring the uploader's own browser console.
+app.post("/api/media/upload-diagnostic", optionalAuth, (req: Request, res: Response) => {
+  const { event, message, fileMB, sentBytes, totalBytes, attempt } = req.body || {};
+  const safeEvent = typeof event === "string" ? event.slice(0, 60) : "unknown";
+  const safeMessage = typeof message === "string" ? message.slice(0, 300) : "";
+  serverLogger.warn(`[UploadDiagnostic] ${safeEvent}: ${safeMessage}`, {
+    fileMB: typeof fileMB === "number" ? fileMB : undefined,
+    sentBytes: typeof sentBytes === "number" ? sentBytes : undefined,
+    totalBytes: typeof totalBytes === "number" ? totalBytes : undefined,
+    attempt: typeof attempt === "number" ? attempt : undefined,
+    uid: (req as any).user?.uid,
+  });
+  res.status(204).end();
+});
+
 // YouTube OAuth2 Callback to retrieve Refresh Token
 app.get("/oauth2callback", async (req: Request, res: Response) => {
   const code = req.query.code as string;

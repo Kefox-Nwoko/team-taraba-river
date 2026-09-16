@@ -34,6 +34,24 @@ async function getAuthHeaders(): Promise<HeadersInit> {
 }
 
 /**
+ * This upload's real traffic goes straight from the browser to Google -
+ * this server never sees it, so a failure here is otherwise invisible
+ * server-side. Best-effort beacon only; never let a reporting failure
+ * affect the upload itself.
+ */
+function reportDiagnostic(event: string, message: string, meta?: Record<string, number>): void {
+  try {
+    getAuthHeaders().then((headers) => {
+      fetch(apiUrl("/api/media/upload-diagnostic"), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ event, message, ...meta }),
+      }).catch(() => {});
+    });
+  } catch {}
+}
+
+/**
  * Asks the backend to open a YouTube resumable upload session and
  * returns the single-use session URL to stream bytes to directly.
  */
@@ -84,6 +102,7 @@ export async function uploadVideoDirectToYouTube(
   }
 
   const totalBytes = file.size;
+  reportDiagnostic("upload_started", file.name, { totalBytes });
   const cleanTitle = (file.name || `Team Taraba River Video ${new Date().toLocaleDateString()}`)
     .replace(/\.[^/.]+$/, "")
     .substring(0, 95);
@@ -131,6 +150,7 @@ export async function uploadVideoDirectToYouTube(
         startByte = 0;
         const sizeMB = (totalBytes / (1024 * 1024)).toFixed(1);
         logger.info(`[YT] Resumable session opened for "${file.name}" (${sizeMB} MB)`);
+        reportDiagnostic("session_opened", file.name, { fileMB: parseFloat(sizeMB), totalBytes, attempt });
       } else {
         // Already have a session from a prior attempt - confirm exactly
         // where it left off instead of assuming it's dead.
@@ -182,6 +202,8 @@ export async function uploadVideoDirectToYouTube(
         }
       }
 
+      reportDiagnostic("attempt_fail", lastError.message, { sentBytes: startByte, totalBytes, attempt });
+
       if (attempt < MAX_ATTEMPTS) {
         const backoffMs = Math.min(15000, 1000 * attempt);
         logger.warn(`[YT] Upload attempt ${attempt}/${MAX_ATTEMPTS} failed at byte ${startByte}/${totalBytes}: ${lastError.message}. Resuming in ${backoffMs}ms...`);
@@ -191,6 +213,7 @@ export async function uploadVideoDirectToYouTube(
     }
   }
 
+  reportDiagnostic("all_attempts_exhausted", lastError?.message || "unknown", { sentBytes: startByte, totalBytes, attempt: MAX_ATTEMPTS });
   throw lastError!;
 }
 
@@ -268,6 +291,7 @@ async function uploadInChunks(
     if (result.done && result.youtubeUrl) {
       if (onProgress) onProgress(100);
       logger.info(`[YT] ✅ Upload complete: ${result.youtubeUrl}`);
+      reportDiagnostic("upload_complete", result.youtubeUrl, { totalBytes });
       return result.youtubeUrl;
     }
 
@@ -309,6 +333,7 @@ async function putChunkWithRetry(
       if (lastErr.name === "AbortError" || signal?.aborted) {
         throw lastErr;
       }
+      reportDiagnostic("chunk_fail", lastErr.message, { sentBytes: start, totalBytes, attempt: i + 1 });
       if (i < CHUNK_RETRY_ATTEMPTS) {
         await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
       }
