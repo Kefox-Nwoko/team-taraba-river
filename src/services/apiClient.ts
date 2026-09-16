@@ -354,36 +354,16 @@ export async function fetchEvents(): Promise<GroupEvent[]> {
     }
   } catch {}
 
-  // Re-read local events right before saving to prevent overwriting newly created or updated events with stale remote responses
+  // Only add events the server/Firestore don't know about at all (e.g. a
+  // genuinely offline-created event not yet synced) - never merge fields
+  // into an event the server already returned data for. Unioning arrays
+  // (driveImageUrls, etc.) against a possibly-stale local copy meant a
+  // deleted photo could never actually disappear for anyone whose local
+  // cache still remembered it, since a union can only grow, never shrink.
   const currentLocal = AppStateManager.getEvents();
   for (const e of currentLocal) {
-    if (e && e.id) {
-      const sanitized = sanitizeEventRecord(e);
-      if (!eventMap.has(e.id)) {
-        eventMap.set(e.id, sanitized);
-      } else {
-        const remote = eventMap.get(e.id)!;
-        const combinedAttendees = Array.from(new Set([...(remote.attendeeIds || []), ...(sanitized.attendeeIds || [])]));
-        const combinedMaybe = Array.from(new Set([...(remote.maybeIds || []), ...(sanitized.maybeIds || [])]));
-        const combinedDeclined = Array.from(new Set([...(remote.declinedIds || []), ...(sanitized.declinedIds || [])]));
-        const combinedPhotos = Array.from(new Set([...(sanitized.driveImageUrls || []), ...(remote.driveImageUrls || [])])).filter(Boolean);
-        const combinedVideos = Array.from(new Set([
-          ...(sanitized.youtubeVideoUrls || (sanitized.youtubeVideoUrl ? [sanitized.youtubeVideoUrl] : [])),
-          ...(remote.youtubeVideoUrls || (remote.youtubeVideoUrl ? [remote.youtubeVideoUrl] : []))
-        ])).filter(Boolean);
-
-        eventMap.set(e.id, {
-          ...remote,
-          ...sanitized,
-          id: e.id,
-          driveImageUrls: combinedPhotos,
-          youtubeVideoUrls: combinedVideos,
-          youtubeVideoUrl: combinedVideos[0] || sanitized.youtubeVideoUrl || remote.youtubeVideoUrl || "",
-          attendeeIds: combinedAttendees,
-          maybeIds: combinedMaybe,
-          declinedIds: combinedDeclined,
-        });
-      }
+    if (e && e.id && !eventMap.has(e.id)) {
+      eventMap.set(e.id, sanitizeEventRecord(e));
     }
   }
 

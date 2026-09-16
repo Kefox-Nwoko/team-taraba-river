@@ -372,28 +372,19 @@ export default function App() {
 
     const unsubEvents = FirebaseSyncManager.subscribeEvents((updatedEvents) => {
       if (updatedEvents) {
+        // The live Firestore snapshot is authoritative - it always reflects
+        // the current server state, so it wins outright for any event it
+        // includes. Only fall back to a local-only entry for an event the
+        // snapshot doesn't know about at all (e.g. not yet synced while
+        // offline). Unioning driveImageUrls/youtubeVideoUrls against local
+        // cache here meant a deleted photo could never actually disappear
+        // for anyone whose cache still remembered it.
         const localE = AppStateManager.getEvents();
         const eMap = new Map<string, GroupEvent>();
         for (const ev of localE) { if (ev?.id) eMap.set(ev.id, ev); }
         for (const ev of updatedEvents) {
           if (!ev?.id) continue;
-          if (!eMap.has(ev.id)) {
-            eMap.set(ev.id, ev);
-          } else {
-            const local = eMap.get(ev.id)!;
-            const combinedPhotos = Array.from(new Set([...(local.driveImageUrls || []), ...(ev.driveImageUrls || [])])).filter(Boolean);
-            const combinedVideos = Array.from(new Set([
-              ...(local.youtubeVideoUrls || (local.youtubeVideoUrl ? [local.youtubeVideoUrl] : [])),
-              ...(ev.youtubeVideoUrls || (ev.youtubeVideoUrl ? [ev.youtubeVideoUrl] : []))
-            ])).filter(Boolean);
-            eMap.set(ev.id, {
-              ...ev,
-              ...local,
-              driveImageUrls: combinedPhotos,
-              youtubeVideoUrls: combinedVideos,
-              youtubeVideoUrl: combinedVideos[0] || local.youtubeVideoUrl || ev.youtubeVideoUrl || "",
-            });
-          }
+          eMap.set(ev.id, ev);
         }
         const cleanEvents = Array.from(eMap.values()).filter(
           (ev) =>
@@ -487,28 +478,16 @@ export default function App() {
       setMembers(cleanMembers);
       AppStateManager.saveMembers(cleanMembers);
 
+      // Fetched data wins outright for any event it includes - only a
+      // genuinely local-only event (not in the fetch at all) falls back to
+      // its cached copy. See the same fix in FirebaseSyncManager.subscribeEvents
+      // above for why unioning driveImageUrls/youtubeVideoUrls here was wrong.
       const localE = AppStateManager.getEvents();
       const eMap = new Map<string, GroupEvent>();
       for (const ev of localE) { if (ev?.id) eMap.set(ev.id, ev); }
       for (const ev of e) {
         if (!ev?.id) continue;
-        if (!eMap.has(ev.id)) {
-          eMap.set(ev.id, ev);
-        } else {
-          const local = eMap.get(ev.id)!;
-          const combinedPhotos = Array.from(new Set([...(local.driveImageUrls || []), ...(ev.driveImageUrls || [])])).filter(Boolean);
-          const combinedVideos = Array.from(new Set([
-            ...(local.youtubeVideoUrls || (local.youtubeVideoUrl ? [local.youtubeVideoUrl] : [])),
-            ...(ev.youtubeVideoUrls || (ev.youtubeVideoUrl ? [ev.youtubeVideoUrl] : []))
-          ])).filter(Boolean);
-          eMap.set(ev.id, {
-            ...ev,
-            ...local,
-            driveImageUrls: combinedPhotos,
-            youtubeVideoUrls: combinedVideos,
-            youtubeVideoUrl: combinedVideos[0] || local.youtubeVideoUrl || ev.youtubeVideoUrl || "",
-          });
-        }
+        eMap.set(ev.id, ev);
       }
       if (savedEvent && savedEvent.id) {
         eMap.set(savedEvent.id, savedEvent);
