@@ -14,6 +14,7 @@ import {
   MapPin,
   Clock,
   Cake,
+  X,
 } from "lucide-react";
 
 const MONTH_NAME_TO_NUMBER: Record<string, number> = {
@@ -47,6 +48,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
     setEvents(propEvents);
   }, [propEvents]);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [expandedPosterUrl, setExpandedPosterUrl] = useState<string | null>(null);
   const isAdmin = currentUser?.role === "admin";
 
   const formatDateLabel = (dateStr?: string) => {
@@ -249,6 +251,7 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
   };
 
   return (
+    <>
     <div className="space-y-8 font-sans font-normal">
       {/* MAIN CALENDAR VIEW CONTAINER */}
       <div className="space-y-3 sm:space-y-4 font-normal">
@@ -310,12 +313,22 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
                       {/* Poster (if set) + Compact Date Tag & Event Details */}
                       <div className={`flex flex-col ${event.posterUrl ? "sm:flex-row" : ""} gap-3 sm:gap-4 min-w-0 flex-1`}>
                         {event.posterUrl && (
-                          <img
-                            src={event.posterUrl}
-                            alt={`${event.title} announcement poster`}
-                            loading="lazy"
-                            className="w-full h-40 sm:w-40 sm:h-auto md:w-48 object-cover rounded-xl border border-slate-200/70 dark:border-slate-800 shrink-0"
-                          />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedPosterUrl(event.posterUrl!);
+                            }}
+                            title="View full poster"
+                            className="shrink-0 cursor-zoom-in"
+                          >
+                            <img
+                              src={event.posterUrl}
+                              alt={`${event.title} announcement poster`}
+                              loading="lazy"
+                              className="w-full h-40 sm:w-40 sm:h-auto md:w-48 object-cover rounded-xl border border-slate-200/70 dark:border-slate-800 hover:opacity-90 transition-opacity"
+                            />
+                          </button>
                         )}
                       <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1 pl-1">
                         {/* Compact Date Box */}
@@ -538,5 +551,29 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
         </div>
 
       </div>
+
+      {/* Full-size poster viewer */}
+      {expandedPosterUrl && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn"
+          onClick={() => setExpandedPosterUrl(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setExpandedPosterUrl(null)}
+            title="Close"
+            className="absolute top-4 right-4 sm:top-6 sm:right-6 w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer z-10"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <img
+            src={expandedPosterUrl}
+            alt="Event announcement poster"
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl"
+          />
+        </div>
+      )}
+    </>
     );
 };
