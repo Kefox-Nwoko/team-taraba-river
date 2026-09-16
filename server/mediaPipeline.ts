@@ -245,14 +245,26 @@ const DRIVE_SCOPES = ['https://www.googleapis.com/auth/drive'];
 let cachedDriveAuthClient: any = null;
 
 /**
- * Returns an authenticated Drive client credential: a local service-account key
- * file if GOOGLE_APPLICATION_CREDENTIALS is configured (dev convenience), or
- * Application Default Credentials otherwise — which Cloud Run provides
- * automatically for whatever service account the service runs as, with no key
- * file needed in production.
+ * Returns an authenticated Drive client credential. Prefers OAuth2 as the
+ * real tarabateam@gmail.com account (same refresh token used for YouTube
+ * uploads — the consent grant covers both youtube.upload and drive scopes)
+ * so uploads count against that account's actual storage quota. A bare
+ * service account cannot do this: Google gives service accounts zero
+ * personal Drive storage, so file creation fails with
+ * "storageQuotaExceeded" even when the target folder is shared with it,
+ * regardless of folder permissions. Falls back to a local service-account
+ * key file (dev convenience) or Application Default Credentials if the
+ * OAuth vars aren't configured, matching the old behavior for local dev.
  */
 export async function getDriveAuthClient(): Promise<any> {
   if (cachedDriveAuthClient) return cachedDriveAuthClient;
+
+  if (config.youtubeClientId && config.youtubeClientSecret && config.youtubeRefreshToken) {
+    const oauth2Client = new google.auth.OAuth2(config.youtubeClientId, config.youtubeClientSecret, config.youtubeRedirectUri);
+    oauth2Client.setCredentials({ refresh_token: config.youtubeRefreshToken });
+    cachedDriveAuthClient = oauth2Client;
+    return cachedDriveAuthClient;
+  }
 
   if (config.googleApplicationCredentials) {
     const serviceAccountPath = await getServiceAccountPath();
