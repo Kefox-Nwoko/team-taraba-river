@@ -289,16 +289,30 @@ function executeChunkStream(
 
     const xhr = new XMLHttpRequest();
     const INACTIVITY_TIMEOUT_MS = 90 * 1000; // 90 seconds of zero byte transfer
+    // Once every byte is actually on the wire, xhr.upload.onprogress never
+    // fires again - there's nothing left to report. From that point the
+    // client is purely waiting on YouTube's server-side ingest to respond,
+    // which can legitimately take longer than 90s. Treating that wait as a
+    // "stall" aborted healthy uploads right as they finished, forcing a
+    // brand-new session from scratch - exactly the 99%-then-restart loop.
+    // A generous final ceiling still guards against a truly dead connection.
+    const FINAL_RESPONSE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
     let inactivityTimer: any = null;
     let timedOut = false;
+    let allBytesSent = false;
 
     const resetHeartbeat = () => {
       clearTimeout(inactivityTimer);
+      const timeoutMs = allBytesSent ? FINAL_RESPONSE_TIMEOUT_MS : INACTIVITY_TIMEOUT_MS;
       inactivityTimer = setTimeout(() => {
         timedOut = true;
         xhr.abort();
-        reject(new Error(`YouTube upload stalled: No byte transfer detected for 90 seconds.`));
-      }, INACTIVITY_TIMEOUT_MS);
+        reject(new Error(
+          allBytesSent
+            ? `YouTube did not confirm the upload within ${FINAL_RESPONSE_TIMEOUT_MS / 1000}s of receiving all bytes.`
+            : `YouTube upload stalled: No byte transfer detected for 90 seconds.`
+        ));
+      }, timeoutMs);
     };
 
     const cleanup = () => {
@@ -326,12 +340,19 @@ function executeChunkStream(
 
     if (xhr.upload) {
       xhr.upload.onprogress = (evt) => {
+        if (evt.total > 0 && evt.loaded >= evt.total) {
+          allBytesSent = true;
+        }
         resetHeartbeat();
         if (onProgress && totalBytes > 0) {
           const loadedSoFar = startByte + (evt.loaded || 0);
           const pct = Math.min(99, Math.round((loadedSoFar / totalBytes) * 100));
           onProgress(pct);
         }
+      };
+      xhr.upload.onload = () => {
+        allBytesSent = true;
+        resetHeartbeat();
       };
     }
 
