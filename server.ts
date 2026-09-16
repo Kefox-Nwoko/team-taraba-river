@@ -782,6 +782,34 @@ app.post("/api/auth/verify", rateLimiter, async (req: Request, res: Response) =>
     const email = decodedToken.email || '';
     const role = (decodedToken.role === 'admin' || isAdminEmail(email)) ? 'admin' : 'member';
 
+    // Admin accounts are not community-roster members — never create or
+    // update a document for them in the members collection (the source for
+    // the Member Directory and CSV export). Their session is built purely
+    // from the verified token on every login, never persisted to Firestore.
+    if (role === 'admin') {
+      const adminDefaultName = email.toLowerCase().includes('xtraworx') ? 'Administrator (Xtraworx)' : 'Taraba River Administrator';
+      const member: Member = {
+        id: uid,
+        fullName: decodedToken.name || adminDefaultName,
+        email,
+        phoneNumber: decodedToken.phone_number || '',
+        dateOfBirth: '',
+        occupation: 'System Administrator',
+        skills: ['Portal Administration', 'Executive Leadership'],
+        photoUrl: decodedToken.picture || '',
+        photoStatus: 'approved' as PhotoApprovalStatus,
+        role: 'admin' as UserRole,
+        activityPoints: 0,
+        joinedAt: new Date().toISOString(),
+        lastActive: new Date().toISOString(),
+      };
+      if (!fallbackMembers.some(m => m.email?.toLowerCase().trim() === email.toLowerCase().trim())) {
+        fallbackMembers.push(member);
+      }
+      res.json({ success: true, member });
+      return;
+    }
+
     // Look up the member in Firestore
     let memberDoc = await db.collection(COLLECTIONS.members).doc(uid).get();
     let member: Member;
@@ -789,11 +817,11 @@ app.post("/api/auth/verify", rateLimiter, async (req: Request, res: Response) =>
     if (memberDoc.exists) {
       member = memberDoc.data() as Member;
       member.role = role as UserRole;
-      
+
       const todayStr = new Date().toISOString().split('T')[0];
       const lastActiveDateStr = member.lastActive ? member.lastActive.split('T')[0] : '';
       const isNewDayVisit = lastActiveDateStr !== todayStr;
-      
+
       member.lastActive = new Date().toISOString();
       const updates: Record<string, any> = {
         role,
@@ -802,51 +830,64 @@ app.post("/api/auth/verify", rateLimiter, async (req: Request, res: Response) =>
 
       if (isNewDayVisit) {
         await incrementGlobalVisits(member.fullName);
+        member.activityPoints = (member.activityPoints || 0) + 10;
+        updates.activityPoints = member.activityPoints;
 
-        if (role !== 'admin') {
-          member.activityPoints = (member.activityPoints || 0) + 10;
-          updates.activityPoints = member.activityPoints;
-
-          await addActivityLog({
-            id: `act_${Date.now()}`,
-            memberId: uid,
-            memberName: member.fullName,
-            action: 'Visited the application portal today (+10 points)',
-            timestamp: new Date().toISOString(),
-            pointsEarned: 10,
-          });
-        }
+        await addActivityLog({
+          id: `act_${Date.now()}`,
+          memberId: uid,
+          memberName: member.fullName,
+          action: 'Visited the application portal today (+10 points)',
+          timestamp: new Date().toISOString(),
+          pointsEarned: 10,
+        });
       }
 
       await db.collection(COLLECTIONS.members).doc(uid).update(updates);
-      if (role === 'admin' && !fallbackMembers.some(m => m.email?.toLowerCase().trim() === email.toLowerCase().trim())) {
-        fallbackMembers.push(member);
-      }
     } else {
-      const adminDefaultName = email.toLowerCase().includes('xtraworx') ? 'Administrator (Xtraworx)' : 'Taraba River Administrator';
-      member = {
-        id: uid,
-        fullName: decodedToken.name || (role === 'admin' ? adminDefaultName : (email.split('@')[0] || 'Community Member')),
-        email: email,
-        phoneNumber: decodedToken.phone_number || '',
-        dateOfBirth: '',
-        occupation: role === 'admin' ? 'System Administrator' : 'Community Member',
-        skills: role === 'admin' ? ['Portal Administration', 'Executive Leadership'] : ['Community Support'],
-        photoUrl: decodedToken.picture || '',
-        photoStatus: 'approved' as PhotoApprovalStatus,
-        role: role as UserRole,
-        activityPoints: role === 'admin' ? 0 : 10,
-        joinedAt: new Date().toISOString(),
-        lastActive: new Date().toISOString(),
-      };
-      await db.collection(COLLECTIONS.members).doc(uid).set(member);
-      await incrementGlobalVisits(member.fullName);
-
-      if (role === 'admin' && !fallbackMembers.some(m => m.email?.toLowerCase().trim() === email.toLowerCase().trim())) {
-        fallbackMembers.push(member);
+      // No doc at this Firebase UID — but this person may already have a
+      // profile under a legacy ID (e.g. a mem_csv_* seed import) keyed by
+      // email instead. Migrate that record onto the UID-keyed doc rather
+      // than creating a second, duplicate profile for the same person.
+      let existingByEmail: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      if (email) {
+        const dupQuery = await db.collection(COLLECTIONS.members).where('email', '==', email).limit(1).get();
+        if (!dupQuery.empty) existingByEmail = dupQuery.docs[0];
       }
 
-      if (role !== 'admin') {
+      if (existingByEmail) {
+        const existingData = existingByEmail.data() as Member;
+        member = {
+          ...existingData,
+          id: uid,
+          role: 'member' as UserRole,
+          photoUrl: existingData.photoUrl || decodedToken.picture || '',
+          lastActive: new Date().toISOString(),
+        };
+        await db.collection(COLLECTIONS.members).doc(uid).set(member);
+        if (existingByEmail.id !== uid) {
+          await db.collection(COLLECTIONS.members).doc(existingByEmail.id).delete();
+        }
+        await incrementGlobalVisits(member.fullName);
+      } else {
+        member = {
+          id: uid,
+          fullName: decodedToken.name || (email.split('@')[0] || 'Community Member'),
+          email: email,
+          phoneNumber: decodedToken.phone_number || '',
+          dateOfBirth: '',
+          occupation: 'Community Member',
+          skills: ['Community Support'],
+          photoUrl: decodedToken.picture || '',
+          photoStatus: 'approved' as PhotoApprovalStatus,
+          role: 'member' as UserRole,
+          activityPoints: 10,
+          joinedAt: new Date().toISOString(),
+          lastActive: new Date().toISOString(),
+        };
+        await db.collection(COLLECTIONS.members).doc(uid).set(member);
+        await incrementGlobalVisits(member.fullName);
+
         await addActivityLog({
           id: `act_${Date.now()}`,
           memberId: uid,
