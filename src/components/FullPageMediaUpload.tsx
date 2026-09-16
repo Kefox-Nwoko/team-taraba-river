@@ -151,7 +151,6 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   // Duplicate Resolution State
   const [duplicateQueue, setDuplicateQueue] = useState<DuplicateCandidate[]>([]);
   const [currentDupIdx, setCurrentDupIdx] = useState(0);
-  const [dupCustomName, setDupCustomName] = useState("");
   const [applyToAll, setApplyToAll] = useState(false);
   const [pendingApprovalsQueue, setPendingApprovalsQueue] = useState<PhotoApprovalRequest[]>([]);
 
@@ -557,6 +556,9 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       type: "photo" | "video";
       isPending?: boolean;
       pendingDetails?: { memberName?: string; uploadedAt?: string; folderName?: string; type?: string };
+      // Not-yet-uploaded batch items only have a local browser preview URL,
+      // never a real cloud asset - never usable as a "Replace" target.
+      isBatchPreview?: boolean;
     }> = [];
 
     // 1. Extract names from target folder (published assets)
@@ -608,12 +610,14 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       });
     });
 
-    // 3. Add current batch items to existing list
+    // 3. Add current batch items to existing list (detection only - their
+    // "url" is a local preview blob, never a real asset to replace)
     currentItems.forEach((ci) => {
       existingMedia.push({
         name: ci.file.name.replace(/\.[^/.]+$/, "").toLowerCase(),
         url: ci.previewUrl,
         type: ci.type,
+        isBatchPreview: true,
       });
     });
 
@@ -653,7 +657,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           previewUrl: item.previewUrl,
           sizeMB: item.sizeMB,
           matchedName: matchedEx ? matchedEx.name : originalFullName,
-          matchedUrl: matchedEx ? matchedEx.url : undefined,
+          matchedUrl: matchedEx && !matchedEx.isBatchPreview ? matchedEx.url : undefined,
           suggestedName: candidateName,
           isPendingApproval: matchedEx?.isPending || false,
           pendingRequestDetails: matchedEx?.pendingDetails,
@@ -712,32 +716,14 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       setMediaItems((prev) => [...prev, ...nonDuplicates, ...foundDuplicates.map((d) => newItems.find((it) => it.id === d.itemId)!)]);
       setDuplicateQueue(foundDuplicates);
       setCurrentDupIdx(0);
-      setDupCustomName(foundDuplicates[0].suggestedName);
       setApplyToAll(false);
     } else {
       setMediaItems((prev) => [...prev, ...newItems]);
     }
   };
 
-  // Duplicate Resolution Actions
-  const handleResolveDuplicateAsCopy = (customName?: string) => {
-    if (duplicateQueue.length === 0) return;
-    const currentDup = duplicateQueue[currentDupIdx];
-    const targetName = (customName || dupCustomName || currentDup.suggestedName).trim();
-
-    const renamedFile = new File([currentDup.file], targetName, {
-      type: currentDup.file.type,
-      lastModified: currentDup.file.lastModified || Date.now(),
-    });
-
-    setMediaItems((prev) =>
-      prev.map((it) => (it.id === currentDup.itemId ? { ...it, file: renamedFile } : it))
-    );
-
-    notify(`📋 Saved "${targetName}" as a new copy`, "info");
-    advanceDuplicateQueue("copy");
-  };
-
+  // Duplicate Resolution Actions - only Replace or Cancel are ever offered;
+  // saving a clashing file as a separate copy is deliberately not an option.
   const handleResolveDuplicateReplace = () => {
     if (duplicateQueue.length === 0) return;
     const currentDup = duplicateQueue[currentDupIdx];
@@ -763,24 +749,15 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     advanceDuplicateQueue("skip");
   };
 
-  const advanceDuplicateQueue = (lastAction: "copy" | "replace" | "skip") => {
+  const advanceDuplicateQueue = (lastAction: "replace" | "skip") => {
     if (applyToAll) {
       const remaining = duplicateQueue.slice(currentDupIdx + 1);
       remaining.forEach((dup) => {
-        if (lastAction === "copy") {
-          const autoName = dup.suggestedName;
-          const renamed = new File([dup.file], autoName, {
-            type: dup.file.type,
-            lastModified: dup.file.lastModified || Date.now(),
-          });
-          setMediaItems((prev) =>
-            prev.map((it) => (it.id === dup.itemId ? { ...it, file: renamed } : it))
-          );
-        } else if (lastAction === "replace") {
+        if (lastAction === "replace") {
           setMediaItems((prev) =>
             prev.map((it) => (it.id === dup.itemId ? { ...it, replaceTargetUrl: dup.matchedUrl } : it))
           );
-        } else if (lastAction === "skip") {
+        } else {
           handleRemoveItem(dup.itemId);
         }
       });
@@ -789,9 +766,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     }
 
     if (currentDupIdx + 1 < duplicateQueue.length) {
-      const nextIdx = currentDupIdx + 1;
-      setCurrentDupIdx(nextIdx);
-      setDupCustomName(duplicateQueue[nextIdx].suggestedName);
+      setCurrentDupIdx(currentDupIdx + 1);
     } else {
       setDuplicateQueue([]);
     }
@@ -1726,34 +1701,8 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                 </div>
               </div>
 
-              {/* Choice 1: Save as New Copy (Rename) */}
-              <div className="p-4 rounded-2xl border border-teal-200 dark:border-teal-900 bg-teal-50/40 dark:bg-teal-950/20 space-y-2.5">
-                <div className="flex items-center space-x-2 text-teal-700 dark:text-teal-300 font-semibold text-xs">
-                  <Copy className="w-4 h-4" />
-                  <span>Option 1: Save as New Copy (Upload Additional Copy)</span>
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                  Allows saving the exact same media file multiple times under a distinct name.
-                </p>
-                <div className="flex items-center space-x-2 pt-1">
-                  <input
-                    type="text"
-                    value={dupCustomName}
-                    onChange={(e) => setDupCustomName(e.target.value)}
-                    placeholder="New copy name"
-                    className="flex-1 px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-teal-300 dark:border-teal-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleResolveDuplicateAsCopy()}
-                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer shadow-xs"
-                  >
-                    Save as Copy
-                  </button>
-                </div>
-              </div>
-
-              {/* Choice 2 & 3: Replace or Skip */}
+              {/* Only two resolutions are ever offered for a clashing file -
+                  saving it as a separate copy is deliberately not an option. */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   type="button"
@@ -1762,7 +1711,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                 >
                   <div className="flex items-center space-x-1.5 text-amber-700 dark:text-amber-300 font-semibold text-xs">
                     <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Option 2: Replace Existing</span>
+                    <span>Replace Existing</span>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
                     Overwrites and cleans old cloud storage
@@ -1776,10 +1725,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                 >
                   <div className="flex items-center space-x-1.5 text-slate-700 dark:text-slate-300 font-semibold text-xs">
                     <X className="w-3.5 h-3.5" />
-                    <span>Option 3: Skip File</span>
+                    <span>Cancel Upload</span>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Do not upload this duplicate item
+                    Do not upload this clashing file
                   </p>
                 </button>
               </div>

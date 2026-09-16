@@ -82,9 +82,24 @@ export async function uploadVideoDirectToYouTube(
     throw err;
   }
 
-  // 97%+ High-Assurance transmission: Multi-attempt exponential backoff with chunk resume
+  const totalBytes = file.size;
+  const cleanTitle = (file.name || `Team Taraba River Video ${new Date().toLocaleDateString()}`)
+    .replace(/\.[^/.]+$/, "")
+    .substring(0, 95);
+
+  // A single session + byte offset, carried across EVERY retry attempt at
+  // every level. Previously there were two retry layers and only the inner
+  // one actually resumed the existing session - the outer layer discarded
+  // it and opened a brand-new session from byte 0 whenever the inner
+  // recovery exhausted. On a weak connection that exhausted routinely,
+  // producing exactly the "reaches high % then restarts from the
+  // beginning" loop. Now every attempt, at every level, tries to resume
+  // the current session first and only opens a fresh one if that session
+  // is confirmed dead.
+  let uploadUrl: string | null = null;
+  let startByte = 0;
   let lastError: Error | null = null;
-  const MAX_ATTEMPTS = 3;
+  const MAX_ATTEMPTS = 8;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     if (signal?.aborted) {
@@ -94,7 +109,27 @@ export async function uploadVideoDirectToYouTube(
     }
 
     try {
-      const url = await doUpload(file, folderName, onProgress, signal);
+      if (!uploadUrl) {
+        uploadUrl = await initYouTubeUploadSession(cleanTitle, file.type || "video/mp4", file.size, folderName);
+        startByte = 0;
+        const sizeMB = (totalBytes / (1024 * 1024)).toFixed(1);
+        logger.info(`[YT] Resumable session opened for "${file.name}" (${sizeMB} MB)`);
+      } else {
+        // Already have a session from a prior attempt - confirm exactly
+        // where it left off instead of assuming it's dead.
+        const resumeStatus = await queryResumeOffset(uploadUrl, totalBytes).catch(() => null);
+        if (resumeStatus?.isComplete && resumeStatus.youtubeUrl) {
+          if (onProgress) onProgress(100);
+          return resumeStatus.youtubeUrl;
+        }
+        if (resumeStatus && resumeStatus.nextByte >= startByte) {
+          startByte = resumeStatus.nextByte;
+        }
+        // If the query itself failed, keep the existing startByte and let
+        // executeChunkStream's own resume header (Content-Range) settle it.
+      }
+
+      const url = await executeChunkStream(file, uploadUrl, startByte, totalBytes, onProgress, signal);
       return url;
     } catch (err: any) {
       lastError = err instanceof Error ? err : new Error(String(err));
@@ -110,127 +145,32 @@ export async function uploadVideoDirectToYouTube(
         throw lastError;
       }
 
-      const isRetryable =
-        msg.includes("network") ||
-        msg.includes("timeout") ||
-        msg.includes("500") ||
-        msg.includes("502") ||
-        msg.includes("503") ||
-        msg.includes("504") ||
-        msg.includes("econnreset");
+      // Try to resume the SAME session before giving up on it - only open a
+      // fresh one (losing all progress) if that genuinely fails.
+      if (uploadUrl) {
+        const resumeStatus = await queryResumeOffset(uploadUrl, totalBytes).catch(() => null);
+        if (resumeStatus?.isComplete && resumeStatus.youtubeUrl) {
+          if (onProgress) onProgress(100);
+          return resumeStatus.youtubeUrl;
+        }
+        if (resumeStatus && resumeStatus.nextByte >= startByte) {
+          startByte = resumeStatus.nextByte;
+        } else if (!resumeStatus) {
+          logger.warn(`[YT] Could not confirm resume offset for the current session; will open a fresh one.`);
+          uploadUrl = null;
+        }
+      }
 
-      if (attempt < MAX_ATTEMPTS && isRetryable && !signal?.aborted) {
-        const backoffMs = 1500 * Math.pow(2, attempt - 1);
-        logger.warn(`[YT] Upload attempt ${attempt} failed (retryable): ${lastError.message}. Retrying in ${backoffMs}ms (97% assurance pipeline)...`);
+      if (attempt < MAX_ATTEMPTS) {
+        const backoffMs = Math.min(15000, 1000 * attempt);
+        logger.warn(`[YT] Upload attempt ${attempt}/${MAX_ATTEMPTS} failed at byte ${startByte}/${totalBytes}: ${lastError.message}. Resuming in ${backoffMs}ms...`);
         await new Promise((r) => setTimeout(r, backoffMs));
         continue;
       }
-      break;
     }
   }
 
   throw lastError!;
-}
-
-async function doUpload(
-  file: File,
-  folderName: string,
-  onProgress?: (percent: number) => void,
-  signal?: AbortSignal,
-): Promise<string> {
-  if (signal?.aborted) {
-    const err = new Error("Upload aborted by user.");
-    err.name = "AbortError";
-    throw err;
-  }
-
-  // --- Step 1: Ask the backend to initiate the YouTube resumable upload session ---
-  const cleanTitle = (file.name || `Team Taraba River Video ${new Date().toLocaleDateString()}`)
-    .replace(/\.[^/.]+$/, "")
-    .substring(0, 95);
-
-  let uploadUrl: string;
-  try {
-    uploadUrl = await initYouTubeUploadSession(cleanTitle, file.type || "video/mp4", file.size, folderName);
-  } catch (initErr: any) {
-    if (signal?.aborted || initErr?.name === "AbortError") {
-      const err = new Error("Upload aborted by user.");
-      err.name = "AbortError";
-      throw err;
-    }
-    throw initErr;
-  }
-
-  if (signal?.aborted) {
-    const err = new Error("Upload aborted by user.");
-    err.name = "AbortError";
-    throw err;
-  }
-
-  const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-  logger.info(`[YT] 97%+ Assurance Resumable Session Active for "${file.name}" (${sizeMB} MB)`);
-
-  // --- Step 2: Stream with Resumable Recovery and Activity Heartbeat ---
-  return await streamBytesWithResumableRecovery(file, uploadUrl, onProgress, signal);
-}
-
-/**
- * Streams binary bytes to Google Resumable Upload session URL with:
- * - Adaptive activity-based timeout (resets on every byte progress)
- * - Interruption status query (HTTP 308 resume recovery)
- */
-async function streamBytesWithResumableRecovery(
-  file: File,
-  uploadUrl: string,
-  onProgress?: (percent: number) => void,
-  signal?: AbortSignal
-): Promise<string> {
-  const totalBytes = file.size;
-  let startByte = 0;
-
-  for (let streamAttempt = 1; streamAttempt <= 3; streamAttempt++) {
-    if (signal?.aborted) {
-      const err = new Error("Upload aborted by user.");
-      err.name = "AbortError";
-      throw err;
-    }
-
-    try {
-      const result = await executeChunkStream(file, uploadUrl, startByte, totalBytes, onProgress, signal);
-      return result;
-    } catch (streamErr: any) {
-      if (streamErr?.name === "AbortError" || signal?.aborted) {
-        throw streamErr;
-      }
-
-      logger.warn(`[YT] Stream interrupted at byte ${startByte}/${totalBytes} (attempt ${streamAttempt}/3): ${streamErr?.message}. Querying resume status...`);
-
-      // Query Google's Range header to resume from the exact byte YouTube has received
-      try {
-        const resumeStatus = await queryResumeOffset(uploadUrl, totalBytes);
-        if (resumeStatus.isComplete && resumeStatus.youtubeUrl) {
-          logger.info(`[YT] Query confirmed YouTube already received all bytes: ${resumeStatus.youtubeUrl}`);
-          if (onProgress) onProgress(100);
-          return resumeStatus.youtubeUrl;
-        }
-
-        if (resumeStatus.nextByte > startByte) {
-          startByte = resumeStatus.nextByte;
-          logger.info(`[YT] Resuming stream from byte ${startByte}/${totalBytes} (${((startByte / totalBytes) * 100).toFixed(1)}%)`);
-          continue;
-        }
-      } catch (queryErr) {
-        logger.warn("[YT] Could not query resume offset, will retry slice from current startByte:", queryErr);
-      }
-
-      if (streamAttempt === 3) {
-        throw streamErr;
-      }
-      await new Promise((r) => setTimeout(r, 1000 * streamAttempt));
-    }
-  }
-
-  throw new Error("YouTube video streaming exceeded maximum chunk retries.");
 }
 
 /**
