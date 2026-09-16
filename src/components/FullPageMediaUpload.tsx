@@ -1380,6 +1380,17 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
                 </div>
               </div>
 
+              {/* Video size advisory */}
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40"
+              >
+                <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                  <strong>A quick tip for videos:</strong> raw clips straight off a phone camera can be huge and slow (or fail) to upload. If you've already shared the video on WhatsApp, re-downloading that copy from the chat is usually much smaller and uploads faster and more reliably — no need to worry about losing quality, WhatsApp's compression still looks great here.
+                </p>
+              </div>
+
               {mediaItems.length > 0 && (
                 <div className="space-y-2.5 pt-2">
                   <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
