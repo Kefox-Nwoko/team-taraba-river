@@ -105,6 +105,49 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Keeps the screen awake for the duration of an upload. Mobile browsers
+  // suspend timers and can drop in-flight network connections once the
+  // screen locks, which forces the upload's own retry logic to restart the
+  // current file from scratch (progress visibly resets to 0% and climbs
+  // again) - repeatedly, for as long as the screen keeps sleeping mid-transfer.
+  const wakeLockRef = useRef<any>(null);
+
+  const acquireWakeLock = async () => {
+    try {
+      if ("wakeLock" in navigator) {
+        wakeLockRef.current = await (navigator as any).wakeLock.request("screen");
+      }
+    } catch (err) {
+      // Not fatal - upload continues without the lock (e.g. unsupported
+      // browser, or the lock was refused because the tab isn't visible).
+      logger.warn("Screen wake lock request failed:", err);
+    }
+  };
+
+  const releaseWakeLock = () => {
+    try {
+      wakeLockRef.current?.release();
+    } catch {}
+    wakeLockRef.current = null;
+  };
+
+  // The wake lock is auto-released by the browser whenever the tab is
+  // backgrounded, and never re-acquires itself - re-request it the moment
+  // the tab becomes visible again while an upload is still in progress.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && isUploading && !wakeLockRef.current) {
+        acquireWakeLock();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [isUploading]);
+
+  useEffect(() => {
+    return () => releaseWakeLock();
+  }, []);
+
   // Duplicate Resolution State
   const [duplicateQueue, setDuplicateQueue] = useState<DuplicateCandidate[]>([]);
   const [currentDupIdx, setCurrentDupIdx] = useState(0);
@@ -864,6 +907,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     abortControllerRef.current = controller;
 
     setIsUploading(true);
+    acquireWakeLock();
     setIsCancelling(false);
     setUploadProgress(5);
     setActiveFileProgress(0);
@@ -1024,6 +1068,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     if (wasAborted && totalSucceeded === 0) {
       setUploadProgress(0);
       setIsUploading(false);
+      releaseWakeLock();
       setIsCancelling(false);
       abortControllerRef.current = null;
       notify("🛑 Upload cancelled. No files were uploaded.", "info");
@@ -1126,6 +1171,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
         setUploadProgress(100);
         setIsUploading(false);
+        releaseWakeLock();
         setIsCancelling(false);
         abortControllerRef.current = null;
 
@@ -1176,6 +1222,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         setErrorMessage(`Uploads completed but event save failed: ${msg}`);
         setUploadProgress(0);
         setIsUploading(false);
+        releaseWakeLock();
         setIsCancelling(false);
         abortControllerRef.current = null;
       }
@@ -1184,6 +1231,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       setErrorMessage(`❌ All ${mediaItems.length} upload${mediaItems.length !== 1 ? "s" : ""} failed. ${allReasons}`);
       setUploadProgress(0);
       setIsUploading(false);
+      releaseWakeLock();
       setIsCancelling(false);
       abortControllerRef.current = null;
     }
