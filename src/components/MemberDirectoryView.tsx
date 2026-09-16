@@ -226,7 +226,6 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
     const headers = [
       "Member ID",
       "Title",
-      "Full Name",
       "First Name",
       "Surname",
       "Birthday",
@@ -261,7 +260,6 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
     const rows = members.map((m) => [
       escapeCsv(m.id),
       escapeCsv(m.title || ""),
-      escapeCsv(m.fullName || ""),
       escapeCsv(m.firstName || ""),
       escapeCsv(m.surname || ""),
       escapeCsv(m.dateOfBirth || ""),

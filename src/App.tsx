@@ -714,7 +714,7 @@ export default function App() {
       </Suspense>
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-16">
+      <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-24 sm:pt-32 pb-16">
 
         {/* Registration Modal Overlay - Enabled for all users and admins */}
         {registerModalOpen && (

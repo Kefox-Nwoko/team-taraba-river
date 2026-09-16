@@ -411,7 +411,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [syncDirection, setSyncDirection] = useState<"reverse" | "forward">("forward");
 
   // Developer access restriction guard
-  const isKefoxDeveloper = currentUser?.email?.toLowerCase().trim() === 'kefox.nwoko@gmail.com';
+  const isXtraworxDeveloper = currentUser?.email?.toLowerCase().trim() === 'xtraworxng@gmail.com';
 
   // Recycle Bin State (Windows PC Model)
   const [recycleBin, setRecycleBin] = useState<DeletedMemberEntry[]>(() => AppStateManager.getRecycleBin());
@@ -524,10 +524,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   };
 
   useEffect(() => {
-    if (activeTab === "developer" && !isKefoxDeveloper) {
+    if (activeTab === "developer" && !isXtraworxDeveloper) {
       setActiveTab("directory");
     }
-  }, [activeTab, isKefoxDeveloper]);
+  }, [activeTab, isXtraworxDeveloper]);
 
   const handleOpenCreateEvent = () => {
     setEditingEvent(null);
@@ -980,26 +980,26 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   return (
     <div className="space-y-6 font-sans font-normal">
-      {/* Header Bar - Mobile-First Flexbox Layout */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center space-x-3.5">
-          <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 rounded-2xl shrink-0">
-            <ShieldCheck className="w-7 h-7 sm:w-8 sm:h-8" />
+      {/* Header Bar - buttons stay on the same row as the title at every width to save vertical space on mobile */}
+      <div className="flex flex-row items-center justify-between gap-3 pb-2.5 sm:pb-4 border-b border-slate-200 dark:border-slate-800">
+        <div className="flex items-center space-x-2.5 sm:space-x-3.5 min-w-0">
+          <div className="p-2 sm:p-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 rounded-2xl shrink-0">
+            <ShieldCheck className="w-6 h-6 sm:w-8 sm:h-8" />
           </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl text-slate-900 dark:text-white tracking-tight font-semibold">
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-2xl text-slate-900 dark:text-white tracking-tight font-semibold truncate">
               Admin Portal
             </h1>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            <p className="hidden sm:block text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
               System Administration & Cloud Media Control
             </p>
           </div>
         </div>
-        <div className="flex items-center space-x-3 shrink-0 self-end sm:self-auto">
+        <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
           {onReturn && (
             <ReturnButton onClick={onReturn} />
           )}
-          <button onClick={handleManualRefresh} className="p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center justify-center cursor-pointer min-h-[44px] min-w-[44px]" title="Refresh Data" >
+          <button onClick={handleManualRefresh} className="p-2.5 sm:p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center justify-center cursor-pointer min-h-[44px] min-w-[44px]" title="Refresh Data" >
             <RefreshCw className={`w-5 h-5 ${isRefreshing ? "animate-spin" : ""}`} />
           </button>
         </div>
@@ -1049,7 +1049,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               )}
             </button>
 
-            {currentUser?.email?.toLowerCase().trim() === 'kefox.nwoko@gmail.com' && (
+            {currentUser?.email?.toLowerCase().trim() === 'xtraworxng@gmail.com' && (
               <button onClick={() => setActiveTab("developer")}
                 className={`px-3 py-2 sm:px-3.5 sm:py-2 rounded-2xl text-xs sm:text-sm transition-all flex items-center justify-center space-x-2 font-medium cursor-pointer shrink-0 min-h-[40px] ${
                   activeTab === "developer"
@@ -1357,8 +1357,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
       )}
 
-      {/* TAB 4: DEVELOPER (Highly Restricted - kefox.nwoko@gmail.com only) */}
-      {activeTab === "developer" && isKefoxDeveloper && (
+      {/* TAB 4: DEVELOPER (Highly Restricted - xtraworxng@gmail.com only) */}
+      {activeTab === "developer" && isXtraworxDeveloper && (
         <div className="py-2 sm:py-4 space-y-8 font-normal animate-fadeIn">
 
           {/* ── CARD 1: MEMBER ENGAGEMENT & PLATFORM TRAFFIC CONSOLE ── */}
