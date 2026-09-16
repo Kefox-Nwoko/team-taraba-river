@@ -546,7 +546,6 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
    */
   const detectDuplicates = (
     newCandidates: MediaItem[],
-    currentItems: MediaItem[],
     targetEvt?: GroupEvent
   ): DuplicateCandidate[] => {
     const duplicates: DuplicateCandidate[] = [];
@@ -556,9 +555,6 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       type: "photo" | "video";
       isPending?: boolean;
       pendingDetails?: { memberName?: string; uploadedAt?: string; folderName?: string; type?: string };
-      // Not-yet-uploaded batch items only have a local browser preview URL,
-      // never a real cloud asset - never usable as a "Replace" target.
-      isBatchPreview?: boolean;
     }> = [];
 
     // 1. Extract names from target folder (published assets)
@@ -610,57 +606,32 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       });
     });
 
-    // 3. Add current batch items to existing list (detection only - their
-    // "url" is a local preview blob, never a real asset to replace)
-    currentItems.forEach((ci) => {
-      existingMedia.push({
-        name: ci.file.name.replace(/\.[^/.]+$/, "").toLowerCase(),
-        url: ci.previewUrl,
-        type: ci.type,
-        isBatchPreview: true,
-      });
-    });
-
-    const seenInBatch = new Set<string>();
-
+    // Duplicate detection only ever references already-uploaded assets
+    // (published media above, pending-approval queue above) - files that
+    // are merely selected in this same batch but not yet uploaded are never
+    // matched against each other or against themselves here.
     newCandidates.forEach((item) => {
       const originalFullName = item.file.name;
       const baseName = originalFullName.replace(/\.[^/.]+$/, "");
-      const ext = originalFullName.includes(".") ? originalFullName.split(".").pop() : (item.type === "video" ? "mp4" : "jpg");
       const lowerBase = baseName.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-      // Match against existing
       const matchedEx = existingMedia.find((ex) => {
         const cleanEx = ex.name.replace(/[^a-z0-9]/g, "");
         return cleanEx.length > 2 && lowerBase.length > 2 && (cleanEx.includes(lowerBase) || lowerBase.includes(cleanEx));
       });
 
-      const isBatchDuplicate = seenInBatch.has(lowerBase);
-      seenInBatch.add(lowerBase);
-
-      if (matchedEx || isBatchDuplicate) {
-        let copyNum = 1;
-        let candidateName = `${baseName} (Copy ${copyNum}).${ext}`;
-        const allNames = [
-          ...currentItems.map((c) => c.file.name.toLowerCase()),
-          ...newCandidates.map((c) => c.file.name.toLowerCase()),
-        ];
-        while (allNames.includes(candidateName.toLowerCase())) {
-          copyNum++;
-          candidateName = `${baseName} (Copy ${copyNum}).${ext}`;
-        }
-
+      if (matchedEx) {
         duplicates.push({
           itemId: item.id,
           file: item.file,
           type: item.type,
           previewUrl: item.previewUrl,
           sizeMB: item.sizeMB,
-          matchedName: matchedEx ? matchedEx.name : originalFullName,
-          matchedUrl: matchedEx && !matchedEx.isBatchPreview ? matchedEx.url : undefined,
-          suggestedName: candidateName,
-          isPendingApproval: matchedEx?.isPending || false,
-          pendingRequestDetails: matchedEx?.pendingDetails,
+          matchedName: matchedEx.name,
+          matchedUrl: matchedEx.url,
+          suggestedName: originalFullName,
+          isPendingApproval: matchedEx.isPending || false,
+          pendingRequestDetails: matchedEx.pendingDetails,
         });
       }
     });
@@ -707,7 +678,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     }
 
     const targetEvt = folderMode === "existing" ? events.find((e) => e.id === selectedFolderId) : undefined;
-    const foundDuplicates = detectDuplicates(newItems, mediaItems, targetEvt);
+    const foundDuplicates = detectDuplicates(newItems, targetEvt);
 
     if (foundDuplicates.length > 0) {
       const duplicateIds = new Set(foundDuplicates.map((d) => d.itemId));
@@ -1041,6 +1012,13 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     const totalSucceeded = photoFinalUrls.length + videoFinalUrls.length;
 
     if (wasAborted && totalSucceeded === 0) {
+      // Clear the cancelled/hanging selection so the next attempt is always
+      // a fresh one, not a retry mixed with stale in-flight state.
+      mediaItems.forEach((it) => {
+        try { URL.revokeObjectURL(it.previewUrl); } catch {}
+      });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setMediaItems([]);
       setUploadProgress(0);
       setIsUploading(false);
       releaseWakeLock();
@@ -1204,6 +1182,13 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     } else {
       const allReasons = failedFiles.map((f) => `"${f.name}": ${f.reason}`).join(" | ");
       setErrorMessage(`❌ All ${mediaItems.length} upload${mediaItems.length !== 1 ? "s" : ""} failed. ${allReasons}`);
+      // Clear the failed/hanging selection so the next attempt is always a
+      // fresh one - nothing lingers to be misread as a duplicate later.
+      mediaItems.forEach((it) => {
+        try { URL.revokeObjectURL(it.previewUrl); } catch {}
+      });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setMediaItems([]);
       setUploadProgress(0);
       setIsUploading(false);
       releaseWakeLock();
