@@ -574,7 +574,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
 
           {/* ── Tab: Headlines ── */}
           {activeTab === "Headlines" && (
-            <div className="p-4 sm:p-5 space-y-2 h-[440px] sm:h-[480px] overflow-y-auto">
+            <div className="p-4 sm:p-5 space-y-1 sm:space-y-2 h-[440px] sm:h-[480px] overflow-y-auto">
               {newsLoading && (
                 <div className="flex flex-col items-center justify-center py-12 space-y-3 text-slate-400">
                   <Loader2 className="w-7 h-7 animate-spin text-amber-500" />
@@ -599,22 +599,22 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                     <button
                       key={idx}
                       onClick={() => handleOpenHeadline(h)}
-                      className={`w-full text-left group flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl transition-all border cursor-pointer ${
+                      className={`w-full text-left group flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-3 px-3.5 py-2 sm:py-2.5 rounded-xl transition-all border cursor-pointer ${
                         isUnread
                           ? "bg-amber-50/60 dark:bg-amber-950/20 border-amber-300/50 dark:border-amber-800/40 hover:bg-amber-100/70"
                           : "hover:bg-white dark:hover:bg-slate-800/60 border-transparent hover:border-slate-200 dark:hover:border-slate-700"
                       }`}
                     >
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="flex items-start sm:items-center gap-2.5 min-w-0 flex-1">
                         <div
-                          className={`w-2 h-2 rounded-full shrink-0 transition-transform ${
+                          className={`w-2 h-2 rounded-full shrink-0 transition-transform mt-1.5 sm:mt-0 ${
                             isUnread
                               ? "bg-amber-500 scale-125 shadow-xs shadow-amber-500"
                               : "bg-slate-300 dark:bg-slate-700"
                           }`}
                         />
                         <p
-                          className={`text-sm sm:text-base truncate transition-colors flex-1 min-w-0 ${
+                          className={`text-sm sm:text-base line-clamp-3 sm:line-clamp-none sm:truncate transition-colors flex-1 min-w-0 ${
                             isUnread
                               ? "font-bold text-slate-950 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400"
                               : "font-normal text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white"
@@ -631,7 +631,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                       </div>
                       {h.publishedAt && (
                         <span
-                          className={`text-xs sm:text-sm shrink-0 ml-2 ${
+                          className={`text-xs sm:text-sm shrink-0 pl-4 sm:pl-0 sm:ml-2 ${
                             isUnread
                               ? "font-semibold text-amber-700 dark:text-amber-400"
                               : "font-normal text-slate-400 dark:text-slate-500"
