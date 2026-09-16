@@ -60,15 +60,16 @@ async function initYouTubeUploadSession(
  * Uploads a video file directly from the browser to the Team Taraba River YouTube channel.
  *
  * Flow:
- *   1. Refresh access token (or use cached)
- *   2. POST to YouTube Resumable Upload endpoint → get upload session URL
- *   3. PUT binary file data to session URL with XHR progress tracking
- *   4. Parse response for video ID → return YouTube URL
+ *   1. POST to the backend to open a YouTube Resumable Upload session
+ *   2. PUT the file to that session URL in bounded chunks, each checkpointed
+ *      against Google's server-confirmed byte offset (not just local state)
+ *   3. Parse the final chunk's response for the video ID → return YouTube URL
  *
  * Includes:
- *   - 5-minute upload timeout
- *   - 1 automatic retry on network failure
- *   - Detailed error messages surfaced to the user
+ *   - Chunked transfer so a failure only costs the current chunk, never
+ *     the whole file
+ *   - Session-level resume (queries Google's actual offset before any retry)
+ *   - Bounded retry budget so one stuck video can't stall an entire batch
  */
 export async function uploadVideoDirectToYouTube(
   file: File,
@@ -91,20 +92,31 @@ export async function uploadVideoDirectToYouTube(
   // every level. Previously there were two retry layers and only the inner
   // one actually resumed the existing session - the outer layer discarded
   // it and opened a brand-new session from byte 0 whenever the inner
-  // recovery exhausted. On a weak connection that exhausted routinely,
-  // producing exactly the "reaches high % then restarts from the
-  // beginning" loop. Now every attempt, at every level, tries to resume
+  // recovery exhausted. Now every attempt, at every level, tries to resume
   // the current session first and only opens a fresh one if that session
   // is confirmed dead.
+  //
+  // On top of that, the whole file used to be sent as ONE PUT request.
+  // xhr.upload.onprogress reports bytes handed to the OS socket, not bytes
+  // Google has actually received - on a congested/throttled mobile link the
+  // OS can buffer most of a multi-MB body locally, so the bar visibly climbs
+  // toward 99% while the wire transfer is still trickling out. When that
+  // single giant request then failed (a carrier proxy reset, a slow/failed
+  // ack), there was nothing smaller to retry - the whole file was the only
+  // unit of work, so the whole file restarted from byte 0. That is the
+  // "99%, pause, reupload the same video" loop, and it can recur within
+  // seconds because it isn't a timeout firing - it's a fast failure dragging
+  // an all-or-nothing request down with it.
+  //
+  // Fixed by chunking: each PUT carries only CHUNK_SIZE bytes, and Google's
+  // 308 response after every chunk names the exact byte offset it actually
+  // has. A failure can only ever cost the current chunk, never the file.
   let uploadUrl: string | null = null;
   let startByte = 0;
   let lastError: Error | null = null;
   // Bounded low: a batch of several files uploads sequentially, so every
-  // attempt here blocks the rest of the batch behind it. 8 attempts at up
-  // to 5 minutes of final-response patience each (see FINAL_RESPONSE_TIMEOUT_MS)
-  // meant a single stuck video could stall an entire group upload for up to
-  // ~40 minutes before ever reaching the next file.
-  const MAX_ATTEMPTS = 3;
+  // attempt here blocks the rest of the batch behind it.
+  const MAX_ATTEMPTS = 4;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     if (signal?.aborted) {
@@ -131,10 +143,14 @@ export async function uploadVideoDirectToYouTube(
           startByte = resumeStatus.nextByte;
         }
         // If the query itself failed, keep the existing startByte and let
-        // executeChunkStream's own resume header (Content-Range) settle it.
+        // the next chunk's own Content-Range header settle it.
       }
 
-      const url = await executeChunkStream(file, uploadUrl, startByte, totalBytes, onProgress, signal);
+      const url = await uploadInChunks(file, uploadUrl, startByte, totalBytes, onProgress, signal, (confirmedByte) => {
+        // Fires after EVERY server-confirmed chunk, not just on failure -
+        // startByte is always at most one chunk stale, never the whole file.
+        startByte = confirmedByte;
+      });
       return url;
     } catch (err: any) {
       lastError = err instanceof Error ? err : new Error(String(err));
@@ -216,15 +232,102 @@ async function queryResumeOffset(
   return { isComplete: false, nextByte: 0 };
 }
 
-function executeChunkStream(
+// Must be a multiple of 256 KiB per Google's resumable-upload spec for every
+// non-final chunk. 4 MiB keeps each request's worst-case stall/ack window
+// short on a poor connection while not adding excessive round-trips for
+// larger videos.
+const CHUNK_SIZE = 4 * 1024 * 1024;
+
+/**
+ * Streams a file to a YouTube resumable session in bounded chunks, reporting
+ * the server-confirmed byte offset back via onChunkConfirmed after every
+ * chunk. A chunk that fails after its own short local retry only costs that
+ * chunk - the loop resumes at the last confirmed offset, never byte 0.
+ */
+async function uploadInChunks(
   file: File,
   uploadUrl: string,
   startByte: number,
   totalBytes: number,
+  onProgress: ((percent: number) => void) | undefined,
+  signal: AbortSignal | undefined,
+  onChunkConfirmed: (confirmedByte: number) => void
+): Promise<string> {
+  let current = startByte;
+
+  while (current < totalBytes) {
+    if (signal?.aborted) {
+      const err = new Error("YouTube video upload was aborted by user.");
+      err.name = "AbortError";
+      throw err;
+    }
+
+    const chunkEnd = Math.min(current + CHUNK_SIZE, totalBytes);
+    const result = await putChunkWithRetry(file, uploadUrl, current, chunkEnd, totalBytes, onProgress, signal);
+
+    if (result.done && result.youtubeUrl) {
+      if (onProgress) onProgress(100);
+      logger.info(`[YT] ✅ Upload complete: ${result.youtubeUrl}`);
+      return result.youtubeUrl;
+    }
+
+    current = result.nextByte;
+    onChunkConfirmed(current);
+  }
+
+  throw new Error("Upload loop exited without a completion response from YouTube.");
+}
+
+/**
+ * A single chunk PUT with a couple of quick local retries before bubbling
+ * the failure up to the session-level attempt loop - most transient blips
+ * (a reset connection, a slow ack) resolve within these without needing to
+ * re-query the session or burn an outer attempt.
+ */
+async function putChunkWithRetry(
+  file: File,
+  uploadUrl: string,
+  start: number,
+  end: number,
+  totalBytes: number,
+  onProgress: ((percent: number) => void) | undefined,
+  signal: AbortSignal | undefined
+): Promise<{ done: boolean; nextByte: number; youtubeUrl?: string }> {
+  const CHUNK_RETRY_ATTEMPTS = 2;
+  let lastErr: Error | null = null;
+
+  for (let i = 0; i <= CHUNK_RETRY_ATTEMPTS; i++) {
+    if (signal?.aborted) {
+      const err = new Error("YouTube video upload was aborted by user.");
+      err.name = "AbortError";
+      throw err;
+    }
+    try {
+      return await putChunk(file, uploadUrl, start, end, totalBytes, onProgress, signal);
+    } catch (err: any) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      if (lastErr.name === "AbortError" || signal?.aborted) {
+        throw lastErr;
+      }
+      if (i < CHUNK_RETRY_ATTEMPTS) {
+        await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+      }
+    }
+  }
+
+  throw lastErr!;
+}
+
+function putChunk(
+  file: File,
+  uploadUrl: string,
+  start: number,
+  end: number,
+  totalBytes: number,
   onProgress?: (percent: number) => void,
   signal?: AbortSignal
-): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
+): Promise<{ done: boolean; nextByte: number; youtubeUrl?: string }> {
+  return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       const err = new Error("YouTube video upload was aborted by user.");
       err.name = "AbortError";
@@ -233,30 +336,24 @@ function executeChunkStream(
     }
 
     const xhr = new XMLHttpRequest();
-    const INACTIVITY_TIMEOUT_MS = 90 * 1000; // 90 seconds of zero byte transfer
-    // Once every byte is actually on the wire, xhr.upload.onprogress never
-    // fires again - there's nothing left to report. From that point the
-    // client is purely waiting on YouTube's server-side ingest to respond,
-    // which can legitimately take longer than 90s. Treating that wait as a
-    // "stall" aborted healthy uploads right as they finished, forcing a
-    // brand-new session from scratch - exactly the 99%-then-restart loop.
-    // A generous ceiling still guards against a truly dead connection, but
-    // bounded well below the batch's patience budget - a real YouTube ack
-    // after all bytes are received normally takes seconds, not minutes.
-    const FINAL_RESPONSE_TIMEOUT_MS = 60 * 1000; // 60 seconds
+    const INACTIVITY_TIMEOUT_MS = 90 * 1000; // 90s of zero byte transfer within this chunk
+    // Once this chunk's bytes are on the wire, upload.onprogress stops
+    // firing - from then we're only waiting on Google's ack for this one
+    // small chunk, which should arrive in seconds, not minutes.
+    const CHUNK_ACK_TIMEOUT_MS = 45 * 1000;
     let inactivityTimer: any = null;
     let timedOut = false;
-    let allBytesSent = false;
+    let chunkBytesSent = false;
 
     const resetHeartbeat = () => {
       clearTimeout(inactivityTimer);
-      const timeoutMs = allBytesSent ? FINAL_RESPONSE_TIMEOUT_MS : INACTIVITY_TIMEOUT_MS;
+      const timeoutMs = chunkBytesSent ? CHUNK_ACK_TIMEOUT_MS : INACTIVITY_TIMEOUT_MS;
       inactivityTimer = setTimeout(() => {
         timedOut = true;
         xhr.abort();
         reject(new Error(
-          allBytesSent
-            ? `YouTube did not confirm the upload within ${FINAL_RESPONSE_TIMEOUT_MS / 1000}s of receiving all bytes.`
+          chunkBytesSent
+            ? `YouTube did not acknowledge a chunk within ${CHUNK_ACK_TIMEOUT_MS / 1000}s.`
             : `YouTube upload stalled: No byte transfer detected for 90 seconds.`
         ));
       }, timeoutMs);
@@ -281,47 +378,51 @@ function executeChunkStream(
 
     xhr.open("PUT", uploadUrl);
     xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
-    if (startByte > 0) {
-      xhr.setRequestHeader("Content-Range", `bytes ${startByte}-${totalBytes - 1}/${totalBytes}`);
-    }
+    xhr.setRequestHeader("Content-Range", `bytes ${start}-${end - 1}/${totalBytes}`);
 
     if (xhr.upload) {
       xhr.upload.onprogress = (evt) => {
         if (evt.total > 0 && evt.loaded >= evt.total) {
-          allBytesSent = true;
+          chunkBytesSent = true;
         }
         resetHeartbeat();
         if (onProgress && totalBytes > 0) {
-          const loadedSoFar = startByte + (evt.loaded || 0);
+          const loadedSoFar = start + (evt.loaded || 0);
           const pct = Math.min(99, Math.round((loadedSoFar / totalBytes) * 100));
           onProgress(pct);
         }
       };
       xhr.upload.onload = () => {
-        allBytesSent = true;
+        chunkBytesSent = true;
         resetHeartbeat();
       };
     }
 
     xhr.onload = () => {
       cleanup();
-      if (xhr.status >= 200 && xhr.status < 300) {
+      if (xhr.status === 200 || xhr.status === 201) {
         try {
           const data = JSON.parse(xhr.responseText);
           if (!data.id) {
             reject(new Error("YouTube upload completed but returned no video ID. Response: " + xhr.responseText.substring(0, 200)));
             return;
           }
-          const youtubeUrl = `https://www.youtube.com/watch?v=${data.id}`;
-          logger.info(`[YT] ✅ 97%+ Assurance Upload Complete: ${youtubeUrl}`);
-          if (onProgress) onProgress(100);
-          resolve(youtubeUrl);
+          resolve({ done: true, nextByte: totalBytes, youtubeUrl: `https://www.youtube.com/watch?v=${data.id}` });
         } catch (parseErr) {
           reject(new Error(`YouTube upload response parse error: ${parseErr}. Raw: ${xhr.responseText.substring(0, 200)}`));
         }
       } else if (xhr.status === 308) {
-        // Resume incomplete, query next chunk
-        reject(new Error("Chunk uploaded, resume incomplete (308)."));
+        // Chunk accepted, more remaining - Google names exactly how much of
+        // THIS chunk it actually has, which we trust over our own send count.
+        const rangeHeader = xhr.getResponseHeader("Range");
+        let nextByte = end;
+        if (rangeHeader) {
+          const match = rangeHeader.match(/bytes=0-(\d+)/);
+          if (match && match[1]) {
+            nextByte = parseInt(match[1], 10) + 1;
+          }
+        }
+        resolve({ done: false, nextByte });
       } else {
         let detail = xhr.responseText;
         try {
@@ -354,8 +455,7 @@ function executeChunkStream(
       }
     };
 
-    const payload = startByte > 0 ? file.slice(startByte) : file;
-    xhr.send(payload);
+    xhr.send(file.slice(start, end));
   });
 }
 
