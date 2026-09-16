@@ -99,7 +99,12 @@ export async function uploadVideoDirectToYouTube(
   let uploadUrl: string | null = null;
   let startByte = 0;
   let lastError: Error | null = null;
-  const MAX_ATTEMPTS = 8;
+  // Bounded low: a batch of several files uploads sequentially, so every
+  // attempt here blocks the rest of the batch behind it. 8 attempts at up
+  // to 5 minutes of final-response patience each (see FINAL_RESPONSE_TIMEOUT_MS)
+  // meant a single stuck video could stall an entire group upload for up to
+  // ~40 minutes before ever reaching the next file.
+  const MAX_ATTEMPTS = 3;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     if (signal?.aborted) {
@@ -235,8 +240,10 @@ function executeChunkStream(
     // which can legitimately take longer than 90s. Treating that wait as a
     // "stall" aborted healthy uploads right as they finished, forcing a
     // brand-new session from scratch - exactly the 99%-then-restart loop.
-    // A generous final ceiling still guards against a truly dead connection.
-    const FINAL_RESPONSE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    // A generous ceiling still guards against a truly dead connection, but
+    // bounded well below the batch's patience budget - a real YouTube ack
+    // after all bytes are received normally takes seconds, not minutes.
+    const FINAL_RESPONSE_TIMEOUT_MS = 60 * 1000; // 60 seconds
     let inactivityTimer: any = null;
     let timedOut = false;
     let allBytesSent = false;
