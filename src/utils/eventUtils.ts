@@ -70,6 +70,11 @@ export function sanitizeEventRecord(event: Partial<GroupEvent>): GroupEvent {
     title: (event.title || "").trim() || "Community Event",
     date: (event.date || "").trim() || new Date().toISOString().split("T")[0],
     time: (event.time || "").trim() || "09:00",
+    // "Team Taraba River" is this group's organizational name, not a real
+    // place (see TermsAndConditionsModal's Group Identity & Location Field
+    // Standards clause: it is explicitly non-geographic and must never be
+    // entered or treated as a location anywhere in the app) — strip it if
+    // it leaked into the location field from old sync/placeholder data.
     location: (event.location || "").trim().toLowerCase().includes("taraba river") ? "" : (event.location || "").trim(),
     category: (event.category || "").trim() || "General",
     description: (event.description || "").trim(),

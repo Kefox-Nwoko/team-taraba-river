@@ -1331,12 +1331,21 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       alert("Date is required.");
       return;
     }
+    const cleanLocation = sanitizeUIField(editLocation);
+    if (!cleanLocation || cleanLocation.length < 2) {
+      // The server requires a location (at least 2 characters) on every
+      // event update and rejects the save otherwise — check for that here,
+      // up front, so the failure is an immediate, visible message instead
+      // of a save that silently doesn't take effect.
+      alert("Location is required (at least 2 characters).");
+      return;
+    }
 
     const updatedFolder: GroupEvent = {
       ...selectedFolder,
       title: editTitle.trim(),
       date: editDate,
-      location: sanitizeUIField(editLocation),
+      location: cleanLocation,
     };
 
     try {
@@ -1591,13 +1600,13 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 font-normal">Location (optional)</label>
+                    <label className="text-xs text-slate-500 font-normal">Location *</label>
                     <input
                       type="text"
                       value={editLocation}
                       onChange={(e) => setEditLocation(e.target.value)}
                       className="w-full mt-1 px-3 py-1.5 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white"
-                      placeholder="e.g. Port Harcourt Club, Old GRA (optional)"
+                      placeholder="e.g. Port Harcourt Club, Old GRA"
                     />
                   </div>
                   <div className="sm:col-span-2">
@@ -1673,42 +1682,39 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               <div className="flex flex-row items-center gap-1.5 sm:gap-2 shrink-0 w-full sm:w-auto flex-nowrap overflow-x-auto">
                 {isSelectionMode ? (
                   <>
-                    <div className="text-[11px] sm:text-xs font-semibold text-teal-700 dark:text-teal-300 px-3 py-1.5 bg-teal-50 dark:bg-teal-950/60 rounded-xl border border-teal-200 dark:border-teal-800">
-                      {selectedItemKeys.size} of {galleryItems.length} selected
-                    </div>
                     <button
                       onClick={handleSelectAllAssets}
-                      className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
+                      className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-3.5 py-1.5 sm:py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1 sm:space-x-1.5 cursor-pointer shadow-xs active:scale-95"
                       title={selectedItemKeys.size === galleryItems.length ? "Deselect all items" : "Select all items"}
                     >
                       {selectedItemKeys.size === galleryItems.length ? (
                         <>
-                          <Square className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400" />
-                          <span>Deselect All</span>
+                          <Square className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                          <span className="truncate">Deselect All</span>
                         </>
                       ) : (
                         <>
-                          <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400" />
-                          <span>Select All</span>
+                          <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                          <span className="truncate">Select All</span>
                         </>
                       )}
                     </button>
                     <button
                       disabled={selectedItemKeys.size === 0}
                       onClick={() => setIsBatchDeletingModalOpen(true)}
-                      className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
+                      className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-3.5 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1 sm:space-x-1.5 cursor-pointer shadow-xs active:scale-95"
                       title="Delete all selected media items"
                     >
-                      <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                      <span>Delete Selected ({selectedItemKeys.size})</span>
+                      <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                      <span className="truncate">Delete ({selectedItemKeys.size})</span>
                     </button>
                     <button
                       onClick={handleCancelSelection}
-                      className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
+                      className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-3.5 py-1.5 sm:py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1 sm:space-x-1.5 cursor-pointer shadow-xs active:scale-95"
                       title="Cancel selection mode"
                     >
-                      <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                      <span>Cancel</span>
+                      <X className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                      <span className="truncate">Cancel</span>
                     </button>
                   </>
                 ) : (
@@ -1764,7 +1770,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               <h2 className="text-sm sm:text-sm font-normal text-slate-900 dark:text-white">Event Media Gallery ({galleryItems.length} Media Assets)</h2>
               {isSelectionMode && (
                 <span className="text-xs text-teal-600 dark:text-teal-400 font-medium">
-                  Tap cards to toggle selection
+                  {selectedItemKeys.size} of {galleryItems.length} selected — tap cards to toggle
                 </span>
               )}
             </div>
