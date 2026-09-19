@@ -132,21 +132,16 @@ export const MemberRestoreSchema = z.object({
   member: z.any().optional(),
 });
 
-// --- Direct-to-Google Resumable Upload Bridge Schemas ---
-// These back the endpoints that open a resumable upload session with Google
-// using server-held credentials, then hand the client only the resulting
-// short-lived, single-use session URL (never the client secret / refresh token).
+// --- Direct-to-Google Resumable Upload Bridge Schema ---
+// Backs the endpoint that opens a Drive resumable upload session with
+// server-held credentials, handing the client only the resulting
+// short-lived, single-use session URL (never the client secret / refresh
+// token). YouTube uploads instead relay through the server directly (see
+// relayVideoToYouTube) and so don't need a matching init-session schema.
 
 export const DriveUploadInitSchema = z.object({
   fileName: z.string().min(1, 'fileName is required').max(300),
   mimeType: z.string().min(1, 'mimeType is required').max(200),
-  size: z.number().int().positive().optional(),
-  folderName: z.string().max(300).optional(),
-});
-
-export const YouTubeUploadInitSchema = z.object({
-  fileName: z.string().min(1, 'fileName is required').max(300),
-  mimeType: z.string().max(200).optional(),
   size: z.number().int().positive().optional(),
   folderName: z.string().max(300).optional(),
 });

@@ -11,6 +11,7 @@
  */
 import { logger } from "../lib/logger";
 import { auth } from "../lib/firebase";
+import { pauseForConnectivity } from "../lib/networkWait";
 
 function apiUrl(path: string): string {
   try {
@@ -84,6 +85,12 @@ async function makeFilePublicReadable(fileId: string): Promise<void> {
  * server resolved/created for this upload, as soon as the session opens —
  * every file in a batch lands in the same folder, so callers use this to
  * learn the folder's real id instead of fabricating one for the event record.
+ *
+ * Retries persistently (pausing for a backgrounded tab / offline device)
+ * on network-class failures — the same failure class that used to make
+ * video uploads restart from scratch on mobile. A clear client error (bad
+ * request, unauthorized, forbidden) is not retried; that's a real problem
+ * retrying won't fix, so the caller's own fallback tier takes over instead.
  */
 export async function uploadImageDirectToDrive(
   fileOrBlob: File | Blob,
@@ -102,28 +109,67 @@ export async function uploadImageDirectToDrive(
   const cleanName = (fileName || `image_${Date.now()}.webp`).replace(/[^a-zA-Z0-9._-]/g, "_");
   const mimeType = fileOrBlob.type || "image/webp";
 
-  // Step 1: Ask the backend to initiate the Drive resumable upload session
-  let uploadUrl: string;
-  try {
-    const session = await initDriveUploadSession(cleanName, mimeType, fileOrBlob.size, folderName);
-    uploadUrl = session.uploadUrl;
-    if (session.folderId && onFolderId) onFolderId(session.folderId);
-  } catch (initErr: any) {
+  let attempt = 0;
+  // Counts only failures that happened while the device was online and
+  // visible the whole time - a backgrounded/offline period gets its budget
+  // refreshed once it's back, but repeated LIVE failures mean this tier is
+  // actually broken for this session, not just slow. Retrying forever would
+  // just hang the batch instead of letting the Firebase Storage fallback
+  // (which has its own, separately-implemented resilience) take over.
+  let liveFailures = 0;
+  const MAX_LIVE_FAILURES = 6;
+
+  while (true) {
+    attempt++;
     if (signal?.aborted) {
       const err = new Error("Google Drive upload was aborted by user.");
       err.name = "AbortError";
       throw err;
     }
-    throw initErr;
-  }
 
-  if (signal?.aborted) {
-    const err = new Error("Google Drive upload was aborted by user.");
-    err.name = "AbortError";
-    throw err;
-  }
+    try {
+      const session = await initDriveUploadSession(cleanName, mimeType, fileOrBlob.size, folderName);
+      if (session.folderId && onFolderId) onFolderId(session.folderId);
+      return await putImageOnce(fileOrBlob, session.uploadUrl, fileName, mimeType, onProgress, signal);
+    } catch (err: any) {
+      if (err?.name === "AbortError" || signal?.aborted) {
+        throw err;
+      }
 
-  // Step 2: PUT binary file data with XHR progress
+      // A clear client-error status means retrying the exact same request
+      // will just fail the same way again - not a network blip to wait out.
+      const msg = String(err?.message || "").toLowerCase();
+      const isClientError = /\((400|401|403)\)/.test(msg) || msg.includes("no file id");
+      if (isClientError) {
+        throw err;
+      }
+
+      logger.warn(`[Drive] Upload attempt ${attempt} for "${fileName}" failed: ${err?.message || err}.`);
+      const wasBackgroundedOrOffline = await pauseForConnectivity("Drive", 0, fileOrBlob.size, logger);
+      if (wasBackgroundedOrOffline) {
+        liveFailures = 0;
+      } else {
+        liveFailures++;
+        if (liveFailures >= MAX_LIVE_FAILURES) {
+          logger.warn(`[Drive] ${liveFailures} consecutive live failures for "${fileName}" while online and visible - giving up on Drive so it can fall back to Cloud Storage.`);
+          throw err;
+        }
+      }
+
+      const backoffMs = Math.min(30000, 2000 * Math.min(attempt, 15));
+      await new Promise((r) => setTimeout(r, backoffMs));
+    }
+  }
+}
+
+function putImageOnce(
+  fileOrBlob: File | Blob,
+  uploadUrl: string,
+  fileName: string,
+  mimeType: string,
+  onProgress: ((percent: number) => void) | undefined,
+  signal: AbortSignal | undefined
+): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     if (signal?.aborted) {
       const err = new Error("Google Drive upload was aborted by user.");
@@ -170,7 +216,7 @@ export async function uploadImageDirectToDrive(
       };
     }
 
-    xhr.onload = async () => {
+    xhr.onload = () => {
       cleanup();
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
@@ -180,8 +226,18 @@ export async function uploadImageDirectToDrive(
             return;
           }
           const fileId = data.id;
-          // Step 3: Make image public readable so CDN image link works
-          await makeFilePublicReadable(fileId);
+
+          // The file's own parent folder was already made public read the
+          // moment it was created (findOrCreateDriveFolder, server-side) —
+          // Drive files inherit their folder's sharing, so this file is
+          // already viewable. This per-file call is now a best-effort
+          // safety net for the rare case that inheritance doesn't apply
+          // (e.g. a permission override), not something the upload needs
+          // to wait on. Awaiting it here used to add a full extra
+          // round-trip of visible "still uploading" time after every
+          // photo's bytes had already finished transferring — proportionally
+          // the whole perceived delay for a small, fast image.
+          makeFilePublicReadable(fileId);
 
           // Step 4: Direct Google UserContent CDN link
           const cdnUrl = `https://lh3.googleusercontent.com/d/${fileId}`;

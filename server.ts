@@ -28,13 +28,12 @@ import {
   MemberContactSearchSchema,
   MemberRestoreSchema,
   DriveUploadInitSchema,
-  YouTubeUploadInitSchema,
   DriveMakePublicSchema,
 } from "./server/validation";
 import {
   initDriveUploadSession,
   makeDriveFilePublic,
-   initYouTubeUploadSession,
+   relayVideoToYouTube,
    deleteYouTubeVideoServer,
     generateVideoThumbnail,
     generateVideoThumbnailFromUrl,
@@ -212,14 +211,14 @@ app.use('/api/ai-xplora', heavyRateLimiter);
 app.use('/api/media/cloud-sync-all', heavyRateLimiter);
 app.use('/api/usosa-news', heavyRateLimiter);
 
-// Upload sessions: 40 req/min per IP — these only open a resumable-upload
-// session (bytes stream browser-to-Google, never through this server), but
-// a batch gallery upload calls one of these per photo/video, so the 5/min
-// "heavy" tier was throttling ordinary batches past the 5th file. Kept on
-// its own, higher bucket instead of the shared heavy limiter.
+// Upload sessions: 40 req/min per IP — a batch gallery upload calls one of
+// these per photo/video, so the 5/min "heavy" tier was throttling ordinary
+// batches past the 5th file. Kept on its own, higher bucket instead of the
+// shared heavy limiter. (Also applied directly to the YouTube relay-upload
+// route below, since that one carries a full video body per request rather
+// than just opening a session.)
 const uploadSessionRateLimiter = createRateLimiter(40, 60_000);
 app.use('/api/media/drive/init-upload', uploadSessionRateLimiter);
-app.use('/api/media/youtube/init-upload', uploadSessionRateLimiter);
 
 // Auth-specific: 10 req/min per IP (used as route middleware on auth endpoints)
 const rateLimiter = createRateLimiter(10, 60_000);
@@ -3541,13 +3540,15 @@ app.post("/api/media/drive/make-public", conditionalAuth, async (req: Request, r
   await makeDriveFilePublic(req, res);
 });
 
-app.post("/api/media/youtube/init-upload", conditionalAuth, async (req: Request, res: Response) => {
-  const validation = validateBody(YouTubeUploadInitSchema, req.body);
-  if (!validation.success) {
-    res.status(400).json({ error: (validation as any).error });
-    return;
-  }
-  await initYouTubeUploadSession(req, res);
+// Relays a video from the browser straight to YouTube via the server (see
+// relayVideoToYouTube's own comment for why: it replaced a direct
+// browser-to-Google resumable upload that was failing on its completing
+// request with no diagnosable detail). No JSON/urlencoded body parser
+// touches this route — its Content-Type is a video type, so both parsers
+// skip it and leave the raw byte stream for relayVideoToYouTube to pipe
+// straight into the YouTube API client.
+app.post("/api/media/youtube/relay-upload", conditionalAuth, uploadSessionRateLimiter, async (req: Request, res: Response) => {
+  await relayVideoToYouTube(req, res);
 });
 
 app.delete("/api/media/youtube/:videoId", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {

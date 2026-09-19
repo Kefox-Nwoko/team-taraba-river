@@ -16,7 +16,7 @@
     "test:rules": "firebase emulators:exec --only firestore \"vitest run src/server/firestoreRules.test.ts\"",
     "deploy": "npm run build && firebase deploy",
     "deploy:hosting": "npm run build && firebase deploy --only hosting",
-    "deploy:cloudrun": "npm run build && gcloud run deploy team-taraba-river-api --source . --region us-central1 --allow-unauthenticated",
+    "deploy:cloudrun": "npm run build && gcloud run deploy team-taraba-river-api --source . --region us-central1 --allow-unauthenticated --timeout=1800",
     "deploy:functions": "firebase deploy --only functions,hosting"
   },
   "dependencies": {

@@ -209,59 +209,80 @@ function getYouTubeOAuthClient() {
   return oauth2Client;
 }
 
-export async function initYouTubeUploadSession(req: Request, res: Response): Promise<void> {
+/**
+ * Relays a video from the browser straight through to YouTube: the
+ * incoming request body (the raw video bytes, un-parsed — this route is
+ * never touched by the JSON/urlencoded body parsers because its
+ * Content-Type is a video type, not application/json) is piped directly
+ * into the official Google API client's upload call as `media.body`,
+ * without ever buffering the whole file in server memory. The client
+ * library handles the actual resumable-upload protocol with Google
+ * server-side, including its own retry behavior — none of that is our
+ * concern here.
+ *
+ * This exists so the browser never has to talk to googleapis.com directly.
+ * See the client-side module comment in youtubeDirectUpload.ts for why
+ * that mattered: a browser-to-Google resumable upload was consistently
+ * failing on its completing request with zero diagnosable detail (the
+ * browser's XHR/fetch error events carry no information distinguishing a
+ * genuine dropped connection from a blocked/CORS-affected response).
+ * Relaying server-to-server uses the Node client over a plain HTTPS
+ * connection with no CORS involved, and any real failure comes back as an
+ * actual Google API error object we can read and report accurately.
+ */
+export async function relayVideoToYouTube(req: Request, res: Response): Promise<void> {
+  const fileName = decodeURIComponent(String(req.query.fileName || '')).slice(0, 300) || `video_${Date.now()}.mp4`;
+  const folderName = decodeURIComponent(String(req.query.folderName || '')).slice(0, 300) || 'Event Media';
+  const mimeType = (req.headers['content-type'] as string) || 'video/mp4';
+  const contentLength = req.headers['content-length'] ? parseInt(String(req.headers['content-length']), 10) : undefined;
+  const sizeMB = contentLength ? (contentLength / (1024 * 1024)).toFixed(1) : 'unknown';
+
   try {
-    const { fileName, mimeType, size, folderName } = req.body || {};
-
     const oauth2Client = getYouTubeOAuthClient();
-    const { token: accessToken } = await oauth2Client.getAccessToken();
-    if (!accessToken) throw new Error('Failed to obtain a YouTube access token.');
+    const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
-    const cleanTitle = String(fileName || `Team Taraba River Video ${new Date().toLocaleDateString()}`)
-      .replace(/\.[^/.]+$/, '')
-      .substring(0, 95);
+    const cleanTitle = fileName.replace(/\.[^/.]+$/, '').substring(0, 95) || `Team Taraba River Video ${new Date().toLocaleDateString()}`;
 
-    const metadata = {
-      snippet: {
-        title: cleanTitle,
-        description: `Team Taraba River Community Event Media Archive (${folderName || 'General Event'})\nUploaded via Team Taraba River Portal.`,
-        tags: ['Team Taraba River', 'Community', 'URIP', 'USOSA', 'Event'],
-        categoryId: '22',
-      },
-      status: {
-        privacyStatus: 'unlisted',
-        selfDeclaredMadeForKids: false,
-      },
-    };
+    serverLogger.info(`[YT Relay] Relaying "${fileName}" (${sizeMB} MB) to YouTube...`);
 
-    const initRes = await fetch(
-      'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json; charset=UTF-8',
-          ...(size ? { 'X-Upload-Content-Length': String(size) } : {}),
-          'X-Upload-Content-Type': mimeType || 'video/mp4',
+    const response = await (youtube.videos.insert as any)({
+      part: 'snippet,status',
+      requestBody: {
+        snippet: {
+          title: cleanTitle,
+          description: `Team Taraba River Community Event Media Archive (${folderName})\nUploaded via Team Taraba River Portal.`,
+          tags: ['Team Taraba River', 'Community', 'URIP', 'USOSA', 'Event'],
+          categoryId: '22',
         },
-        body: JSON.stringify(metadata),
-      }
-    );
+        status: {
+          privacyStatus: 'unlisted',
+          selfDeclaredMadeForKids: false,
+        },
+      },
+      media: {
+        mimeType,
+        body: req,
+      },
+    });
 
-    if (!initRes.ok) {
-      const errText = await initRes.text().catch(() => '');
-      throw new Error(`YouTube upload session init failed (${initRes.status}): ${errText}`);
+    const videoId = response.data.id;
+    if (!videoId) {
+      throw new Error('YouTube upload completed but returned no video ID.');
     }
 
-    const uploadUrl = initRes.headers.get('location');
-    if (!uploadUrl) {
-      throw new Error('YouTube did not return an upload session URL.');
-    }
-
-    res.json({ success: true, uploadUrl });
+    const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    serverLogger.info(`[YT Relay] ✅ Success: ${youtubeUrl}`);
+    res.json({ success: true, youtubeUrl });
   } catch (error: any) {
-    serverLogger.error('YouTube init-upload error', error);
-    res.status(500).json({ error: error?.message || 'Failed to initiate YouTube upload session.' });
+    const detail =
+      error?.errors?.[0]?.message ||
+      error?.response?.data?.error?.message ||
+      error?.message ||
+      'Failed to relay video to YouTube.';
+    serverLogger.error('[YT Relay] Upload error', { error: detail, fileName, sizeMB });
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: detail });
+    }
   }
 }
 

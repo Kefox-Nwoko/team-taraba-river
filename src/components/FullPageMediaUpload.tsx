@@ -28,7 +28,7 @@ import {
   StopCircle,
   XCircle,
 } from "lucide-react";
-import { uploadVideoDirectToYouTube, deleteYouTubeVideo } from "../services/youtubeDirectUpload";
+import { uploadVideoViaServerRelay, deleteYouTubeVideo } from "../services/youtubeDirectUpload";
 import { uploadImageDirectToDrive } from "../services/googleDriveDirectUpload";
 import { AppStateManager } from "../services/storage";
 import { EventLocationMap } from "./EventLocationMap";
@@ -290,11 +290,13 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
     const isVideo = item.type === "video";
 
-    // 1. For Videos: High-Assurance Resumable Pipeline (YouTube Primary -> Google Drive Fallback -> Cloud Storage Safety Net)
+    // 1. For Videos: High-Assurance Pipeline (YouTube via server relay -> Google Drive Fallback -> Cloud Storage Safety Net)
     if (isVideo) {
-      // Tier 1: Primary Stream directly to YouTube Channel with 97%+ Resumable Assurance
+      // Tier 1: Relay through our server to the YouTube Channel (see
+      // uploadVideoViaServerRelay's own doc comment for why this isn't a
+      // direct browser-to-Google upload anymore)
       try {
-        const ytUrl = await uploadVideoDirectToYouTube(item.file, folderName, onFileProgress, signal);
+        const ytUrl = await uploadVideoViaServerRelay(item.file, folderName, onFileProgress, signal);
         return ytUrl;
       } catch (ytErr: any) {
         if (ytErr?.name === "AbortError" || signal?.aborted) {
