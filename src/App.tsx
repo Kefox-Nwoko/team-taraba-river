@@ -105,6 +105,16 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Every top-level page starts scrolled to its own top, never wherever the
+  // previous page happened to be scrolled to. Keyed on activeTab itself
+  // (not on each individual setActiveTab call site) so this applies
+  // uniformly no matter which of the app's several navigation paths
+  // changed the tab — the nav bar, a redirect, browser back/forward
+  // history, or an internal "return to X" callback.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [activeTab]);
+
   // Re-verify the cached session's role against the server the moment a
   // real Firebase ID token is available on page load, instead of trusting
   // whatever role was cached at last login indefinitely. Without this, an

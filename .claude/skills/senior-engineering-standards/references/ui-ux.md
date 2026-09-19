@@ -39,6 +39,19 @@ log back in, then try again." instead of a raw storage error). Extend that
 standard to new work; don't regress to `res.status(500).json({error:
 'Failed'})` style messages that give the user nothing to act on.
 
+## Every opened page starts at its own top
+
+Navigating to a top-level page (the nav bar, a redirect, browser
+back/forward, an internal "return to X" callback) must land the viewer at
+the top of that page, never wherever the previous page happened to be
+scrolled to. A page that opens mid-scroll reads as broken even when
+everything on it is correct — the person's eyes are pointed at the wrong
+content with no visible sign why. Enforce this centrally, keyed on the
+navigation state itself (see the `activeTab` effect in `App.tsx`), not by
+adding a scroll-reset call at every individual place that can trigger a
+page change — this app has close to a dozen of those, and a per-call-site
+approach reliably misses one.
+
 ## Silent failure at a boundary that affects visible state is a UX bug
 
 `makeFilePublicReadable` swallows every error from the make-public call
