@@ -1670,7 +1670,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
               </div>
             )}
             {!isEditingFolderInfo && (
-              <div className="flex flex-row items-center gap-2 shrink-0 w-full sm:w-auto flex-wrap">
+              <div className="flex flex-row items-center gap-1.5 sm:gap-2 shrink-0 w-full sm:w-auto flex-nowrap overflow-x-auto">
                 {isSelectionMode ? (
                   <>
                     <div className="text-[11px] sm:text-xs font-semibold text-teal-700 dark:text-teal-300 px-3 py-1.5 bg-teal-50 dark:bg-teal-950/60 rounded-xl border border-teal-200 dark:border-teal-800">
@@ -1716,11 +1716,14 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                     {galleryItems.length > 0 && canEditOrDeleteFolder(selectedFolder) && (
                       <button
                         onClick={() => setIsSelectionMode(true)}
-                        className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
+                        className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-3.5 py-1.5 sm:py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1 sm:space-x-1.5 cursor-pointer shadow-xs active:scale-95"
                         title="Select multiple photos or videos to delete"
                       >
-                        <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400" />
-                        <span>Select Multiple</span>
+                        <CheckSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                        <span className="truncate">
+                          <span className="sm:hidden">Select</span>
+                          <span className="hidden sm:inline">Select Multiple</span>
+                        </span>
                       </button>
                     )}
                     <button
@@ -1728,20 +1731,26 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                         setUploadFolderId(selectedFolder.id);
                         setIsFullPageUploadOpen(true);
                       }}
-                      className="flex-1 sm:flex-initial px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap active:scale-95"
+                      className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-3.5 py-1.5 sm:py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1 sm:space-x-1.5 cursor-pointer shadow-xs active:scale-95"
                       title="Upload more photos or videos to this folder"
                     >
-                      <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                      <span>Update / Add Media</span>
+                      <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                      <span className="truncate">
+                        <span className="sm:hidden">Add Media</span>
+                        <span className="hidden sm:inline">Update / Add Media</span>
+                      </span>
                     </button>
                     {canEditOrDeleteFolder(selectedFolder) && (
                       <button
                         onClick={(e) => handlePromptDeleteFolder(selectedFolder.id, selectedFolder.title, galleryItems.length, e)}
-                        className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-red-600/90 hover:bg-red-700 active:scale-95 text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs whitespace-nowrap"
+                        className="flex-1 sm:flex-initial min-w-0 px-2 sm:px-3.5 py-1.5 sm:py-2 bg-red-600/90 hover:bg-red-700 active:scale-95 text-white text-[11px] sm:text-xs font-medium rounded-xl transition flex items-center justify-center space-x-1 sm:space-x-1.5 cursor-pointer shadow-xs"
                         title="Delete entire media folder"
                       >
-                        <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                        <span>Delete Folder</span>
+                        <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                        <span className="truncate">
+                          <span className="sm:hidden">Delete</span>
+                          <span className="hidden sm:inline">Delete Folder</span>
+                        </span>
                       </button>
                     )}
                   </>

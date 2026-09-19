@@ -182,11 +182,34 @@ function putImageOnce(
     const xhr = new XMLHttpRequest();
     let timedOut = false;
 
+    // Once every byte has left the browser, Drive still needs a moment to
+    // acknowledge and create the file object before xhr.onload fires - the
+    // client has no event for that in-between stretch, only the final
+    // response. Creep progress gently toward 99% instead of freezing there,
+    // same treatment as the YouTube relay upload; the jump to 100 only ever
+    // happens on the real completion response.
+    let creepTimer: any = null;
+    let creepPct = 92;
+    const startCreep = () => {
+      if (creepTimer) return;
+      creepTimer = setInterval(() => {
+        creepPct = Math.min(99, creepPct + 1);
+        if (onProgress) onProgress(creepPct);
+      }, 500);
+    };
+    const stopCreep = () => {
+      if (creepTimer) {
+        clearInterval(creepTimer);
+        creepTimer = null;
+      }
+    };
+
     const cleanup = () => {
       clearTimeout(timeoutId);
       if (signal) {
         signal.removeEventListener("abort", handleAbort);
       }
+      stopCreep();
     };
 
     const handleAbort = () => {
@@ -207,12 +230,18 @@ function putImageOnce(
     xhr.open("PUT", uploadUrl);
     xhr.setRequestHeader("Content-Type", mimeType);
 
-    if (xhr.upload && onProgress) {
-      xhr.upload.onprogress = (evt) => {
-        if (evt.lengthComputable) {
-          const pct = Math.min(99, Math.round((evt.loaded / evt.total) * 100));
-          onProgress(pct);
-        }
+    if (xhr.upload) {
+      if (onProgress) {
+        xhr.upload.onprogress = (evt) => {
+          if (evt.lengthComputable) {
+            const pct = Math.min(92, Math.round((evt.loaded / evt.total) * 100));
+            creepPct = pct;
+            onProgress(pct);
+          }
+        };
+      }
+      xhr.upload.onload = () => {
+        startCreep();
       };
     }
 
