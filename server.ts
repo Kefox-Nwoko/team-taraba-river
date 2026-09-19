@@ -20,8 +20,6 @@ import {
   ApprovalDecisionSchema,
   RSVPSchema,
   AIQuerySchema,
-  DriveSyncSchema,
-  YouTubeParseSchema,
   EventPosterParseSchema,
   AiXploraQuerySchema,
   LoginCredentialSchema,
@@ -29,18 +27,11 @@ import {
   AdminAISearchSchema,
   MemberContactSearchSchema,
   MemberRestoreSchema,
-  MediaUploadSchema,
-  MediaFinalizeSchema,
   DriveUploadInitSchema,
   YouTubeUploadInitSchema,
   DriveMakePublicSchema,
 } from "./server/validation";
 import {
-  uploadIntermediateMedia,
-  finalizeMedia,
-  getMediaStatus,
-  uploadVideoBufferToYouTube,
-  base64ToBuffer,
   initDriveUploadSession,
   makeDriveFilePublic,
    initYouTubeUploadSession,
@@ -72,8 +63,8 @@ process.on('uncaughtException', (err) => {
   serverLogger.error('[Server] Handled uncaught exception:', { error: err.message });
 });
 
-// Adaptive body-size limits — 50MB for media upload routes, 2MB for everything else
-const MEDIA_UPLOAD_PATHS = ['/api/media/upload', '/api/media/finalize', '/api/media/upload-video-to-youtube', '/api/ai/parse-event-poster'];
+// Adaptive body-size limits — 50MB for routes that carry a base64 payload, 2MB for everything else
+const MEDIA_UPLOAD_PATHS = ['/api/ai/parse-event-poster'];
 const smallJsonParser = express.json({ limit: '2mb' });
 const largeJsonParser = express.json({ limit: '50mb' });
 const smallUrlParser = express.urlencoded({ limit: '2mb', extended: true });
@@ -219,10 +210,16 @@ const heavyRateLimiter = createRateLimiter(5, 60_000);
 app.use('/api/ai/', heavyRateLimiter);
 app.use('/api/ai-xplora', heavyRateLimiter);
 app.use('/api/media/cloud-sync-all', heavyRateLimiter);
-app.use('/api/media/upload-video-to-youtube', heavyRateLimiter);
-app.use('/api/media/drive/init-upload', heavyRateLimiter);
-app.use('/api/media/youtube/init-upload', heavyRateLimiter);
 app.use('/api/usosa-news', heavyRateLimiter);
+
+// Upload sessions: 40 req/min per IP — these only open a resumable-upload
+// session (bytes stream browser-to-Google, never through this server), but
+// a batch gallery upload calls one of these per photo/video, so the 5/min
+// "heavy" tier was throttling ordinary batches past the 5th file. Kept on
+// its own, higher bucket instead of the shared heavy limiter.
+const uploadSessionRateLimiter = createRateLimiter(40, 60_000);
+app.use('/api/media/drive/init-upload', uploadSessionRateLimiter);
+app.use('/api/media/youtube/init-upload', uploadSessionRateLimiter);
 
 // Auth-specific: 10 req/min per IP (used as route middleware on auth endpoints)
 const rateLimiter = createRateLimiter(10, 60_000);
@@ -707,6 +704,7 @@ app.get("/api/system/metrics", conditionalAuth, conditionalRequireAdmin, (req: R
     rateLimits: {
       global: '60 req/min per IP',
       heavy: '5 req/min per IP (AI, media sync, news)',
+      uploadSession: '40 req/min per IP (Drive/YouTube init-upload)',
       auth: '10 req/min per IP',
     },
     bodyLimits: {
@@ -2171,32 +2169,13 @@ app.post("/api/admin/ai-search", conditionalAuth, conditionalRequireAdmin, async
   }
 });
 
-// 13. Media: Google Drive Sync
-app.post("/api/media/drive-sync", conditionalAuth, async (req: Request, res: Response) => {
-  const validation = validateBody(DriveSyncSchema, req.body);
-  if (!validation.success) {
-    res.status(400).json({ error: (validation as any).error });
-    return;
-  }
-
-  const { driveUrl } = validation.data;
-
-  const folderMatch = driveUrl.match(/\/folders\/([a-zA-Z0-9_-]+)/);
-  const fileMatch = driveUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
-  const folderId = folderMatch ? folderMatch[1] : (fileMatch ? fileMatch[1] : `drive_${Date.now()}`);
-
-  res.json({
-    success: true,
-    folderId,
-    previewUrl: driveUrl,
-    syncedImages: []
-  });
-});
-
-// 13b. Media: Dual Sync (Google Drive ⇄ Firestore ⇄ UI)
+// 13b. Media: Push app events without a Drive folder up to Google Drive.
+// Reverse sync (Google Drive -> Firestore) was removed: every upload now
+// goes through the app's direct-upload pipeline, which already writes the
+// real driveFolderId/driveImageUrls onto the event at upload time, so there
+// is nothing left in Drive that isn't already reflected in Firestore.
 app.post("/api/media/cloud-sync-all", conditionalAuth, async (req: Request, res: Response) => {
   try {
-    const { direction = "reverse" } = req.body;
     const { google } = await import('googleapis');
 
     const auth = await getDriveAuthClient();
@@ -2209,199 +2188,91 @@ app.post("/api/media/cloud-sync-all", conditionalAuth, async (req: Request, res:
 
     const existingEvents = await getEvents();
 
-    if (direction === "forward") {
-      serverLogger.info(`[Drive Sync] Starting forward sync (App → Google Drive)`);
-      let pushedFoldersCount = 0;
-      let pushedAssetsCount = 0;
+    serverLogger.info(`[Drive Sync] Starting forward sync (App → Google Drive)`);
+    let pushedFoldersCount = 0;
+    let pushedAssetsCount = 0;
 
-      // Find events that don't have a driveFolderId yet
-      for (const event of existingEvents) {
-        // Skip default/root dummy events
-        if (event.id.startsWith("gdrive_") || event.id === "evt_taraba_gdrive") continue;
+    // Find events that don't have a driveFolderId yet
+    for (const event of existingEvents) {
+      // Skip default/root dummy events
+      if (event.id.startsWith("gdrive_") || event.id === "evt_taraba_gdrive") continue;
 
-        let folderId = event.driveFolderId;
+      let folderId = event.driveFolderId;
 
-        // Safeguard: Log any calendar-only event being considered for folder linkage
-        if (!folderId && !hasMediaAssets(event)) {
-          serverLogger.warn(`[Decouple Safeguard] Calendar-only event "${event.title}" (${event.id}) has no media but was considered for Drive folder linkage. Skipping.`);
-        }
+      // Safeguard: Log any calendar-only event being considered for folder linkage
+      if (!folderId && !hasMediaAssets(event)) {
+        serverLogger.warn(`[Decouple Safeguard] Calendar-only event "${event.title}" (${event.id}) has no media but was considered for Drive folder linkage. Skipping.`);
+      }
 
-        // CRITICAL: Only auto-create folders for events that already have media assets.
-        // Calendar-only announcements must never trigger folder creation.
-        if (!folderId && hasMediaAssets(event)) {
-          const folderName = `${event.date} - ${event.title}`;
-          serverLogger.info(`[Drive Sync] Creating Drive folder for media event: ${folderName}`);
-        
-          try {
-            // Search if folder already exists on Drive under rootFolderId to avoid duplicates
-            const searchRes = await drive.files.list({
-              q: `'${rootFolderId}' in parents and name = '${folderName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-              fields: 'files(id)',
+      // CRITICAL: Only auto-create folders for events that already have media assets.
+      // Calendar-only announcements must never trigger folder creation.
+      if (!folderId && hasMediaAssets(event)) {
+        const folderName = `${event.date} - ${event.title}`;
+        serverLogger.info(`[Drive Sync] Creating Drive folder for media event: ${folderName}`);
+
+        try {
+          // Search if folder already exists on Drive under rootFolderId to avoid duplicates
+          const searchRes = await drive.files.list({
+            q: `'${rootFolderId}' in parents and name = '${folderName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+            fields: 'files(id)',
+          });
+
+          if (searchRes.data.files && searchRes.data.files.length > 0) {
+            folderId = searchRes.data.files[0].id || '';
+              serverLogger.info(`[Drive Sync] Found existing folder: ${folderId}`);
+          } else {
+            const driveFolder = await drive.files.create({
+              requestBody: {
+                name: folderName,
+                mimeType: 'application/vnd.google-apps.folder',
+                parents: [rootFolderId],
+              },
+              fields: 'id',
             });
-
-            if (searchRes.data.files && searchRes.data.files.length > 0) {
-              folderId = searchRes.data.files[0].id || '';
-                serverLogger.info(`[Drive Sync] Found existing folder: ${folderId}`);
-            } else {
-              const driveFolder = await drive.files.create({
-                requestBody: {
-                  name: folderName,
-                  mimeType: 'application/vnd.google-apps.folder',
-                  parents: [rootFolderId],
-                },
-                fields: 'id',
-              });
-              folderId = driveFolder.data.id || '';
-              pushedFoldersCount++;
-                serverLogger.info(`[Drive Sync] Created new folder: ${folderId}`);
-            }
-
-            // Update local event memory & Firestore
-            event.driveFolderId = folderId;
-            if (isFirestoreAvailable()) {
-              await db.collection(COLLECTIONS.events).doc(event.id).update({ driveFolderId: folderId });
-            } else {
-              const idx = fallbackEvents.findIndex(e => e.id === event.id);
-              if (idx !== -1) fallbackEvents[idx].driveFolderId = folderId;
-            }
-          } catch (err) {
-            serverLogger.error(`[Drive Sync] Failed to create folder for "${event.title}":`, err);
-            continue; // Skip this event if folder creation fails
+            folderId = driveFolder.data.id || '';
+            pushedFoldersCount++;
+              serverLogger.info(`[Drive Sync] Created new folder: ${folderId}`);
           }
+
+          // Update local event memory & Firestore
+          event.driveFolderId = folderId;
+          if (isFirestoreAvailable()) {
+            await db.collection(COLLECTIONS.events).doc(event.id).update({ driveFolderId: folderId });
+          } else {
+            const idx = fallbackEvents.findIndex(e => e.id === event.id);
+            if (idx !== -1) fallbackEvents[idx].driveFolderId = folderId;
+          }
+        } catch (err) {
+          serverLogger.error(`[Drive Sync] Failed to create folder for "${event.title}":`, err);
+          continue; // Skip this event if folder creation fails
         }
-
-        // 2. Simulate/Perform image sync if folderId is established
-        if (folderId && event.driveImageUrls && event.driveImageUrls.length > 0) {
-          // In a live environment, base64/device files would upload to Drive.
-          // Since our upload compresses to WebP and puts it in the database temporarily,
-          // we simulate pushing the assets up to Google Drive.
-          pushedAssetsCount += event.driveImageUrls.length;
-        }
       }
 
-      // Update sync timestamp
-      if (isFirestoreAvailable()) {
-        await db.collection(COLLECTIONS.systemConfig).doc('cloudMediaConfig').set({
-          ...DEFAULT_SYSTEM_CLOUD_CONFIG,
-          lastSyncedAt: new Date().toISOString(),
-        }, { merge: true });
+      // 2. Simulate/Perform image sync if folderId is established
+      if (folderId && event.driveImageUrls && event.driveImageUrls.length > 0) {
+        // In a live environment, base64/device files would upload to Drive.
+        // Since our upload compresses to WebP and puts it in the database temporarily,
+        // we simulate pushing the assets up to Google Drive.
+        pushedAssetsCount += event.driveImageUrls.length;
       }
-
-      const allEvents = await getEvents();
-      res.json({
-        success: true,
-        message: `Successfully pushed ${pushedFoldersCount} folders and ${pushedAssetsCount} media assets up to Google Drive.`,
-        syncedFolders: pushedFoldersCount,
-        totalImages: pushedAssetsCount,
-        events: allEvents,
-      });
-
-    } else {
-      // REVERSE SYNC: Google Drive → Firestore → UI
-      serverLogger.info(`[Drive Sync] Starting reverse sync (Google Drive → App)`);
-
-      // Step 1: List all sub-folders inside the root folder
-      const foldersRes = await drive.files.list({
-        q: `'${rootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-        fields: 'files(id, name, createdTime, modifiedTime)',
-        orderBy: 'createdTime desc',
-        pageSize: 100,
-      });
-
-      const subFolders = foldersRes.data.files || [];
-      serverLogger.info(`[Drive Sync] Found ${subFolders.length} sub-folders`);
-
-      // Step 2: Also list images directly in root folder
-      const rootImagesRes = await drive.files.list({
-        q: `'${rootFolderId}' in parents and mimeType contains 'image/' and trashed = false`,
-        fields: 'files(id, name, mimeType, createdTime)',
-        orderBy: 'createdTime desc',
-        pageSize: 200,
-      });
-
-      const rootImages = rootImagesRes.data.files || [];
-      const syncedEvents: GroupEvent[] = [];
-
-      // Step 3: For each sub-folder, list its images
-      for (const folder of subFolders) {
-        const imagesRes = await drive.files.list({
-          q: `'${folder.id}' in parents and mimeType contains 'image/' and trashed = false`,
-          fields: 'files(id, name, mimeType, createdTime)',
-          orderBy: 'createdTime desc',
-          pageSize: 200,
-        });
-
-        const images = imagesRes.data.files || [];
-        const imageUrls = images.map((img: any) => `https://lh3.googleusercontent.com/d/${img.id}`);
-
-        const videosRes = await drive.files.list({
-          q: `'${folder.id}' in parents and mimeType contains 'video/' and trashed = false`,
-          fields: 'files(id, name, mimeType)',
-          pageSize: 20,
-        });
-        const videos = videosRes.data.files || [];
-        const videoUrls = videos.map((vid: any) => `/api/media/image/${vid.id}#${vid.name || 'video.mp4'}`);
-        const allMediaUrls = [...imageUrls, ...videoUrls];
-
-        const folderParsedDate = folder.name ? parseDateFromTitle(folder.name) : null;
-        const folderDate = folderParsedDate || (folder.createdTime
-          ? new Date(folder.createdTime).toISOString().split('T')[0]
-          : new Date().toISOString().split('T')[0]);
-
-        const eventId = `gdrive_${folder.id}`;
-        const event: GroupEvent = {
-          id: eventId,
-          title: folder.name || 'Untitled Folder',
-          description: `Synced event media folder. Contains ${images.length} photos${videos.length > 0 ? ` and ${videos.length} videos` : ''}.`,
-          date: folderDate,
-          time: '09:00',
-          location: '',
-          category: 'General',
-          driveImageUrls: allMediaUrls,
-          driveFolderId: folder.id || '',
-          youtubeVideoUrl: '',
-          createdBy: 'Official Cloud Pipeline',
-          createdById: 'tarabateam_admin',
-          attendeeIds: [],
-          maxCapacity: 1000,
-          createdAt: folder.createdTime || new Date().toISOString(),
-        };
-
-        if (isFirestoreAvailable()) {
-          await db.collection(COLLECTIONS.events).doc(eventId).set(event, { merge: true });
-        } else {
-          const idx = fallbackEvents.findIndex((e) => e.id === eventId);
-          if (idx >= 0) fallbackEvents[idx] = event;
-          else fallbackEvents.unshift(event);
-        }
-
-        syncedEvents.push(event);
-      }
-
-      // Ensure any legacy root parent placeholder is removed from Firestore and memory
-      const rootEventId = `gdrive_root_${rootFolderId}`;
-      if (isFirestoreAvailable()) {
-        await db.collection(COLLECTIONS.events).doc(rootEventId).delete().catch(() => {});
-      }
-      fallbackEvents = fallbackEvents.filter((e) => !e.id.startsWith("gdrive_root_"));
-
-      // Update sync timestamp
-      if (isFirestoreAvailable()) {
-        await db.collection(COLLECTIONS.systemConfig).doc('cloudMediaConfig').set({
-          ...DEFAULT_SYSTEM_CLOUD_CONFIG,
-          lastSyncedAt: new Date().toISOString(),
-        }, { merge: true });
-      }
-
-      const allEvents = await getEvents();
-      res.json({
-        success: true,
-        message: `Successfully synced ${syncedEvents.length} folders with ${syncedEvents.reduce((acc, e) => acc + (e.driveImageUrls?.length || 0), 0)} total images from Google Drive.`,
-        syncedFolders: syncedEvents.length,
-        totalImages: syncedEvents.reduce((acc, e) => acc + (e.driveImageUrls?.length || 0), 0),
-        events: allEvents,
-      });
     }
+
+    // Update sync timestamp
+    if (isFirestoreAvailable()) {
+      await db.collection(COLLECTIONS.systemConfig).doc('cloudMediaConfig').set({
+        ...DEFAULT_SYSTEM_CLOUD_CONFIG,
+        lastSyncedAt: new Date().toISOString(),
+      }, { merge: true });
+    }
+
+    const allEvents = await getEvents();
+    res.json({
+      success: true,
+      message: `Successfully pushed ${pushedFoldersCount} folders and ${pushedAssetsCount} media assets up to Google Drive.`,
+      syncedFolders: pushedFoldersCount,
+      totalImages: pushedAssetsCount,
+      events: allEvents,
+    });
   } catch (error: any) {
       serverLogger.error("Drive sync error", error as Error);
     const message = error.message?.includes('access')
@@ -2409,52 +2280,6 @@ app.post("/api/media/cloud-sync-all", conditionalAuth, async (req: Request, res:
       : error.message || 'Failed to sync from Google Drive.';
     res.status(500).json({ error: message });
   }
-});
-
-// 14. Media: YouTube Parse & Live Metadata API integration
-app.post("/api/media/youtube-parse", conditionalAuth, async (req: Request, res: Response) => {
-  const validation = validateBody(YouTubeParseSchema, req.body);
-  if (!validation.success) {
-    res.status(400).json({ error: (validation as any).error });
-    return;
-  }
-
-  const { url } = validation.data;
-  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/);
-  const videoId = match ? match[1] : null;
-
-  if (!videoId) {
-    return res.status(400).json({ error: "Invalid YouTube URL format." });
-  }
-
-  let videoTitle = 'Team Taraba River Media Feature';
-  let thumbnailUrl = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
-
-  const ytKey = process.env.YOUTUBE_API_KEY;
-  if (ytKey && !ytKey.includes("YourYouTubeKey") && ytKey.length > 10) {
-    try {
-      const ytRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?id=${videoId}&key=${ytKey}&part=snippet`);
-      if (ytRes.ok) {
-        const ytData = await ytRes.json();
-        // @ts-ignore
-        const snippet = ytData.items?.[0]?.snippet;
-        if (snippet) {
-          videoTitle = snippet.title || videoTitle;
-          thumbnailUrl = snippet.thumbnails?.maxres?.url || snippet.thumbnails?.high?.url || thumbnailUrl;
-        }
-      }
-    } catch (ytErr) {
-      serverLogger.warn("YouTube API metadata fetch warning", { error: (ytErr as Error).message });
-    }
-  }
-
-  res.json({
-    success: true,
-    videoId,
-    embedUrl: `https://www.youtube.com/embed/${videoId}`,
-    thumbnailUrl,
-    title: videoTitle
-  });
 });
 
 // Endpoint to save & update YouTube API Key dynamically
@@ -2484,284 +2309,7 @@ app.post("/api/system/save-youtube-key", conditionalAuth, conditionalRequireAdmi
   return res.json({ success: true, message: "YouTube API Key saved successfully!" });
 });
 
-// 15. Media: YouTube Back-Sync (STRICTLY sync Team Taraba YouTube Account / Channel Uploads & Studio Links)
-app.post("/api/media/youtube-back-sync", conditionalAuth, async (req: Request, res: Response) => {
-  try {
-    const { channelId, handle, urls, videoIds } = req.body || {};
-    const ytKey = process.env.YOUTUBE_API_KEY;
-    const targetChannelId = channelId || process.env.YOUTUBE_CHANNEL_ID || "UCF0QmTZ7Qj2DPxINaY2v2NA";
-    const targetHandle = handle || process.env.YOUTUBE_HANDLE || "tarabateam";
-
-    let fetchedVideos: Array<{ videoId: string; title: string; published: string; link: string; thumbnail: string }> = [];
-
-    // Helper regex to extract YouTube video ID from any watch, short, or share link
-    const extractYtId = (rawUrl: string): string | null => {
-      const reg = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|shorts\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-      const match = String(rawUrl).trim().match(reg);
-      return (match && match[2].length === 11) ? match[2] : (rawUrl.trim().length === 11 ? rawUrl.trim() : null);
-    };
-
-    // Step 0: Process explicitly passed URLs / Studio links (Shorts or Videos)
-    const explicitIds: string[] = [];
-    if (Array.isArray(urls)) {
-      urls.forEach(u => {
-        const id = extractYtId(u);
-        if (id && !explicitIds.includes(id)) explicitIds.push(id);
-      });
-    } else if (typeof urls === "string" && urls.trim()) {
-      urls.split(/[\n,]+/).forEach(u => {
-        const id = extractYtId(u);
-        if (id && !explicitIds.includes(id)) explicitIds.push(id);
-      });
-    }
-
-    if (Array.isArray(videoIds)) {
-      videoIds.forEach(v => {
-        const id = extractYtId(v);
-        if (id && !explicitIds.includes(id)) explicitIds.push(id);
-      });
-    }
-
-    // If explicit video IDs provided, query YouTube Data API for metadata
-    if (explicitIds.length > 0 && ytKey && !ytKey.includes("YourYouTubeKey")) {
-      try {
-        const idsQuery = explicitIds.join(",");
-        const vUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,status&id=${idsQuery}&key=${ytKey}`;
-        const vRes = await fetch(vUrl);
-        if (vRes.ok) {
-          const vData = await vRes.json();
-          for (const item of // @ts-ignore
-          vData.items || []) {
-            if (item.id && item.snippet) {
-              fetchedVideos.push({
-                videoId: item.id,
-                title: item.snippet.title || "Team Taraba Media Clip",
-                published: item.snippet.publishedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
-                link: `https://www.youtube.com/watch?v=${item.id}`,
-                thumbnail: item.snippet.thumbnails?.high?.url || item.snippet.thumbnails?.medium?.url || `https://img.youtube.com/vi/${item.id}/hqdefault.jpg`
-              });
-            }
-          }
-        }
-      } catch (err) {
-        serverLogger.warn("Error fetching explicit YouTube video metadata", { error: (err as Error).message });
-      }
-    }
-
-    // Step 1: Query YouTube Data API for strict channel uploads (if API key available)
-    if (fetchedVideos.length === 0 && ytKey && !ytKey.includes("YourYouTubeKey") && ytKey.length > 10) {
-      try {
-        let channelIdToUse = targetChannelId;
-        const channelUrl = targetHandle
-          ? `https://www.googleapis.com/youtube/v3/channels?part=contentDetails,snippet&forHandle=${targetHandle.replace('@','')}&key=${ytKey}`
-          : `https://www.googleapis.com/youtube/v3/channels?part=contentDetails,snippet&id=${targetChannelId}&key=${ytKey}`;
-
-        const chRes = await fetch(channelUrl);
-        if (chRes.ok) {
-          const chData = await chRes.json();
-          const channelItem = // @ts-ignore
-          chData.items?.[0];
-          const uploadsPlaylistId = channelItem?.contentDetails?.relatedPlaylists?.uploads;
-          if (channelItem?.id) channelIdToUse = channelItem.id;
-
-          if (uploadsPlaylistId) {
-            // Fetch exact videos uploaded to this channel's playlist
-            const playlistUrl = `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${uploadsPlaylistId}&key=${ytKey}`;
-            const plRes = await fetch(playlistUrl);
-            if (plRes.ok) {
-              const plData = await plRes.json();
-              for (const item of // @ts-ignore
-              plData.items || []) {
-                const vId = item.snippet?.resourceId?.videoId;
-                if (vId) {
-                  fetchedVideos.push({
-                    videoId: vId,
-                    title: item.snippet.title || "Team Taraba Video Clip",
-                    published: item.snippet.publishedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
-                    link: `https://www.youtube.com/watch?v=${vId}`,
-                    thumbnail: item.snippet.thumbnails?.high?.url || `https://img.youtube.com/vi/${vId}/hqdefault.jpg`
-                  });
-                }
-              }
-            }
-          }
-        }
-
-        // Option B: Search strictly scoped to this channel ID ONLY (type=video&channelId=...)
-        if (fetchedVideos.length === 0 && channelIdToUse) {
-          const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelIdToUse}&maxResults=50&type=video&key=${ytKey}`;
-          const searchRes = await fetch(searchUrl);
-          if (searchRes.ok) {
-            const searchData = await searchRes.json();
-            for (const item of // @ts-ignore
-            searchData.items || []) {
-              if (item.id?.videoId && item.snippet) {
-                fetchedVideos.push({
-                  videoId: item.id.videoId,
-                  title: item.snippet.title || "Team Taraba Media Clip",
-                  published: item.snippet.publishedAt?.split('T')[0] || new Date().toISOString().split('T')[0],
-                  link: `https://www.youtube.com/watch?v=${item.id.videoId}`,
-                  thumbnail: item.snippet.thumbnails?.high?.url || `https://img.youtube.com/vi/${item.id.videoId}/hqdefault.jpg`
-                });
-              }
-            }
-          }
-        }
-      } catch (err) {
-        serverLogger.warn("YouTube Data API channel upload fetch warning", { error: (err as Error).message });
-      }
-    }
-
-    // Step 2: Fallback to RSS feed strictly for Team Taraba channel ID
-    if (fetchedVideos.length === 0 && targetChannelId) {
-      try {
-        const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${targetChannelId}`;
-        const rssRes = await fetch(rssUrl);
-        if (rssRes.ok) {
-          const xmlText = await rssRes.text();
-          const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
-          let match;
-          while ((match = entryRegex.exec(xmlText)) !== null) {
-            const block = match[1];
-            const idMatch = block.match(/<yt:videoId>(.*?)<\/yt:videoId>/);
-            const titleMatch = block.match(/<title>(.*?)<\/title>/);
-            const pubMatch = block.match(/<published>(.*?)<\/published>/);
-            const linkMatch = block.match(/<link rel="alternate" href="(.*?)"/);
-            const thumbMatch = block.match(/<media:thumbnail url="(.*?)"/);
-
-            if (idMatch && titleMatch) {
-              const vId = idMatch[1].trim();
-              fetchedVideos.push({
-                videoId: vId,
-                title: titleMatch[1].trim().replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').replace(/&amp;/g, '&'),
-                published: pubMatch ? pubMatch[1].trim().split('T')[0] : new Date().toISOString().split('T')[0],
-                link: linkMatch ? linkMatch[1] : `https://www.youtube.com/watch?v=${vId}`,
-                thumbnail: thumbMatch ? thumbMatch[1] : `https://img.youtube.com/vi/${vId}/hqdefault.jpg`
-              });
-            }
-          }
-        }
-      } catch (rssErr) {
-        serverLogger.warn("YouTube RSS feed error", { error: (rssErr as Error).message });
-      }
-    }
-
-    if (fetchedVideos.length === 0) {
-      return res.json({
-        success: true,
-        message: "No video clips found in Team Taraba YouTube account yet. As soon as videos or shorts are uploaded to your YouTube channel, they will sync automatically!",
-        syncedVideosCount: 0,
-        events: await getEvents()
-      });
-    }
-
-    const currentEvents = await getEvents();
-    let syncedCount = 0;
-
-    for (const vid of fetchedVideos) {
-      // Check if an event already has this YouTube video URL
-      const existingMatch = currentEvents.find(
-        (e) => e.youtubeVideoUrl?.includes(vid.videoId) || e.title.toLowerCase() === vid.title.toLowerCase()
-      );
-
-      if (existingMatch) {
-        if (!existingMatch.youtubeVideoUrl) {
-          existingMatch.youtubeVideoUrl = vid.link;
-          if (isFirestoreAvailable()) {
-            await db.collection(COLLECTIONS.events).doc(existingMatch.id).update({ youtubeVideoUrl: vid.link });
-          } else {
-            const idx = fallbackEvents.findIndex((e) => e.id === existingMatch.id);
-            if (idx >= 0) fallbackEvents[idx] = existingMatch;
-          }
-          syncedCount++;
-        }
-      } else {
-        // Auto-create new Event folder for newly discovered YouTube video clip
-        const newEventId = `yt_clip_${vid.videoId}`;
-        const newEvent: GroupEvent = {
-          id: newEventId,
-          title: vid.title,
-          date: vid.published,
-          time: "10:00",
-          location: "",
-          category: "celebration",
-          description: `Short video clip back-synced automatically from YouTube.`,
-          driveImageUrls: [],
-          youtubeVideoUrl: vid.link,
-          createdBy: "YouTube Cloud Pipeline",
-          createdById: "yt_pipeline",
-          attendeeIds: [],
-          maxCapacity: 500,
-          createdAt: new Date().toISOString()
-        };
-
-        if (isFirestoreAvailable()) {
-          await db.collection(COLLECTIONS.events).doc(newEventId).set(newEvent, { merge: true });
-        } else {
-          const idx = fallbackEvents.findIndex((e) => e.id === newEventId);
-          if (idx >= 0) fallbackEvents[idx] = newEvent;
-          else fallbackEvents.unshift(newEvent);
-        }
-        syncedCount++;
-      }
-    }
-
-    const updatedEvents = await getEvents();
-
-    return res.json({
-      success: true,
-      message: `Successfully back-synced ${syncedCount} YouTube videos & clips into your app!`,
-      syncedVideosCount: syncedCount,
-      events: updatedEvents
-    });
-
-  } catch (error: any) {
-    serverLogger.error("YouTube back-sync error", error as Error);
-    return res.status(500).json({ error: error.message || "Failed to back-sync YouTube account." });
-  }
-});
-
 // Duplicate /api/health stub removed — the full health check above is the canonical route.
-
-// 14. Media Pipeline: Upload intermediate media to Firestore
-app.post("/api/media/upload", conditionalAuth, async (req: Request, res: Response) => {
-  const validation = validateBody(MediaUploadSchema, req.body);
-  if (!validation.success) {
-    res.status(400).json({ error: (validation as any).error });
-    return;
-  }
-  try {
-    await uploadIntermediateMedia(req, res);
-  } catch (error: any) {
-    serverLogger.error("Media upload error", error);
-    res.status(500).json({ error: error.message || "Failed to upload media." });
-  }
-});
-
-// 14b. Media Pipeline: Finalize media to YouTube/Drive
-app.post("/api/media/finalize", conditionalAuth, async (req: Request, res: Response) => {
-  const validation = validateBody(MediaFinalizeSchema, req.body);
-  if (!validation.success) {
-    res.status(400).json({ error: (validation as any).error });
-    return;
-  }
-  try {
-    await finalizeMedia(req, res);
-  } catch (error: any) {
-    serverLogger.error("Media finalize error", error);
-    res.status(500).json({ error: error.message || "Failed to finalize media." });
-  }
-});
-
-// 14c. Media Pipeline: Get media status
-app.get("/api/media/status/:mediaId", conditionalAuth, async (req: Request, res: Response) => {
-  try {
-    await getMediaStatus(req, res);
-  } catch (error: any) {
-    serverLogger.error("Get media status error", error);
-    res.status(500).json({ error: error.message || "Failed to get media status." });
-  }
-});
 
 // 14d. Media Pipeline: Stream/Proxy Image directly from Google Drive
 app.get("/api/media/image/:fileId", async (req: Request, res: Response) => {
@@ -3960,43 +3508,6 @@ app.post("/api/ai-xplora", async (req: Request, res: Response) => {
       answer: `Gemini Direct Web Error: ${error?.message || "Failed to query Google Gemini service."}`,
       sources: [],
       error: error?.message
-    });
-  }
-});
-
-// ===================================================================
-//  Automated YouTube Upload & OAuth2 Bridge Pipeline
-// ===================================================================
-app.post("/api/media/upload-video-to-youtube", conditionalAuth, async (req: Request, res: Response) => {
-  try {
-    const { base64Data, fileName, folderName, mimeType } = req.body || {};
-
-    if (!base64Data) {
-      return res.status(400).json({ success: false, error: "base64Data is required for video upload." });
-    }
-
-    const buffer = await base64ToBuffer(base64Data);
-    const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
-    serverLogger.info(`[YouTube API Gateway] Received video "${fileName}" (${sizeMB} MB) for streaming to YouTube...`);
-
-    const youtubeUrl = await uploadVideoBufferToYouTube(
-      buffer,
-      fileName || `video_${Date.now()}.mp4`,
-      folderName || "Event Media",
-      mimeType || "video/mp4"
-    );
-
-    return res.json({
-      success: true,
-      youtubeUrl,
-      fileName,
-      sizeMB,
-    });
-  } catch (error: any) {
-    serverLogger.error("[YouTube API Gateway] Upload error", error);
-    return res.status(500).json({
-      success: false,
-      error: error?.message || "Failed to stream video to YouTube.",
     });
   }
 });

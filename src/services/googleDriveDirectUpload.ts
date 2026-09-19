@@ -41,7 +41,7 @@ async function initDriveUploadSession(
   mimeType: string,
   size: number,
   folderName: string
-): Promise<string> {
+): Promise<{ uploadUrl: string; folderId: string | null }> {
   const headers = await getAuthHeaders();
   const res = await fetch(apiUrl("/api/media/drive/init-upload"), {
     method: "POST",
@@ -52,7 +52,7 @@ async function initDriveUploadSession(
   if (!res.ok || !data.uploadUrl) {
     throw new Error(data.error || `Failed to initiate Google Drive upload session (${res.status}).`);
   }
-  return data.uploadUrl;
+  return { uploadUrl: data.uploadUrl, folderId: data.folderId || null };
 }
 
 /**
@@ -79,13 +79,19 @@ async function makeFilePublicReadable(fileId: string): Promise<void> {
  *   2. Stream bytes with real-time XHR progress tracking directly to that session URL
  *   3. Ask the backend to set public read permissions on the uploaded image
  *   4. Return direct CDN image URL (`https://lh3.googleusercontent.com/d/${fileId}`)
+ *
+ * `onFolderId` (optional) is called with the real Google Drive folder id the
+ * server resolved/created for this upload, as soon as the session opens —
+ * every file in a batch lands in the same folder, so callers use this to
+ * learn the folder's real id instead of fabricating one for the event record.
  */
 export async function uploadImageDirectToDrive(
   fileOrBlob: File | Blob,
   fileName: string,
   folderName: string,
   onProgress?: (percent: number) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onFolderId?: (folderId: string) => void
 ): Promise<string> {
   if (signal?.aborted) {
     const err = new Error("Google Drive upload was aborted by user.");
@@ -99,7 +105,9 @@ export async function uploadImageDirectToDrive(
   // Step 1: Ask the backend to initiate the Drive resumable upload session
   let uploadUrl: string;
   try {
-    uploadUrl = await initDriveUploadSession(cleanName, mimeType, fileOrBlob.size, folderName);
+    const session = await initDriveUploadSession(cleanName, mimeType, fileOrBlob.size, folderName);
+    uploadUrl = session.uploadUrl;
+    if (session.folderId && onFolderId) onFolderId(session.folderId);
   } catch (initErr: any) {
     if (signal?.aborted) {
       const err = new Error("Google Drive upload was aborted by user.");

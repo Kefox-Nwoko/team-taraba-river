@@ -102,16 +102,6 @@ export const AIQuerySchema = z.object({
   }).optional(),
 });
 
-// --- Media Schemas ---
-
-export const DriveSyncSchema = z.object({
-  driveUrl: z.string().url('A valid Google Drive URL is required'),
-});
-
-export const YouTubeParseSchema = z.object({
-  url: z.string().url('A valid YouTube URL is required'),
-});
-
 // --- Auth Schema ---
 
 export const LoginCredentialSchema = z.object({
@@ -140,25 +130,6 @@ export const MemberContactSearchSchema = z.object({
 export const MemberRestoreSchema = z.object({
   originalId: z.string().min(1, 'originalId is required'),
   member: z.any().optional(),
-});
-
-// --- Media Pipeline Schemas ---
-
-export const MediaUploadSchema = z.object({
-  eventId: z.string().min(1, 'eventId is required'),
-  type: z.enum(['photo', 'video']),
-  base64Data: z.string().min(1, 'base64Data is required'),
-  mimeType: z.string().min(1, 'mimeType is required'),
-  fileName: z.string().optional(),
-  storageTarget: z.enum(['drive', 'youtube']).optional().default('drive'),
-});
-
-export const MediaFinalizeSchema = z.object({
-  mediaId: z.string().min(1, 'mediaId is required'),
-});
-
-export const MediaStatusSchema = z.object({
-  mediaId: z.string().min(1, 'mediaId is required'),
 });
 
 // --- Direct-to-Google Resumable Upload Bridge Schemas ---

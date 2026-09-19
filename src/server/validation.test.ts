@@ -5,12 +5,8 @@ import {
   EventCreationSchema,
   ApprovalDecisionSchema,
   AIQuerySchema,
-  DriveSyncSchema,
-  YouTubeParseSchema,
   LoginCredentialSchema,
   AdminAISearchSchema,
-  MediaUploadSchema,
-  MediaFinalizeSchema,
   validateBody,
 } from "../../server/validation";
 
@@ -166,30 +162,6 @@ describe("AIQuerySchema", () => {
   });
 });
 
-describe("DriveSyncSchema", () => {
-  it("accepts valid drive URL", () => {
-    const result = validateBody(DriveSyncSchema, { driveUrl: "https://drive.google.com/drive/folders/abc123" });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects invalid URL", () => {
-    const result = validateBody(DriveSyncSchema, { driveUrl: "not-a-url" });
-    expect(result.success).toBe(false);
-  });
-});
-
-describe("YouTubeParseSchema", () => {
-  it("accepts valid youtube URL", () => {
-    const result = validateBody(YouTubeParseSchema, { url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects invalid URL", () => {
-    const result = validateBody(YouTubeParseSchema, { url: "not-a-url" });
-    expect(result.success).toBe(false);
-  });
-});
-
 describe("LoginCredentialSchema", () => {
   it("accepts valid credential", () => {
     const result = validateBody(LoginCredentialSchema, { credential: "08012345678" });
@@ -202,58 +174,3 @@ describe("LoginCredentialSchema", () => {
   });
 });
 
-describe("MediaUploadSchema", () => {
-  it("accepts valid photo upload", () => {
-    const result = validateBody(MediaUploadSchema, {
-      eventId: "evt_1",
-      type: "photo",
-      base64Data: "data:image/webp;base64,abc123",
-      mimeType: "image/webp",
-      fileName: "photo.webp",
-      storageTarget: "drive",
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts valid video upload", () => {
-    const result = validateBody(MediaUploadSchema, {
-      eventId: "evt_1",
-      type: "video",
-      base64Data: "data:video/mp4;base64,abc123",
-      mimeType: "video/mp4",
-      storageTarget: "youtube",
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects missing eventId", () => {
-    const result = validateBody(MediaUploadSchema, {
-      type: "photo",
-      base64Data: "abc",
-      mimeType: "image/webp",
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects invalid type", () => {
-    const result = validateBody(MediaUploadSchema, {
-      eventId: "evt_1",
-      type: "audio",
-      base64Data: "abc",
-      mimeType: "audio/mpeg",
-    });
-    expect(result.success).toBe(false);
-  });
-});
-
-describe("MediaFinalizeSchema", () => {
-  it("accepts valid mediaId", () => {
-    const result = validateBody(MediaFinalizeSchema, { mediaId: "media_123" });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects missing mediaId", () => {
-    const result = validateBody(MediaFinalizeSchema, {});
-    expect(result.success).toBe(false);
-  });
-});

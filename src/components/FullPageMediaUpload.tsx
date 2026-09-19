@@ -104,6 +104,12 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Real Google Drive folder id for the batch currently uploading, learned
+  // from the server's init-upload response the first time a Drive upload
+  // (photo, or a video that fell back off YouTube) opens a session. Every
+  // file in one batch shares the same folder, so one capture per batch is
+  // enough — used instead of fabricating a driveFolderId on the event record.
+  const driveFolderIdRef = useRef<string | null>(null);
 
   // Keeps the screen awake for the duration of an upload. Mobile browsers
   // suspend timers and can drop in-flight network connections once the
@@ -312,7 +318,8 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           cleanVideoName,
           folderName,
           onFileProgress,
-          signal
+          signal,
+          (folderId) => { driveFolderIdRef.current = folderId; }
         );
         logger.info(`[MediaUpload] ✅ Video successfully uploaded via Google Drive fallback: ${driveUrl}`);
         return driveUrl;
@@ -439,7 +446,8 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         cleanName,
         folderName,
         onFileProgress,
-        signal
+        signal,
+        (folderId) => { driveFolderIdRef.current = folderId; }
       );
       return driveUrl;
     } catch (driveErr: any) {
@@ -851,6 +859,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    driveFolderIdRef.current = null;
 
     setIsUploading(true);
     acquireWakeLock();
@@ -866,8 +875,15 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     const folderNameTitle = folderMode === "new"
       ? newFolderTitle.trim()
       : (events.find((e) => e.id === selectedFolderId)?.title || "Event Gallery");
-    const eventId = folderMode === "new" ? `folder_${Date.now()}` : selectedFolderId;
+    // Folder name used for Google Drive folder creation/lookup must match the
+    // reverse-sync naming convention in server.ts: "{date} - {title}".
+    // Without this prefix, forward uploads create folders named "{title}" only,
+    // while reverse sync creates/scans "{date} - {title}" — the mismatch means
+    // uploaded images end up in a different Drive folder and the reverse sync
+    // never finds them, making images "disappear" from the gallery.
     const folderEventDate = folderMode === "new" ? newDate : (events.find((e) => e.id === selectedFolderId)?.date || newDate);
+    const folderDriveName = `${folderEventDate} - ${folderNameTitle}`;
+    const eventId = folderMode === "new" ? `folder_${Date.now()}` : selectedFolderId;
     const folderLocation = folderMode === "new" ? newLocation.trim() : (events.find((e) => e.id === selectedFolderId)?.location || "");
     const folderCategory = folderMode === "new" ? newCategory : (events.find((e) => e.id === selectedFolderId)?.category || "general");
     const folderDescription = folderMode === "new" ? newDescription.trim() : (events.find((e) => e.id === selectedFolderId)?.description || "");
@@ -907,10 +923,10 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       );
 
       try {
-        const finalUrl = await uploadMediaFileWithProgress(
-          item,
-          eventId,
-          folderNameTitle,
+         const finalUrl = await uploadMediaFileWithProgress(
+           item,
+           eventId,
+           folderDriveName,
           i,
           (pct) => {
             setActiveFileProgress(pct);
@@ -1064,7 +1080,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             targetEvent = {
               ...existingEvent,
               driveImageUrls: updatedPhotoList,
-              driveFolderId: existingEvent.driveFolderId || `drive_folder_${Date.now()}`,
+              driveFolderId: existingEvent.driveFolderId || driveFolderIdRef.current || "",
               youtubeVideoUrls: updatedYtList,
               youtubeVideoUrl: updatedYtList[0] || "",
             };
@@ -1103,7 +1119,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
               category: newCategory,
               description: newDescription.trim() || `Archival media collection for ${folderNameTitle}.`,
               driveImageUrls: photoFinalUrls,
-              driveFolderId: `drive_folder_${Date.now()}`,
+              driveFolderId: driveFolderIdRef.current || "",
               youtubeVideoUrl: videoFinalUrls[0] || "",
               youtubeVideoUrls: videoFinalUrls,
               createdBy: currentUser?.fullName || "Community Member",

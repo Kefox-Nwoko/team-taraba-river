@@ -7,7 +7,6 @@ import { AppStateManager } from "../services/storage";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import {
   triggerCloudSyncAll,
-  triggerYouTubeBackSync,
   resetSystemData,
   resetPortalVisits,
   fetchRecycleBin,
@@ -39,7 +38,6 @@ import {
   UserX,
   ArrowLeft,
   FolderOpen,
-  Video,
   Cloud,
   Save,
   CheckSquare,
@@ -408,7 +406,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   const [youtubeUrlInput, setYoutubeUrlInput] = useState(() => cloudConfig.dedicatedYoutubeUrl);
   const [cloudSaveMessage, setCloudSaveMessage] = useState<string | null>(null);
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
-  const [syncDirection, setSyncDirection] = useState<"reverse" | "forward">("forward");
 
   // Developer access restriction guard
   const isXtraworxDeveloper = currentUser?.email?.toLowerCase().trim() === 'xtraworxng@gmail.com';
@@ -614,13 +611,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
 
   const handleTriggerCloudSyncNow = async () => {
     setIsCloudSyncing(true);
-    setCloudSaveMessage(
-      syncDirection === "reverse"
-        ? "🔄 Connecting to Cloud Media Archive... Pulling folders and photos..."
-        : "🔄 Connecting to Cloud Media Archive... Pushing events and local assets..."
-    );
+    setCloudSaveMessage("🔄 Connecting to Cloud Media Archive... Pushing events and local assets...");
     try {
-      const res = await triggerCloudSyncAll(syncDirection);
+      const res = await triggerCloudSyncAll();
       if (res && res.events) {
         const local = AppStateManager.getEvents();
         const map = new Map<string, GroupEvent>();
@@ -642,40 +635,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       setTimeout(() => {
         setIsCloudSyncing(false);
         setTimeout(() => setCloudSaveMessage(null), 8000);
-      }, 1500);
-    }
-  };
-
-  const [ytSyncDirection, setYtSyncDirection] = useState<"reverse" | "forward">("forward");
-  const [isYtSyncing, setIsYtSyncing] = useState(false);
-  const [ytSyncMessage, setYtSyncMessage] = useState<string | null>(null);
-
-  const handleTriggerYouTubeSyncNow = async () => {
-    setIsYtSyncing(true);
-    setYtSyncMessage(
-      ytSyncDirection === "reverse"
-        ? "🔄 Connecting to Media Stream... Back-syncing video clips & recordings..."
-        : "🚀 Syncing local event video metadata to cloud stream..."
-    );
-    try {
-      const res = await triggerYouTubeBackSync();
-      if (res && res.events) {
-        const local = AppStateManager.getEvents();
-        const map = new Map<string, GroupEvent>();
-        for (const e of local) { if (e?.id) map.set(e.id, e); }
-        for (const e of res.events) { if (e?.id) map.set(e.id, e); }
-        AppStateManager.saveEvents(Array.from(map.values()));
-      }
-      onRefreshData();
-      const syncMsg = (res as any).message || "Video sync complete!";
-      setYtSyncMessage(`⚡ ${syncMsg}`);
-    } catch (e: any) {
-      const errMsg = e?.message || "Video sync encountered an issue.";
-      setYtSyncMessage(`⚠️ ${errMsg}`);
-    } finally {
-      setTimeout(() => {
-        setIsYtSyncing(false);
-        setTimeout(() => setYtSyncMessage(null), 8000);
       }, 1500);
     }
   };
@@ -1490,12 +1449,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </div>
             )}
 
-            {ytSyncMessage && (
-              <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-800/60 text-red-800 dark:text-red-300 text-xs sm:text-sm font-normal animate-fadeIn">
-                {ytSyncMessage}
-              </div>
-            )}
-
             {/* ── SECTION 1: PHOTO & EVENT ALBUMS CLOUD SYNC ENGINE ── */}
             <div className="flex flex-col gap-3.5 p-4 bg-white dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
               {/* Text Block (Placed Full Width Above Button) */}
@@ -1508,7 +1461,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     Photo & Event Albums Cloud Sync Engine
                   </h4>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
-                    Bidirectional sync for cloud media photos & event albums
+                    Pushes App-created event folders up to Cloud storage
                   </p>
                 </div>
               </div>
@@ -1526,114 +1479,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 </button>
               </div>
 
-              {/* Sync Direction Sliding Toggle Switch */}
-              <div className="flex flex-col space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800/60">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 tracking-wide">
-                  MEDIA SYNC DIRECTION
-                </label>
-                <div className="relative flex items-center p-1 bg-slate-200 dark:bg-slate-900 rounded-xl w-full sm:max-w-sm border border-slate-300 dark:border-slate-800/80 shadow-inner">
-                  {/* Sliding background indicator */}
-                  <div
-                    className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-lg bg-cyan-600 shadow-sm transition-all duration-300 ${
-                      syncDirection === "forward" ? "left-[calc(50%+2px)]" : "left-1"
-                    }`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setSyncDirection("reverse")}
-                    className={`relative z-10 flex-1 py-1.5 px-2 text-xs font-medium transition-colors text-center cursor-pointer flex items-center justify-center gap-1.5 min-w-0 ${
-                      syncDirection === "reverse" ? "text-white" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                    }`}
-                  >
-                    <span className="shrink-0">🔄</span>
-                    <span className="truncate">Cloud ➔ App</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSyncDirection("forward")}
-                    className={`relative z-10 flex-1 py-1.5 px-2 text-xs font-medium transition-colors text-center cursor-pointer flex items-center justify-center gap-1.5 min-w-0 ${
-                      syncDirection === "forward" ? "text-white" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                    }`}
-                  >
-                    <span className="shrink-0">🚀</span>
-                    <span className="truncate">App ➔ Cloud</span>
-                  </button>
-                </div>
+              <div className="flex flex-col space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800/60">
                 <p className="text-xs text-slate-600 dark:text-slate-300 font-normal leading-relaxed pt-0.5">
-                  {syncDirection === "reverse"
-                    ? "👉 Pulls all folders and media from cloud storage into the App Media Hub."
-                    : "👉 Pushes all locally created events, photo folders, and assets from App database up to Cloud."}
-                </p>
-              </div>
-            </div>
-
-            {/* ── SECTION 2: VIDEO STREAM & HIGHLIGHTS SYNC ENGINE ── */}
-            <div className="flex flex-col gap-3.5 p-4 bg-white dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs">
-              {/* Text Block (Placed Full Width Above Button) */}
-              <div className="flex items-start space-x-3 w-full">
-                <div className="p-2 bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400 rounded-xl shrink-0 mt-0.5">
-                  <Video className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm sm:text-base text-slate-900 dark:text-white font-semibold leading-snug">
-                    Video Stream & Highlights Sync Engine
-                  </h4>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
-                    Sync video recordings, clips, and highlights directly with event media
-                  </p>
-                </div>
-              </div>
-
-              {/* Compact Button (Placed Below Text) */}
-              <div className="flex items-center">
-                <button
-                  type="button"
-                  onClick={handleTriggerYouTubeSyncNow}
-                  disabled={isYtSyncing}
-                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white text-xs font-medium rounded-lg transition-all flex items-center space-x-1.5 disabled:opacity-50 cursor-pointer shadow-xs shrink-0"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isYtSyncing ? "animate-spin" : ""}`} />
-                  <span>{isYtSyncing ? "Syncing Videos..." : "Trigger Video Sync"}</span>
-                </button>
-              </div>
-
-              {/* Sync Direction Sliding Toggle Switch */}
-              <div className="flex flex-col space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800/60">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 tracking-wide">
-                  VIDEO SYNC DIRECTION
-                </label>
-                <div className="relative flex items-center p-1 bg-slate-200 dark:bg-slate-900 rounded-xl w-full sm:max-w-sm border border-slate-300 dark:border-slate-800/80 shadow-inner">
-                  {/* Sliding background indicator */}
-                  <div
-                    className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-lg bg-red-600 shadow-sm transition-all duration-300 ${
-                      ytSyncDirection === "forward" ? "left-[calc(50%+2px)]" : "left-1"
-                    }`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setYtSyncDirection("reverse")}
-                    className={`relative z-10 flex-1 py-1.5 px-2 text-xs font-medium transition-colors text-center cursor-pointer flex items-center justify-center gap-1.5 min-w-0 ${
-                      ytSyncDirection === "reverse" ? "text-white" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                    }`}
-                  >
-                    <span className="shrink-0">🔄</span>
-                    <span className="truncate">Stream ➔ App</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setYtSyncDirection("forward")}
-                    className={`relative z-10 flex-1 py-1.5 px-2 text-xs font-medium transition-colors text-center cursor-pointer flex items-center justify-center gap-1.5 min-w-0 ${
-                      ytSyncDirection === "forward" ? "text-white" : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                    }`}
-                  >
-                    <span className="shrink-0">🚀</span>
-                    <span className="truncate">App ➔ Stream</span>
-                  </button>
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-300 font-normal leading-relaxed pt-0.5">
-                  {ytSyncDirection === "reverse"
-                    ? "👉 Pulls all video clips, recordings, and highlights directly into Team Taraba River Event media folders."
-                    : "👉 Forward syncs local video links and video metadata up to the video stream."}
+                  👉 Pushes all locally created events, photo folders, and assets from the App database up to Cloud storage.
                 </p>
               </div>
             </div>

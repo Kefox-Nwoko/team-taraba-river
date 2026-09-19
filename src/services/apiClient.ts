@@ -625,39 +625,11 @@ export async function queryAIAssistant(
   if (!res.ok) throw new Error(data.error || "AI Assistant query failed");
   return data;
 }
-export async function syncGoogleDriveUrl(
-  driveUrl: string
-): Promise<{ folderId: string; syncedImages: string[] }> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(apiUrl("/api/media/drive-sync"), {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ driveUrl }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Drive sync failed");
-  return data;
-}
-export async function parseYouTubeVideoUrl(
-  url: string
-): Promise<{ videoId: string; embedUrl: string; title: string }> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(apiUrl("/api/media/youtube-parse"), {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ url }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "YouTube parse failed");
-  return data;
-}
-
-export async function triggerCloudSyncAll(direction: "reverse" | "forward" = "reverse"): Promise<{ success: boolean; events: GroupEvent[] }> {
+export async function triggerCloudSyncAll(): Promise<{ success: boolean; events: GroupEvent[] }> {
   const headers = await getAuthHeaders();
   const res = await fetch(apiUrl("/api/media/cloud-sync-all"), {
     method: "POST",
     headers,
-    body: JSON.stringify({ direction }),
   });
   if (!res.ok) {
     let errMsg = "Cloud sync failed";
@@ -670,24 +642,6 @@ export async function triggerCloudSyncAll(direction: "reverse" | "forward" = "re
         if (txt) errMsg = txt;
       } catch {}
     }
-    throw new Error(errMsg);
-  }
-  return await res.json();
-}
-
-export async function triggerYouTubeBackSync(channelId?: string, searchQuery?: string, urls?: string | string[]): Promise<{ success: boolean; message: string; syncedVideosCount: number; events: GroupEvent[] }> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(apiUrl("/api/media/youtube-back-sync"), {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ channelId, searchQuery, urls }),
-  });
-  if (!res.ok) {
-    let errMsg = "YouTube back-sync failed";
-    try {
-      const errData = await res.json();
-      errMsg = errData.error || errMsg;
-    } catch {}
     throw new Error(errMsg);
   }
   return await res.json();
@@ -1810,145 +1764,6 @@ export async function adminAISearch(query: string): Promise<Member[]> {
   const semanticResults = performClientSemanticMemberSearch(localMembers, query);
   const idSet = new Set(semanticResults.map((r) => r.id));
   return localMembers.filter((m) => idSet.has(m.id));
-}
-
-export interface MediaUploadResponse {
-  success: boolean;
-  mediaId: string;
-  status: string;
-}
-
-export interface MediaFinalizeResponse {
-  success: boolean;
-  mediaId: string;
-  finalUrl?: string;
-  status: string;
-  error?: string;
-}
-
-export interface MediaStatusResponse {
-  mediaId: string;
-  status: string;
-  finalUrl?: string;
-  error?: string;
-}
-
-export async function uploadMediaItem(params: {
-  eventId: string;
-  folderName?: string;
-  type: "photo" | "video";
-  base64Data: string;
-  mimeType: string;
-  fileName?: string;
-  storageTarget?: "drive" | "youtube";
-}): Promise<MediaUploadResponse> {
-  try {
-    const headers = await getAuthHeaders();
-    const res = await fetch(apiUrl("/api/media/upload"), {
-      method: "POST",
-      headers,
-      body: JSON.stringify(params),
-    });
-    const contentType = res.headers.get("content-type") || "";
-    if (res.ok && contentType.includes("application/json")) {
-      return await res.json();
-    }
-    const data = contentType.includes("application/json")
-      ? await res.json()
-      : { error: `Server returned non-JSON response (${res.status}).` };
-    throw new Error(data.error || `Upload failed with status ${res.status}`);
-  } catch (err: any) {
-    throw new Error(err.message || "Media upload failed");
-  }
-}
-
-export async function finalizeMediaItem(mediaId: string): Promise<MediaFinalizeResponse> {
-  try {
-    const headers = await getAuthHeaders();
-    const res = await fetch(apiUrl("/api/media/finalize"), {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ mediaId }),
-    });
-    const contentType = res.headers.get("content-type") || "";
-    if (res.ok && contentType.includes("application/json")) {
-      return await res.json();
-    }
-    const data = contentType.includes("application/json")
-      ? await res.json()
-      : { error: `Server returned non-JSON response (${res.status}).` };
-    throw new Error(data.error || "Media finalize failed");
-  } catch (err: any) {
-    throw new Error(err.message || "Media finalize failed");
-  }
-}
-
-export async function getMediaItemStatus(mediaId: string): Promise<MediaStatusResponse> {
-  try {
-    const headers = await getAuthHeaders();
-    const res = await fetch(apiUrl(`/api/media/status/${encodeURIComponent(mediaId)}`), {
-      headers,
-    });
-    const contentType = res.headers.get("content-type") || "";
-    if (res.ok && contentType.includes("application/json")) {
-      return await res.json();
-    }
-    throw new Error("Failed to get media status");
-  } catch (err: any) {
-    throw new Error(err.message || "Failed to get media status");
-  }
-}
-
-export async function uploadVideoToYouTubeBridge(
-  file: File,
-  folderName: string,
-  onProgress?: (pct: number) => void
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Failed to read video file for upload."));
-    reader.onload = () => {
-      const base64Data = reader.result as string;
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", apiUrl("/api/media/upload-video-to-youtube"));
-      xhr.setRequestHeader("Content-Type", "application/json");
-
-      if (xhr.upload && onProgress) {
-        xhr.upload.onprogress = (evt) => {
-          if (evt.lengthComputable) {
-            const pct = Math.min(99, Math.round((evt.loaded / evt.total) * 100));
-            onProgress(pct);
-          }
-        };
-      }
-
-      xhr.onload = () => {
-        try {
-          const res = JSON.parse(xhr.responseText);
-          if (xhr.status >= 200 && xhr.status < 300 && res.success && res.youtubeUrl) {
-            if (onProgress) onProgress(100);
-            resolve(res.youtubeUrl);
-          } else {
-            reject(new Error(res.error || `Server returned error status ${xhr.status}`));
-          }
-        } catch {
-          reject(new Error(`Invalid server response (${xhr.status})`));
-        }
-      };
-
-      xhr.onerror = () => reject(new Error("Network error streaming video to YouTube bridge"));
-      xhr.send(
-        JSON.stringify({
-          base64Data,
-          fileName: file.name,
-          folderName,
-          mimeType: file.type || "video/mp4",
-        })
-      );
-    };
-
-    reader.readAsDataURL(file);
-  });
 }
 
 // --- Birthday Reminder API Client Helpers ---

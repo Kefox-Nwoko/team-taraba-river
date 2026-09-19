@@ -135,7 +135,7 @@ export async function uploadVideoDirectToYouTube(
   let lastError: Error | null = null;
   // Bounded low: a batch of several files uploads sequentially, so every
   // attempt here blocks the rest of the batch behind it.
-  const MAX_ATTEMPTS = 4;
+  const MAX_ATTEMPTS = 3;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     if (signal?.aborted) {
@@ -154,16 +154,24 @@ export async function uploadVideoDirectToYouTube(
       } else {
         // Already have a session from a prior attempt - confirm exactly
         // where it left off instead of assuming it's dead.
-        const resumeStatus = await queryResumeOffset(uploadUrl, totalBytes).catch(() => null);
+        const resumeStatus = await queryResumeOffset(uploadUrl, totalBytes, signal).catch(() => null);
         if (resumeStatus?.isComplete && resumeStatus.youtubeUrl) {
           if (onProgress) onProgress(100);
           return resumeStatus.youtubeUrl;
         }
-        if (resumeStatus && resumeStatus.nextByte >= startByte) {
+        if (resumeStatus) {
+          // Always trust Google's server-confirmed offset, even when it is
+          // lower than our local startByte - that happens when Google has
+          // fewer bytes than we thought (session reset, partial drop).
+          // Keeping the stale startByte here was the root cause of the
+          // 99%-then-restart-from-1% loop.
+          if (resumeStatus.nextByte < startByte) {
+            logger.warn(`[YT] Google reports ${resumeStatus.nextByte}B received vs local ${startByte}B; resuming from server offset.`);
+          }
           startByte = resumeStatus.nextByte;
         }
-        // If the query itself failed, keep the existing startByte and let
-        // the next chunk's own Content-Range header settle it.
+        // If the query itself failed, keep the existing startByte and
+        // let the next chunk's own Content-Range header settle the offset.
       }
 
       const url = await uploadInChunks(file, uploadUrl, startByte, totalBytes, onProgress, signal, (confirmedByte) => {
@@ -189,16 +197,20 @@ export async function uploadVideoDirectToYouTube(
       // Try to resume the SAME session before giving up on it - only open a
       // fresh one (losing all progress) if that genuinely fails.
       if (uploadUrl) {
-        const resumeStatus = await queryResumeOffset(uploadUrl, totalBytes).catch(() => null);
+        const resumeStatus = await queryResumeOffset(uploadUrl, totalBytes, signal).catch(() => null);
         if (resumeStatus?.isComplete && resumeStatus.youtubeUrl) {
           if (onProgress) onProgress(100);
           return resumeStatus.youtubeUrl;
         }
-        if (resumeStatus && resumeStatus.nextByte >= startByte) {
-          startByte = resumeStatus.nextByte;
-        } else if (!resumeStatus) {
-          logger.warn(`[YT] Could not confirm resume offset for the current session; will open a fresh one.`);
+        if (!resumeStatus) {
+          // Query failed - session is likely dead; open a fresh one on next attempt.
+          logger.warn("[YT] Resume query failed; opening a fresh session on retry.");
           uploadUrl = null;
+          startByte = 0;
+        } else {
+          // Always trust Google's server-confirmed offset, even when it is
+          // lower than our local startByte (session reset / partial drop).
+          startByte = resumeStatus.nextByte;
         }
       }
 
@@ -219,17 +231,36 @@ export async function uploadVideoDirectToYouTube(
 
 /**
  * Queries Google YouTube Resumable Upload endpoint for last received byte.
+ *
+ * Throws (rather than swallowing) on network/HTTP errors so callers can
+ * distinguish a genuinely-dead session from one that reports zero bytes.
+ * A 308 with no Range header means Google has 0 bytes - that's a valid
+ * answer (nextByte: 0), NOT a query failure.
  */
 async function queryResumeOffset(
   uploadUrl: string,
-  totalBytes: number
+  totalBytes: number,
+  signal?: AbortSignal
 ): Promise<{ isComplete: boolean; nextByte: number; youtubeUrl?: string }> {
+  const timeoutMs = 20_000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) {
+      clearTimeout(timeoutId);
+      throw new Error("Upload aborted by user.");
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
+
   try {
     const res = await fetch(uploadUrl, {
       method: "PUT",
       headers: {
         "Content-Range": `bytes */${totalBytes}`,
       },
+      signal: controller.signal,
     });
 
     if (res.status === 200 || res.status === 201) {
@@ -248,11 +279,32 @@ async function queryResumeOffset(
           return { isComplete: false, nextByte: parseInt(match[1], 10) + 1 };
         }
       }
+      // 308 with no Range header: Google genuinely has 0 bytes.
+      return { isComplete: false, nextByte: 0 };
     }
-  } catch (err) {
+
+    // Any other status = session is likely dead/expired.
+    throw new Error(`YouTube resume query returned unexpected status ${res.status}`);
+  } catch (err: any) {
+    // User-initiated abort (upload cancelled) must propagate as AbortError
+    // so upstream callers don't retry. A timeout-induced abort from our own
+    // controller should be treated as a plain retryable failure instead.
+    if (signal?.aborted) {
+      const err = new Error("Upload aborted by user.");
+      err.name = "AbortError";
+      throw err;
+    }
+    if (err.name === "AbortError") {
+      throw new Error(`YouTube resume query timed out after ${timeoutMs / 1000}s.`);
+    }
     logger.warn("[YT] Error querying resume status:", err);
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+    if (signal) {
+      signal.removeEventListener("abort", onAbort);
+    }
   }
-  return { isComplete: false, nextByte: 0 };
 }
 
 // Must be a multiple of 256 KiB per Google's resumable-upload spec for every
@@ -277,6 +329,8 @@ async function uploadInChunks(
   onChunkConfirmed: (confirmedByte: number) => void
 ): Promise<string> {
   let current = startByte;
+  const MAX_CHUNK_ITERATIONS = 200;
+  let iterations = 0;
 
   while (current < totalBytes) {
     if (signal?.aborted) {
@@ -285,8 +339,28 @@ async function uploadInChunks(
       throw err;
     }
 
+    if (++iterations > MAX_CHUNK_ITERATIONS) {
+      throw new Error(
+        `YouTube upload exceeded ${MAX_CHUNK_ITERATIONS} chunk iterations ` +
+        `without completing. Last offset: ${current}/${totalBytes}. ` +
+        `This usually indicates a session stuck on Google's side.`
+      );
+    }
+
     const chunkEnd = Math.min(current + CHUNK_SIZE, totalBytes);
-    const result = await putChunkWithRetry(file, uploadUrl, current, chunkEnd, totalBytes, onProgress, signal);
+    const isLastChunk = chunkEnd >= totalBytes;
+
+    // Report progress based ONLY on server-confirmed bytes. Before this chunk
+    // is acknowledged, we do NOT advance the progress bar — this prevents the
+    // OS-buffered-but-not-yet-received bytes from causing the 99%→restart
+    // visual loop. The user sees steady, honest progress that only jumps
+    // forward on real Google 308 confirmations.
+    if (onProgress && totalBytes > 0) {
+      const pct = Math.min(99, Math.round((current / totalBytes) * 100));
+      onProgress(pct);
+    }
+
+    const result = await putChunkWithRetry(file, uploadUrl, current, chunkEnd, totalBytes, onProgress, signal, isLastChunk, current);
 
     if (result.done && result.youtubeUrl) {
       if (onProgress) onProgress(100);
@@ -295,8 +369,22 @@ async function uploadInChunks(
       return result.youtubeUrl;
     }
 
+    if (result.nextByte <= current) {
+      throw new Error(
+        `YouTube upload made no forward progress (offset stuck at ${current}/${totalBytes}). ` +
+        `Session may be in a bad state.`
+      );
+    }
+
     current = result.nextByte;
     onChunkConfirmed(current);
+
+    // After Google confirms the chunk, update progress to the real confirmed
+    // offset (not a speculative value based on locally-buffered bytes).
+    if (onProgress && totalBytes > 0) {
+      const pct = Math.min(99, Math.round((current / totalBytes) * 100));
+      onProgress(pct);
+    }
   }
 
   throw new Error("Upload loop exited without a completion response from YouTube.");
@@ -315,9 +403,11 @@ async function putChunkWithRetry(
   end: number,
   totalBytes: number,
   onProgress: ((percent: number) => void) | undefined,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  isLastChunk: boolean,
+  confirmedStart: number
 ): Promise<{ done: boolean; nextByte: number; youtubeUrl?: string }> {
-  const CHUNK_RETRY_ATTEMPTS = 2;
+  const CHUNK_RETRY_ATTEMPTS = 1;
   let lastErr: Error | null = null;
 
   for (let i = 0; i <= CHUNK_RETRY_ATTEMPTS; i++) {
@@ -327,7 +417,7 @@ async function putChunkWithRetry(
       throw err;
     }
     try {
-      return await putChunk(file, uploadUrl, start, end, totalBytes, onProgress, signal);
+      return await putChunk(file, uploadUrl, start, end, totalBytes, onProgress, signal, isLastChunk, confirmedStart);
     } catch (err: any) {
       lastErr = err instanceof Error ? err : new Error(String(err));
       if (lastErr.name === "AbortError" || signal?.aborted) {
@@ -350,7 +440,9 @@ function putChunk(
   end: number,
   totalBytes: number,
   onProgress?: (percent: number) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  isLastChunk: boolean = false,
+  confirmedStart: number = 0
 ): Promise<{ done: boolean; nextByte: number; youtubeUrl?: string }> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -361,11 +453,14 @@ function putChunk(
     }
 
     const xhr = new XMLHttpRequest();
-    const INACTIVITY_TIMEOUT_MS = 90 * 1000; // 90s of zero byte transfer within this chunk
-    // Once this chunk's bytes are on the wire, upload.onprogress stops
-    // firing - from then we're only waiting on Google's ack for this one
-    // small chunk, which should arrive in seconds, not minutes.
-    const CHUNK_ACK_TIMEOUT_MS = 45 * 1000;
+    // Bytes are transferred in 4 MiB chunks. After chunkBytesSent becomes
+    // true (all chunk bytes handed to the OS socket), we wait for Google's
+    // HTTP response. On congested/mobile links the OS can buffer bytes
+    // faster than Google receives them, so the ack window must be generous.
+    // Non-final chunks get a 308 response quickly; the final chunk gets a
+    // 201 (with the video ID) which can take longer for Google to assemble.
+    const INACTIVITY_TIMEOUT_MS = 90 * 1000; // 90s of zero byte transfer
+    const CHUNK_ACK_TIMEOUT_MS = isLastChunk ? 120 * 1000 : 60 * 1000; // 2min for last chunk, 1min otherwise
     let inactivityTimer: any = null;
     let timedOut = false;
     let chunkBytesSent = false;
@@ -378,8 +473,8 @@ function putChunk(
         xhr.abort();
         reject(new Error(
           chunkBytesSent
-            ? `YouTube did not acknowledge a chunk within ${CHUNK_ACK_TIMEOUT_MS / 1000}s.`
-            : `YouTube upload stalled: No byte transfer detected for 90 seconds.`
+            ? `YouTube did not acknowledge a chunk within ${timeoutMs / 1000}s${isLastChunk ? " (final chunk — Google may take longer to respond with 201)" : ""}.`
+            : `YouTube upload stalled: No byte transfer detected for ${INACTIVITY_TIMEOUT_MS / 1000}s.`
         ));
       }, timeoutMs);
     };
@@ -411,11 +506,14 @@ function putChunk(
           chunkBytesSent = true;
         }
         resetHeartbeat();
-        if (onProgress && totalBytes > 0) {
-          const loadedSoFar = start + (evt.loaded || 0);
-          const pct = Math.min(99, Math.round((loadedSoFar / totalBytes) * 100));
-          onProgress(pct);
-        }
+        // Report progress based ONLY on bytes Google has actually confirmed
+        // receiving (confirmedStart), NOT locally-buffered bytes (evt.loaded).
+        // The OS can buffer an entire 4MB chunk locally and onprogress will
+        // fire reporting those bytes as "sent" — but Google may not have them
+        // yet. If we report that as progress, the bar jumps to 99% then drops
+        // back when the chunk fails and retries from the lower confirmed
+        // offset. That oscillation is the "99%→61%" loop. By flooring progress
+        // at confirmedStart, the bar only moves forward on real 308 acks.
       };
       xhr.upload.onload = () => {
         chunkBytesSent = true;
@@ -447,6 +545,21 @@ function putChunk(
             nextByte = parseInt(match[1], 10) + 1;
           }
         }
+
+        // If Google's confirmed offset is at or before where this chunk
+        // started, the chunk's bytes were NOT received (network dropped the
+        // body, or the session was reset mid-stream). Resolving here would
+        // cause uploadInChunks to re-send almost the same range in a tight
+        // loop forever. Reject so putChunkWithRetry can re-attempt the
+        // chunk with a fresh connection.
+        if (nextByte <= start) {
+          reject(new Error(
+            `YouTube did not receive chunk bytes ${start}-${end - 1} ` +
+            `(confirmed offset ${nextByte}). Will retry the chunk.`
+          ));
+          return;
+        }
+
         resolve({ done: false, nextByte });
       } else {
         let detail = xhr.responseText;

@@ -150,11 +150,22 @@ function extractDriveFileId(videoUrl: string): string | null {
   return null;
 }
 
+function isDriveVideoUrl(videoUrl: string): boolean {
+  if (!videoUrl || typeof videoUrl !== "string") return false;
+  const low = videoUrl.toLowerCase();
+  // Reverse-synced Drive videos carry a metadata hash: #type=video
+  if (low.includes("googleusercontent.com/d/") && low.includes("#type=video")) return true;
+  // Forward-synced videos via Drive fallback have known video extensions after the hash
+  if (low.includes("googleusercontent.com/d/") && low.includes("#name=") && /\.(mp4|webm|mov|m4v|avi|mkv)$/i.test(low)) return true;
+  return false;
+}
+
 function isExternalVideoUrl(videoUrl: string): boolean {
   if (!videoUrl || typeof videoUrl !== "string") return false;
   const low = videoUrl.toLowerCase();
   return (
     low.includes("firebasestorage.googleapis.com") ||
+    isDriveVideoUrl(videoUrl) ||
     low.endsWith(".mp4") ||
     low.endsWith(".webm") ||
     low.endsWith(".mov") ||
@@ -530,7 +541,7 @@ const FolderCollagePreview: React.FC<{
 
   (images || []).forEach((img) => {
     if (!img || typeof img !== "string") return;
-    const isDirectVideo = img.startsWith("data:video") || img.toLowerCase().includes(".mp4") || img.toLowerCase().includes(".webm") || img.toLowerCase().includes(".mov") || (img.includes("/events%2F") && img.includes(".mp4"));
+    const isDirectVideo = img.startsWith("data:video") || img.toLowerCase().includes(".mp4") || img.toLowerCase().includes(".webm") || img.toLowerCase().includes(".mov") || (img.includes("/events%2F") && img.includes(".mp4")) || isDriveVideoUrl(img);
     const isYouTubeUrl = img.includes("youtube.com") || img.includes("youtu.be");
     if (isDirectVideo || isYouTubeUrl) {
       mediaList.push({ src: getVideoThumbnailUrl(img), videoUrl: img, isVideo: true });
@@ -829,7 +840,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
         imgUrl.toLowerCase().includes(".mp4") ||
         imgUrl.toLowerCase().includes(".webm") ||
         imgUrl.toLowerCase().includes(".mov") ||
-        (imgUrl.includes("/events%2F") && imgUrl.includes(".mp4"));
+        (imgUrl.includes("/events%2F") && imgUrl.includes(".mp4")) ||
+        isDriveVideoUrl(imgUrl);
       if (isDirectVideo) {
         items.push({
           type: "video",

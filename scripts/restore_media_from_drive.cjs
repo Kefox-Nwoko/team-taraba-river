@@ -84,10 +84,10 @@ async function restoreMedia() {
       q: `'${folder.id}' in parents and mimeType contains 'video/' and trashed = false`,
       fields: 'files(id, name, mimeType, createdTime)',
       orderBy: 'createdTime desc',
-      pageSize: 50,
+      pageSize: 200,
     });
     const videos = videosRes.data.files || [];
-    const videoUrls = videos.map((vid) => `/api/media/image/${vid.id}#${vid.name || 'video.mp4'}`);
+    const videoUrls = videos.map((vid) => `https://lh3.googleusercontent.com/d/${vid.id}#type=video&name=${encodeURIComponent(vid.name || 'video.mp4')}`);
     const allMediaUrls = [...imageUrls, ...videoUrls];
 
     const folderParsedDate = folder.name ? parseDateFromTitle(folder.name) : null;
