@@ -84,20 +84,30 @@ export async function fetchMembers(): Promise<Member[]> {
 }
 
 export async function deleteMember(memberId: string, member?: Member): Promise<void> {
-  // 1. Mark soft-deleted in local storage & local recycle bin
+  // 1. Mark soft-deleted in local storage & local recycle bin (optimistic)
   AppStateManager.deleteMember(memberId, member?.email, member?.phoneNumber, member);
 
   // 2. Soft-delete in Firestore (marks isDeleted: true without destroying the doc)
   await FirebaseSyncManager.deleteMember(memberId, member?.email, member?.phoneNumber, member);
 
-  // 3. Inform optional backend endpoint if running
+  // 3. Confirm with the backend (the authoritative, Admin-SDK-backed delete).
+  // If this fails, the change never actually reached the server — revert the
+  // optimistic local hide instead of leaving the member permanently stuck in
+  // limbo (hidden locally, still active on the server).
+  let serverConfirmed = false;
   try {
     const headers = await getAuthHeaders();
-    await fetch(apiUrl(`/api/members/${memberId}`), {
+    const res = await fetch(apiUrl(`/api/members/${memberId}`), {
       method: "DELETE",
       headers,
     });
+    serverConfirmed = res.ok;
   } catch {}
+
+  if (!serverConfirmed) {
+    AppStateManager.restoreMember(memberId, member);
+    throw new Error("Failed to delete member — the change could not be saved to the server.");
+  }
 }
 
 export async function fetchRecycleBin(): Promise<DeletedMemberEntry[]> {

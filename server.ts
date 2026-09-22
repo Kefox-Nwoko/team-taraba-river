@@ -513,7 +513,16 @@ async function getEvents(): Promise<GroupEvent[]> {
       if (parsedDate) {
         e.date = parsedDate;
       }
-      if (e.location && (e.location.toLowerCase().includes('taraba river') || e.location.includes('Google Drive') || e.location.includes('YouTube Hub'))) {
+      // Only clear the exact leaked org-name placeholder ("Taraba River" /
+      // "Team Taraba River") from old sync data — must NOT match on
+      // substring, or a real venue whose name happens to contain those
+      // words (e.g. "Taraba River Resort") would be silently blanked out
+      // every time this list is fetched, even after an admin explicitly
+      // (re)saved it. Manually entered locations must always be preserved.
+      const normalizedLocation = e.location ? e.location.trim().toLowerCase() : '';
+      if (normalizedLocation === 'taraba river' || normalizedLocation === 'team taraba river') {
+        e.location = '';
+      } else if (e.location && (e.location.includes('Google Drive') || e.location.includes('YouTube Hub'))) {
         e.location = '';
       }
       if (e.createdBy === 'Google Drive Sync (tarabateam@gmail.com)') {
@@ -1787,12 +1796,6 @@ app.post("/api/events/:id/rsvp", conditionalAuth, async (req: Request, res: Resp
   const { id } = req.params;
   const { memberId, status } = validation.data;
 
-  // Security: a member can only RSVP for themselves unless they are an admin
-  if (req.user && req.user.role !== 'admin' && req.user.uid !== memberId) {
-    res.status(403).json({ error: 'You can only RSVP for yourself.' });
-    return;
-  }
-
   try {
     const eventRef = db.collection(COLLECTIONS.events).doc(id);
     const eventDoc = await eventRef.get();
@@ -1810,7 +1813,23 @@ app.post("/api/events/:id/rsvp", conditionalAuth, async (req: Request, res: Resp
 
     const event = eventDoc.data() as GroupEvent;
     const member = memberDoc.data() as Member;
-    
+
+    // Security: a member can only RSVP for themselves unless they are an
+    // admin. The client's `memberId` is the member's Firestore document id
+    // (e.g. a legacy "mem_csv_N" id for CSV-seeded profiles), which is
+    // frequently NOT the same value as that person's Firebase Auth uid —
+    // so the two can never be compared directly. Email is the one identity
+    // link that's reliable across both (it's how login already matches a
+    // signed-in Google account to its member record elsewhere in the app).
+    if (
+      req.user &&
+      req.user.role !== 'admin' &&
+      (req.user.email || '').toLowerCase() !== (member.email || '').toLowerCase()
+    ) {
+      res.status(403).json({ error: 'You can only RSVP for yourself.' });
+      return;
+    }
+
     // Ensure arrays exist
     event.attendeeIds = event.attendeeIds || [];
     event.maybeIds = event.maybeIds || [];
@@ -2659,7 +2678,7 @@ Return a JSON object with:
 2. date: event start date in YYYY-MM-DD format, or "" if not legible/present
 3. endDate: event end date in YYYY-MM-DD format if the poster shows a date range/multi-day event, else ""
 4. time: event start time in 24-hour HH:MM format, or "" if not legible/present
-5. location: venue/address exactly as printed, or ""
+5. location: venue/address exactly as printed, or "" — never return the group's own name ("Team Taraba River" or "Taraba River") as the location; that is branding text, not a venue. Only return an actual place/address if one is separately printed on the poster.
 6. description: a 1-3 sentence summary of any agenda/instructions/details printed on the poster, or ""
 7. category: the single best match from this exact list: ${categoryLabels} — or "" if none clearly fit
 8. confidence: number from 0 to 1 rating overall extraction confidence`;
@@ -2690,6 +2709,15 @@ Return a JSON object with:
     });
 
     const parsed = JSON.parse(response.text || '{}');
+    // Defensive backstop: never let the org's own name be auto-recognized
+    // as a geographic location, even if the model mislabels its own
+    // branding text on the poster as the venue.
+    if (typeof parsed.location === 'string') {
+      const normalizedLoc = parsed.location.trim().toLowerCase();
+      if (normalizedLoc === 'taraba river' || normalizedLoc === 'team taraba river') {
+        parsed.location = '';
+      }
+    }
     res.json({ success: true, ...parsed });
   } catch (error) {
     serverLogger.error("Gemini AI Poster Parse Error", error as Error);

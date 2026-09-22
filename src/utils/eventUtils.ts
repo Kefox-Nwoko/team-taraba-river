@@ -73,9 +73,18 @@ export function sanitizeEventRecord(event: Partial<GroupEvent>): GroupEvent {
     // "Team Taraba River" is this group's organizational name, not a real
     // place (see TermsAndConditionsModal's Group Identity & Location Field
     // Standards clause: it is explicitly non-geographic and must never be
-    // entered or treated as a location anywhere in the app) — strip it if
-    // it leaked into the location field from old sync/placeholder data.
-    location: (event.location || "").trim().toLowerCase().includes("taraba river") ? "" : (event.location || "").trim(),
+    // auto-recognized as a location anywhere in the app) — clear it if it
+    // leaked into the location field from old sync/placeholder data. This
+    // is an EXACT match only: a manually entered venue that merely contains
+    // those words (e.g. "Taraba River Resort") must be preserved untouched,
+    // so authorized users can still freely add/edit/remove location text.
+    location: (() => {
+      const trimmedLocation = (event.location || "").trim();
+      const normalizedLocation = trimmedLocation.toLowerCase();
+      return normalizedLocation === "taraba river" || normalizedLocation === "team taraba river"
+        ? ""
+        : trimmedLocation;
+    })(),
     category: (event.category || "").trim() || "General",
     description: (event.description || "").trim(),
     driveImageUrls: Array.isArray(event.driveImageUrls) ? event.driveImageUrls.filter(Boolean) : [],

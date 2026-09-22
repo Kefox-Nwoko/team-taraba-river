@@ -133,7 +133,12 @@ function sanitizeUIField(val: string | undefined): string {
     !clean ||
     lower === "sync" ||
     lower.includes("official pipeline") ||
-    lower.includes("taraba river") ||
+    // Exact match only — the group's own name ("Team Taraba River") must
+    // never be auto-recognized as a location, but a real, manually entered
+    // venue that merely contains those words (e.g. "Taraba River Resort")
+    // must be preserved so location editing keeps working normally.
+    lower === "taraba river" ||
+    lower === "team taraba river" ||
     lower.includes("google drive") ||
     lower.includes("youtube hub")
   ) {
