@@ -445,7 +445,16 @@ export async function createEvent(eventData: Partial<GroupEvent>): Promise<Group
   return newEvent;
 }
 
-export async function updateEvent(id: string, eventData: Partial<GroupEvent>): Promise<GroupEvent> {
+// Shared by updateEvent (offline-resilient, existing contract — never
+// throws, always resolves to a best-effort event) and updateEventConfirmed
+// (same write, but also tells the caller whether the server actually
+// persisted it, so a flow that needs the save to really stick — e.g. the
+// folder-info editor — can tell a confirmed save apart from a silent
+// local-only fallback instead of reporting success either way).
+async function updateEventInternal(
+  id: string,
+  eventData: Partial<GroupEvent>
+): Promise<{ event: GroupEvent; serverConfirmed: boolean }> {
   let updatedEvent: GroupEvent | null = null;
   try {
     const headers = await getAuthHeaders();
@@ -462,6 +471,8 @@ export async function updateEvent(id: string, eventData: Partial<GroupEvent>): P
       }
     }
   } catch {}
+
+  const serverConfirmed = updatedEvent !== null;
 
   if (!updatedEvent) {
     const existing = AppStateManager.getEvents().find((e) => e.id === id);
@@ -500,7 +511,22 @@ export async function updateEvent(id: string, eventData: Partial<GroupEvent>): P
   AppStateManager.saveEvents(localEvents);
 
   await FirebaseSyncManager.saveEvent(updatedEvent);
-  return updatedEvent;
+  return { event: updatedEvent, serverConfirmed };
+}
+
+export async function updateEvent(id: string, eventData: Partial<GroupEvent>): Promise<GroupEvent> {
+  const { event } = await updateEventInternal(id, eventData);
+  return event;
+}
+
+// Same write as updateEvent, but tells the caller whether the server
+// actually confirmed it — use this wherever a silent local-only "success"
+// isn't acceptable (the save must really stick, not just look like it did).
+export async function updateEventConfirmed(
+  id: string,
+  eventData: Partial<GroupEvent>
+): Promise<{ event: GroupEvent; serverConfirmed: boolean }> {
+  return updateEventInternal(id, eventData);
 }
 
 export interface ParsedPosterDetails {

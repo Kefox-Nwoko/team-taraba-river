@@ -7,7 +7,7 @@ import { ReturnButton } from "./ReturnButton";
 import { useToast } from "./ui/Toast";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import { AppStateManager } from "../services/storage";
-import { deleteEvent as deleteEventApi, updateEvent } from "../services/apiClient";
+import { deleteEvent as deleteEventApi, updateEvent, updateEventConfirmed } from "../services/apiClient";
 import { deleteYouTubeVideo, extractYouTubeId, getYouTubeThumbnail } from "../services/youtubeDirectUpload";
 import { storage } from "../lib/firebase";
 import { ref, deleteObject } from "firebase/storage";
@@ -1353,24 +1353,28 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       location: cleanLocation,
     };
 
+    let savedEvent: GroupEvent = updatedFolder;
     try {
-      await updateEvent(selectedFolder.id, updatedFolder);
-    } catch (err) {
-      logger.warn("API event update error", { error: err });
-      try {
-        await FirebaseSyncManager.saveEvent(updatedFolder);
-      } catch (fbErr) {
-        logger.error("Direct Firestore update failed", fbErr);
-        alert("Failed to update folder details.");
+      const result = await updateEventConfirmed(selectedFolder.id, updatedFolder);
+      if (!result.serverConfirmed) {
+        // The write never actually reached the server — surface that
+        // instead of quietly keeping a local-only copy that looks saved
+        // now but reverts the next time this folder is loaded from Firestore.
+        alert("Could not save the folder details to the server. Please check your connection and try again.");
         return;
       }
+      savedEvent = result.event;
+    } catch (err) {
+      logger.error("API event update error", { error: err });
+      alert("Failed to update folder details.");
+      return;
     }
 
     const current = AppStateManager.getEvents();
     const idx = current.findIndex((evt) => evt.id === selectedFolder.id);
-    if (idx !== -1) current[idx] = updatedFolder;
+    if (idx !== -1) current[idx] = savedEvent;
     AppStateManager.saveEvents(current);
-    setSelectedFolder(updatedFolder);
+    setSelectedFolder(savedEvent);
     setIsEditingFolderInfo(false);
     if (onRefreshEvents) onRefreshEvents();
   };
