@@ -1705,12 +1705,16 @@ app.put("/api/events/:id", conditionalAuth, conditionalRequireAdmin, async (req:
       title: data.title,
       description: data.description || 'Group activity organized by Team Taraba River.',
       date: data.date,
-      endDate: data.endDate || existing.endDate,
+      // Firestore rejects a literal `undefined` value on a set()/merge — a
+      // single-day folder with no endDate on either side of this `||` chain
+      // would leave this field `undefined` and crash the whole update with
+      // a 500, taking every other field (including location) down with it.
+      endDate: data.endDate || existing.endDate || '',
       time: data.time || '09:00',
       location: data.location,
       category: data.category || 'meeting',
       driveImageUrls: data.driveImageUrls !== undefined ? data.driveImageUrls : (existing.driveImageUrls || []),
-      driveFolderId: data.driveFolderId || existing.driveFolderId,
+      driveFolderId: data.driveFolderId || existing.driveFolderId || '',
       posterUrl: data.posterUrl !== undefined ? data.posterUrl : (existing.posterUrl || ''),
       youtubeVideoUrls: data.youtubeVideoUrls !== undefined ? data.youtubeVideoUrls : (existing.youtubeVideoUrls || (existing.youtubeVideoUrl ? [existing.youtubeVideoUrl] : [])),
       youtubeVideoUrl: data.youtubeVideoUrl !== undefined ? data.youtubeVideoUrl : (existing.youtubeVideoUrl || ''),
