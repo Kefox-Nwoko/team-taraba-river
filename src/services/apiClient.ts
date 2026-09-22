@@ -242,7 +242,9 @@ export async function verifySession(): Promise<Member | null> {
     return null;
   }
 }
-export async function registerMember(memberData: Partial<Member>): Promise<Member> {
+export async function registerMember(
+  memberData: Partial<Member>
+): Promise<{ member: Member; serverConfirmed: boolean }> {
   const sanitizedInput = sanitizeMemberRecord(memberData);
   const newMember: Member = {
     id: sanitizedInput.id || `mem_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -278,21 +280,28 @@ export async function registerMember(memberData: Partial<Member>): Promise<Membe
         if (data.customToken) {
           await signInWithCustomToken(data.customToken).catch(() => {});
         }
-        return sanitizeMemberRecord(data.member);
+        return { member: sanitizeMemberRecord(data.member), serverConfirmed: true };
       }
     }
   } catch {}
 
-  // Direct Firestore fallback (server/network unreachable). Without a
-  // signed-in session this write will be rejected once firestore.rules is
-  // locked down — this path only helps while the server is genuinely down.
-  await FirebaseSyncManager.saveMember(newMember);
-  return newMember;
+  // Direct Firestore fallback (server/network unreachable). Report whether
+  // this actually persisted — a rules-rejected write (e.g. no signed-in
+  // session yet) must not be reported as a successful registration, or the
+  // new member ends up looking registered locally while never reaching
+  // Firestore at all.
+  try {
+    await FirebaseSyncManager.saveMember(newMember);
+    return { member: newMember, serverConfirmed: true };
+  } catch (err) {
+    logger.error("Direct Firestore member registration fallback failed", err);
+    return { member: newMember, serverConfirmed: false };
+  }
 }
 export async function updateMemberProfile(
   id: string,
   memberData: Partial<Member>
-): Promise<Member> {
+): Promise<{ member: Member; serverConfirmed: boolean }> {
   const sanitizedInput = sanitizeMemberRecord(memberData);
   let updatedMember: Member | null = null;
   try {
@@ -309,30 +318,37 @@ export async function updateMemberProfile(
     }
   } catch {}
 
-  if (!updatedMember) {
-    const existing = AppStateManager.getMembers().find((m) => m.id === id);
-    updatedMember = sanitizeMemberRecord({
-      ...(existing || {
-        id,
-        fullName: "Member",
-        email: "",
-        phoneNumber: "",
-        dateOfBirth: "",
-        occupation: "",
-        skills: [],
-        photoUrl: "",
-        photoStatus: "approved",
-        role: "member",
-        activityPoints: 0,
-        joinedAt: new Date().toISOString(),
-        lastActive: new Date().toISOString(),
-      }),
-      ...sanitizedInput,
-    });
-    await FirebaseSyncManager.saveMember(updatedMember);
+  if (updatedMember) {
+    return { member: updatedMember, serverConfirmed: true };
   }
 
-  return updatedMember;
+  const existing = AppStateManager.getMembers().find((m) => m.id === id);
+  const fallbackMember = sanitizeMemberRecord({
+    ...(existing || {
+      id,
+      fullName: "Member",
+      email: "",
+      phoneNumber: "",
+      dateOfBirth: "",
+      occupation: "",
+      skills: [],
+      photoUrl: "",
+      photoStatus: "approved",
+      role: "member",
+      activityPoints: 0,
+      joinedAt: new Date().toISOString(),
+      lastActive: new Date().toISOString(),
+    }),
+    ...sanitizedInput,
+  });
+
+  try {
+    await FirebaseSyncManager.saveMember(fallbackMember);
+    return { member: fallbackMember, serverConfirmed: true };
+  } catch (err) {
+    logger.error("Direct Firestore profile update fallback failed", err);
+    return { member: fallbackMember, serverConfirmed: false };
+  }
 }
 export async function fetchEvents(): Promise<GroupEvent[]> {
   const localEvents = AppStateManager.getEvents();

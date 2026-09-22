@@ -256,7 +256,12 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
       let resultMember: Member;
 
       if (memberToEdit) {
-        resultMember = await updateMemberProfile(memberToEdit.id, payload);
+        const { member, serverConfirmed } = await updateMemberProfile(memberToEdit.id, payload);
+        if (!serverConfirmed) {
+          setError("Could not save your profile to the server. Please check your connection and try again.");
+          return;
+        }
+        resultMember = member;
         await FirebaseSyncManager.saveMember(resultMember);
         const members = AppStateManager.getMembers();
         const idx = members.findIndex((m) => m.id === memberToEdit.id);
@@ -265,7 +270,12 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
           AppStateManager.saveMembers(members);
         }
       } else {
-        resultMember = await registerMember(payload);
+        const { member, serverConfirmed } = await registerMember(payload);
+        if (!serverConfirmed) {
+          setError("Could not complete registration on the server. Please check your connection and try again.");
+          return;
+        }
+        resultMember = member;
         await FirebaseSyncManager.saveMember(resultMember);
         const members = AppStateManager.getMembers();
         members.unshift(resultMember);
