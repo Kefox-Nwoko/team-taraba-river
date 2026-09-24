@@ -13,8 +13,6 @@ import {
   Bot,
   User,
   Trash2,
-  ChevronDown,
-  ChevronUp,
   Users,
   Search,
   Phone,
@@ -86,7 +84,6 @@ type Tab = (typeof TABS)[number];
 
 export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => {
   const [activeTab, setActiveTab] = useState<Tab>("Headlines");
-  const [isCollapsedOnMobile, setIsCollapsedOnMobile] = useState(true);
   const [showCapabilitiesBanner, setShowCapabilitiesBanner] = useState(false);
   const capabilitiesBannerDismissedKey = `taraba_ai_capabilities_dismissed_v1_${currentUser?.id || "guest"}_${activeTab}`;
 
@@ -447,7 +444,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
   return (
     <>
       <div className="bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden font-normal">
-        {/* Card Header & Mobile Collapse Toggle */}
+        {/* Card Header */}
         <div className="flex items-center justify-between px-4 sm:px-5 pt-3.5 pb-0">
           <div className="flex items-center space-x-2.5 min-w-0 flex-1">
             <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 flex items-center justify-center shrink-0">
@@ -483,22 +480,6 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
                 <RefreshCw className={`w-4 h-4 ${newsLoading ? "animate-spin" : ""}`} />
               </button>
             )}
-
-            {/* Mobile Collapse/Expand Toggle */}
-            <button
-              onClick={() => setIsCollapsedOnMobile((prev) => !prev)}
-              className="sm:hidden p-1.5 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition flex items-center gap-1 text-xs cursor-pointer active:scale-95"
-              title={isCollapsedOnMobile ? "Expand content" : "Collapse content"}
-            >
-              <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                {isCollapsedOnMobile ? "Expand" : "Collapse"}
-              </span>
-              {isCollapsedOnMobile ? (
-                <ChevronDown className="w-4 h-4 text-amber-500" />
-              ) : (
-                <ChevronUp className="w-4 h-4 text-slate-400" />
-              )}
-            </button>
           </div>
         </div>
 
@@ -508,12 +489,7 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
             {TABS.map((tab) => (
               <button
                 key={tab}
-                onClick={() => {
-                  setActiveTab(tab);
-                  if (isCollapsedOnMobile) {
-                    setIsCollapsedOnMobile(false);
-                  }
-                }}
+                onClick={() => setActiveTab(tab)}
                 className={`flex items-center justify-center gap-1 sm:gap-2 pb-2.5 px-1 sm:px-3 text-xs sm:text-sm md:text-base font-medium border-b-2 transition-colors cursor-pointer text-center ${
                   activeTab === tab
                     ? tab === "Networking"
@@ -535,8 +511,8 @@ export const UsosaNewsCard: React.FC<UsosaNewsCardProps> = ({ currentUser }) => 
           </div>
         </div>
 
-        {/* Collapsible Content Area on Mobile */}
-        <div className={`${isCollapsedOnMobile ? "hidden sm:block" : "block"} transition-all duration-300`}>
+        {/* Content Area */}
+        <div>
           {/* Special AI Capabilities Banner (Expandable) */}
           {showCapabilitiesBanner && (activeTab === "AI Xplora" || activeTab === "Networking") && (
             <div className="mx-4 sm:mx-6 mt-3 p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/10 via-teal-500/10 to-blue-500/10 border border-amber-300/40 dark:border-amber-700/40 text-xs space-y-2 animate-fadeIn">
