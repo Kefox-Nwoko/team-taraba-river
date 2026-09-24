@@ -26,6 +26,7 @@ import {
 import { db, auth, googleProvider } from "../lib/firebase";
 import { AppStateManager } from "./storage";
 import { logger } from "../lib/logger";
+import { isAdminAccount } from "../lib/config";
 import {
   Member,
   GroupEvent,
@@ -275,6 +276,10 @@ export class FirebaseSyncManager {
   }
 
   public static async saveMember(member: Member): Promise<void> {
+    // Admin accounts are not team members — never persist a profile for one.
+    if (isAdminAccount(member)) {
+      throw new Error("Admin accounts cannot have a member profile.");
+    }
     try {
       const clean = sanitizeMemberRecord(member);
       await setDoc(doc(db, "members", clean.id), clean);

@@ -352,10 +352,13 @@ let _eventsCache: { data: GroupEvent[]; ts: number } | null = null;
 const DATA_CACHE_TTL = 30_000; // 30 seconds
 
 async function getMembers(): Promise<Member[]> {
-  if (!isFirestoreAvailable()) return fallbackMembers;
+  // Admin accounts are never part of the member roster.
+  if (!isFirestoreAvailable()) return fallbackMembers.filter(m => !isAdminEmail(m.email));
   if (_membersCache && Date.now() - _membersCache.ts < DATA_CACHE_TTL) return _membersCache.data;
   const snapshot = await db.collection(COLLECTIONS.members).get();
-  const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Member));
+  const data = snapshot.docs
+    .map(doc => ({ id: doc.id, ...doc.data() } as Member))
+    .filter(m => !isAdminEmail(m.email) && m.role !== 'admin');
   _membersCache = { data, ts: Date.now() };
   return data;
 }
@@ -809,9 +812,6 @@ app.post("/api/auth/verify", rateLimiter, async (req: Request, res: Response) =>
         joinedAt: new Date().toISOString(),
         lastActive: new Date().toISOString(),
       };
-      if (!fallbackMembers.some(m => m.email?.toLowerCase().trim() === email.toLowerCase().trim())) {
-        fallbackMembers.push(member);
-      }
       res.json({ success: true, member });
       return;
     }
@@ -1345,6 +1345,11 @@ app.post("/api/members", rateLimiter, async (req: Request, res: Response) => {
 
   const data = validation.data;
 
+  if (isAdminEmail(data.email)) {
+    res.status(403).json({ error: 'Admin accounts cannot be registered as members.' });
+    return;
+  }
+
   try {
     // Check duplicate email
     const existing = await db.collection(COLLECTIONS.members)
@@ -1459,6 +1464,11 @@ app.put("/api/members/:id", conditionalAuth, async (req: Request, res: Response)
       return;
     }
     const data = validation.data;
+
+    if (isAdminEmail(data.email) || isAdminEmail(current.email)) {
+      res.status(403).json({ error: 'Admin accounts cannot have a member profile.' });
+      return;
+    }
 
     let photoStatus = current.photoStatus;
     if (data.photoUrl && data.photoUrl !== current.photoUrl) {

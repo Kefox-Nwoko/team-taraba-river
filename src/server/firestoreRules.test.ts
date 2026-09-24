@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterAll, beforeEach, describe, it } from "vitest";
 import fs from "fs";
 import path from "path";
@@ -131,6 +132,30 @@ describe.skipIf(!testEnv)("firestore.rules", () => {
       });
       await assertFails(
         notAdminAnymore.firestore().collection("members").doc("mem_other").update({ activityPoints: 0 })
+      );
+    });
+
+    it("denies creating a member document with an admin email", async () => {
+      const anon = testEnv!.unauthenticatedContext();
+      await assertFails(
+        anon.firestore().collection("members").doc("mem_new").set({ email: "TarabaTeam@gmail.com" })
+      );
+    });
+
+    it("denies an admin from creating their own uid-keyed member profile", async () => {
+      const admin = testEnv!.authenticatedContext("admin_uid", { email: ADMIN_EMAIL });
+      await assertFails(
+        admin.firestore().collection("members").doc("admin_uid").set({ fullName: "Admin", email: "" })
+      );
+    });
+
+    it("denies changing a member's email to an admin email", async () => {
+      await testEnv!.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().collection("members").doc("mem_self").set({ email: "self@example.com" });
+      });
+      const self = testEnv!.authenticatedContext("mem_self", { email: NON_ADMIN_EMAIL });
+      await assertFails(
+        self.firestore().collection("members").doc("mem_self").update({ email: OTHER_ADMIN_EMAIL })
       );
     });
 

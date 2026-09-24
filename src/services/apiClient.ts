@@ -65,19 +65,11 @@ export async function fetchMembers(): Promise<Member[]> {
     }
   } catch {}
 
-  // Direct Firestore fallback merged with local/seed members
+  // Direct Firestore fallback — authoritative when it returns data; the
+  // local cache below is only for when both live sources are unreachable.
   try {
     const firestoreMembers = await FirebaseSyncManager.seedCSVDataIfNeeded();
-    const localMembers = AppStateManager.getMembers();
-    const memberMap = new Map<string, Member>();
-    for (const m of localMembers) {
-      if (m && m.id) memberMap.set(m.id, m);
-    }
-    for (const m of firestoreMembers) {
-      if (m && m.id) memberMap.set(m.id, m);
-    }
-    const merged = Array.from(memberMap.values());
-    if (merged.length > 0) return AppStateManager.filterDeleted(merged);
+    if (firestoreMembers.length > 0) return AppStateManager.filterDeleted(firestoreMembers);
   } catch {}
 
   return AppStateManager.getMembers();

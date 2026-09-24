@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { logger } from "../lib/logger";
+import { isAdminAccount } from "../lib/config";
 import { GroupEvent, Member } from "../types";
 import { submitEventRSVP } from "../services/apiClient";
 import { AppStateManager } from "../services/storage";
@@ -200,7 +201,8 @@ export const EventCalendarView: React.FC<EventCalendarViewProps> = ({
   }, [members]);
 
   const handleRSVP = async (eventId: string, status: "attending" | "maybe" | "declined") => {
-    if (!currentUser) return;
+    // Admin accounts are not members and never RSVP.
+    if (!currentUser || isAdminAccount(currentUser)) return;
     const memberId = currentUser.id;
 
     // 1. Optimistic Real-Time Local & Firestore Sync

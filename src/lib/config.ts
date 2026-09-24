@@ -19,3 +19,11 @@ export const clientConfig = {
 // locally held list — a client-side copy of that list would silently drift
 // from the server's whenever ADMIN_EMAILS changes, and would also mean
 // shipping admin email addresses in the public JS bundle for no benefit.
+
+// The dedicated admin accounts. Used ONLY to keep them out of the member
+// roster (they are not team members) — never to grant or decide admin
+// access, which stays server-side as described above.
+const ADMIN_ACCOUNT_EMAILS = ['tarabateam@gmail.com', 'xtraworxng@gmail.com'];
+
+export const isAdminAccount = (m: { role?: string; email?: string } | null | undefined): boolean =>
+  !!m && (m.role === 'admin' || ADMIN_ACCOUNT_EMAILS.includes((m.email || '').trim().toLowerCase()));

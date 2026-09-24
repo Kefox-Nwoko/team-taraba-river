@@ -1,6 +1,6 @@
 import { Member, GroupEvent, PhotoApprovalRequest, ActivityLog, DeletedMemberEntry } from "../types";
 import { logger } from "../lib/logger";
-import { clientConfig } from "../lib/config";
+import { clientConfig, isAdminAccount } from "../lib/config";
 import { isMemberCredentialMatch } from "../lib/authMatching";
 import { INITIAL_MEMBERS } from "../data/seedData";
 const LOCAL_STORAGE_KEY_MEMBERS = "taraba_river_members_v7_live";
@@ -304,6 +304,10 @@ export class AppStateManager {
   public static filterDeleted(members: Member[]): Member[] {
     const deletedIds = this.getDeletedMemberIds();
     return members.filter((m) => {
+      // 0. Admin accounts are never part of the member roster (also drops
+      //    any stale copy cached in localStorage before this rule existed)
+      if (isAdminAccount(m)) return false;
+
       // 1. First-class soft delete flag
       if (m.isDeleted === true) return false;
       if (m.isDeleted === false) return true; // Explicitly active / restored

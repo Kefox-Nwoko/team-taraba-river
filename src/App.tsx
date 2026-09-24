@@ -340,11 +340,12 @@ export default function App() {
     async function initData() {
       try {
         const seededMembers = await FirebaseSyncManager.seedCSVDataIfNeeded();
-        const localMembers = AppStateManager.getMembers();
-        const memberMap = new Map<string, Member>();
-        for (const m of localMembers) { if (m?.id) memberMap.set(m.id, m); }
-        for (const m of seededMembers) { if (m?.id) memberMap.set(m.id, m); }
-        const cleanMembers = AppStateManager.filterDeleted(Array.from(memberMap.values()));
+        // Live Firestore list is authoritative — unioning it with the local
+        // cache kept records deleted server-side counted forever on devices
+        // that had cached them. The cache is only a fallback when offline.
+        const cleanMembers = AppStateManager.filterDeleted(
+          seededMembers.length > 0 ? seededMembers : AppStateManager.getMembers()
+        );
         setMembers(cleanMembers);
         AppStateManager.saveMembers(cleanMembers);
 
@@ -370,11 +371,8 @@ export default function App() {
 
     const unsubMembers = FirebaseSyncManager.subscribeMembers((updatedList) => {
       if (updatedList) {
-        const localMembers = AppStateManager.getMembers();
-        const memberMap = new Map<string, Member>();
-        for (const m of localMembers) { if (m?.id) memberMap.set(m.id, m); }
-        for (const m of updatedList) { if (m?.id) memberMap.set(m.id, m); }
-        const clean = AppStateManager.filterDeleted(Array.from(memberMap.values()));
+        // Snapshot is authoritative (see initData above).
+        const clean = AppStateManager.filterDeleted(updatedList);
         setMembers(clean);
         AppStateManager.saveMembers(clean);
       }
@@ -480,11 +478,9 @@ export default function App() {
     }
     try {
       const [m, e] = await Promise.all([fetchMembers(), fetchEvents()]);
-      const localMembers = AppStateManager.getMembers();
-      const memberMap = new Map<string, Member>();
-      for (const lm of localMembers) { if (lm?.id) memberMap.set(lm.id, lm); }
-      for (const fm of m) { if (fm?.id) memberMap.set(fm.id, fm); }
-      const cleanMembers = AppStateManager.filterDeleted(Array.from(memberMap.values()));
+      // fetchMembers() already returns the live list (or the cache when
+      // offline) — don't union it with the cache (see initData above).
+      const cleanMembers = AppStateManager.filterDeleted(m);
       setMembers(cleanMembers);
       AppStateManager.saveMembers(cleanMembers);
 
@@ -549,7 +545,17 @@ export default function App() {
     setArchModalOpen(false);
     setAiAssistantOpen(false);
     try {
-      const adminMember = await triggerGoogleAdminSignIn();
+      const googleMember = await triggerGoogleAdminSignIn();
+      // The Google profile alone is a pre-verification "member" session —
+      // using it directly made admins look like members with incomplete
+      // profiles (forced onto the profile tab, where saving created a
+      // member record for them). The server decides the role.
+      const serverMember = await verifySession();
+      if (serverMember?.role !== "admin") {
+        notify("This Google account is not an authorized admin account.", "warning");
+        return;
+      }
+      const adminMember: Member = { ...googleMember, ...serverMember, role: "admin", isGoogleAuth: true, photoUrl: googleMember.photoUrl || serverMember.photoUrl };
       AppStateManager.setCurrentUser(adminMember);
       setCurrentUser(adminMember);
       setActiveTab("events");

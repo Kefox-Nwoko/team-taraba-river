@@ -14,9 +14,12 @@ service cloud.firestore {
     // verified admin email). Keep this in sync with ADMIN_EMAILS in
     // server/config.ts — there are exactly 2 admins.
     function isAdmin() {
+      // .get() with defaults: a member token has no `role` (and a custom
+      // token may have no `email`) claim, and reading a missing property
+      // errors — which would deny rules that combine this with other checks.
       return isAuthenticated() && (
-        request.auth.token.role == 'admin' ||
-        request.auth.token.email in ['tarabateam@gmail.com', 'xtraworxng@gmail.com']
+        request.auth.token.get('role', '') == 'admin' ||
+        request.auth.token.get('email', '') in ['tarabateam@gmail.com', 'xtraworxng@gmail.com']
       );
     }
 
@@ -38,10 +41,18 @@ service cloud.firestore {
     //   this can't be used to overwrite an existing member.
     // - update: the member themselves, or an admin.
     // - delete: admin only.
+    // - Admin accounts are not team members: no create/update may write a
+    //   doc carrying an admin email, or an admin's own uid-keyed profile.
+    function isAdminProfileWrite(memberId) {
+      let email = request.resource.data.get('email', '');
+      return (email is string && email.lower() in ['tarabateam@gmail.com', 'xtraworxng@gmail.com']) ||
+        (isAdmin() && request.auth.uid == memberId);
+    }
+
     match /members/{memberId} {
       allow read: if isAuthenticated();
-      allow create: if true;
-      allow update: if isOwner(memberId) || isAdmin();
+      allow create: if !isAdminProfileWrite(memberId);
+      allow update: if (isOwner(memberId) || isAdmin()) && !isAdminProfileWrite(memberId);
       allow delete: if isAdmin();
     }
 

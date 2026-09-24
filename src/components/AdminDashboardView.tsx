@@ -21,7 +21,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { deleteYouTubeVideo, extractYouTubeId, getYouTubeThumbnail } from "../services/youtubeDirectUpload";
 import { CreateEventModal } from "./CreateEventModal";
 import { ReturnButton } from "./ReturnButton";
-import { isOfficialFutureEvent, isChapterEvent } from "../utils/eventUtils";
+import { isOfficialFutureEvent } from "../utils/eventUtils";
 import { formatMemberDisplayName } from "../utils/nameUtils";
 import {
   Users,
@@ -1073,7 +1073,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           <div className="space-y-4">
             {(() => {
               // Admin view shows all official chapter events (excludes synced cloud media folders)
-              const activeEvents = events.filter(isChapterEvent);
+              // Same expiry rule as the home page: drop events once their (end) date has passed.
+              const activeEvents = events.filter(isOfficialFutureEvent);
 
               return (
                 <div className="space-y-4">
