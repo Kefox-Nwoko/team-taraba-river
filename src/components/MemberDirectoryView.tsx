@@ -5,7 +5,8 @@ import { AppStateManager } from "../services/storage";
 import { EngagementTracker } from "../services/EngagementTracker";
 import { logger } from "../lib/logger";
 import { MemberAvatar } from "./MemberAvatar";
-import { formatMemberDirectoryName } from "../utils/nameUtils";
+import { formatMemberDirectoryName, stripTitlePrefixes } from "../utils/nameUtils";
+import { parseMemberBirthday, MONTH_NAMES as BIRTHDAY_MONTH_NAMES } from "../utils/birthdayUtils";
 import {
   Search,
   Lock,
@@ -80,6 +81,14 @@ export function getMonthNameFromDate(dateStr: string): string | null {
   return null;
 }
 
+// Birthdays are day/month only — the stored dateOfBirth's year is not a
+// real birth year, so it must never be shown.
+export function formatBirthdayDisplay(dateOfBirth?: string | null): string {
+  const parsed = parseMemberBirthday(dateOfBirth || null);
+  if (!parsed) return "";
+  return `${BIRTHDAY_MONTH_NAMES[parsed.month - 1]} ${parsed.day}`;
+}
+
 export function getMemberSearchableText(m: Member): string {
   const parts: (string | undefined)[] = [
     m.fullName,
@@ -137,7 +146,10 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
   const deferredSearch = useDeferredValue(searchTerm);
   const localFiltered = useMemo(() => {
     const term = deferredSearch.trim().toLowerCase();
-    const cleanList = AppStateManager.filterDeleted(members);
+    // Alphabetical by name (ignoring case and titles like "Mr."/"Dr.").
+    const cleanList = AppStateManager.filterDeleted(members).sort((a, b) =>
+      stripTitlePrefixes(a.fullName).localeCompare(stripTitlePrefixes(b.fullName), undefined, { sensitivity: "base" })
+    );
     if (!term) return cleanList;
     return cleanList.filter((m) => {
       const searchable = getMemberSearchableText(m);
@@ -368,7 +380,7 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
               </div>
               <div className="bg-slate-50 dark:bg-slate-950 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
                 <span className="text-sm uppercase text-slate-500 dark:text-slate-400 block font-normal">Date of Birth</span>
-                <span className="text-slate-900 dark:text-white text-sm font-normal">{myProfile.dateOfBirth || "—"}</span>
+                <span className="text-slate-900 dark:text-white text-sm font-normal">{formatBirthdayDisplay(myProfile.dateOfBirth) || "—"}</span>
               </div>
               <div className="bg-amber-500/10 dark:bg-amber-950/40 p-6 rounded-2xl border border-amber-300 dark:border-amber-700/60 space-y-1">
                 <div className="flex items-center justify-between">
@@ -537,7 +549,7 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
                             </div>
                             <div className="flex flex-col">
                               <span className="text-xs text-slate-500 font-medium">Birthday</span>
-                              <span className="text-sm text-slate-900 dark:text-white font-medium mt-0.5">{m.dateOfBirth || "Not provided"}</span>
+                              <span className="text-sm text-slate-900 dark:text-white font-medium mt-0.5">{formatBirthdayDisplay(m.dateOfBirth) || "Not provided"}</span>
                             </div>
                           </div>
                           {m.jerseySize && (
@@ -787,7 +799,7 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
                   Delete Member Profile?
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  This action is permanent and cannot be undone.
+                  Moved to the Recycle Bin — recoverable only by the developer administrator.
                 </p>
               </div>
               <button
@@ -813,7 +825,9 @@ export const MemberDirectoryView: React.FC<MemberDirectoryViewProps> = ({
                 </div>
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-300 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
-                Are you sure you want to permanently remove this profile from the URIP Team Taraba member database?
+                Are you sure you want to remove this profile from the URIP Team Taraba member database?
+                It will move to the Recycle Bin — only the developer administrator (xtraworxng@gmail.com)
+                can permanently delete or restore it.
               </p>
             </div>
 

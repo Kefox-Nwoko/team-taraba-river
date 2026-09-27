@@ -5,7 +5,7 @@ import { Member, GroupEvent } from "../types";
 import { createEvent, updateEvent, parseEventPosterWithAI } from "../services/apiClient";
 import { AppStateManager } from "../services/storage";
 import { FirebaseSyncManager } from "../services/firebaseService";
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { storage } from "../lib/firebase";
 import {
   X,
@@ -204,11 +204,12 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   };
 
   const handleRemovePoster = () => {
-    if (posterUrl && posterUrl.includes("firebasestorage.googleapis.com")) {
-      try {
-        deleteObject(ref(storage, posterUrl)).catch(() => {});
-      } catch {}
-    }
+    // Just drop the reference — never delete the file directly from the
+    // client. If this poster belongs to a saved event, saving the form
+    // after this just clears the field (an update, not a delete); the
+    // Storage rules no longer allow a client-side delete at all now, and
+    // the underlying file is only ever destroyed via a developer-admin
+    // recycle-bin purge.
     setPosterUrl("");
     setPosterError(null);
     setPosterAiMessage(null);

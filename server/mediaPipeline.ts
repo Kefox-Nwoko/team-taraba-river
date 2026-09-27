@@ -286,6 +286,34 @@ export async function relayVideoToYouTube(req: Request, res: Response): Promise<
   }
 }
 
+// Mirrors src/services/youtubeDirectUpload.ts's client-side extractYouTubeId
+// — duplicated (not imported) because server/ and src/ are separate runtimes
+// in this codebase; kept in sync by being this small and self-contained.
+export function extractYouTubeId(url?: string): string | null {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return match && match[2].length === 11 ? match[2] : null;
+}
+
+// Core delete-by-id, reused by the Express handler below and by the
+// recycle-bin purge flow (server/recycleBin.ts), which has no req/res to
+// work with — it just needs the real deletion to happen for a given id.
+export async function deleteYouTubeVideoById(videoId: string): Promise<void> {
+  const oauth2Client = getYouTubeOAuthClient();
+  const { token: accessToken } = await oauth2Client.getAccessToken();
+
+  const delRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?id=${encodeURIComponent(videoId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (delRes.ok || delRes.status === 404) return;
+
+  const errText = await delRes.text().catch(() => '');
+  throw new Error(errText || `YouTube delete failed with status ${delRes.status}`);
+}
+
 export async function deleteYouTubeVideoServer(req: Request, res: Response): Promise<void> {
   try {
     const { videoId } = req.params;
@@ -293,22 +321,8 @@ export async function deleteYouTubeVideoServer(req: Request, res: Response): Pro
       res.status(400).json({ error: 'videoId is required' });
       return;
     }
-
-    const oauth2Client = getYouTubeOAuthClient();
-    const { token: accessToken } = await oauth2Client.getAccessToken();
-
-    const delRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?id=${encodeURIComponent(videoId)}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (delRes.ok || delRes.status === 404) {
-      res.json({ success: true });
-      return;
-    }
-
-    const errText = await delRes.text().catch(() => '');
-    res.status(delRes.status).json({ success: false, error: errText });
+    await deleteYouTubeVideoById(videoId);
+    res.json({ success: true });
   } catch (error: any) {
     serverLogger.error('YouTube delete error', error);
     res.status(500).json({ error: error?.message || 'Failed to delete YouTube video.' });

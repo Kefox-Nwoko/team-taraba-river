@@ -7,10 +7,8 @@ import { ReturnButton } from "./ReturnButton";
 import { useToast } from "./ui/Toast";
 import { FirebaseSyncManager } from "../services/firebaseService";
 import { AppStateManager } from "../services/storage";
-import { deleteEvent as deleteEventApi, updateEvent, updateEventConfirmed } from "../services/apiClient";
-import { deleteYouTubeVideo, extractYouTubeId, getYouTubeThumbnail } from "../services/youtubeDirectUpload";
-import { storage } from "../lib/firebase";
-import { ref, deleteObject } from "firebase/storage";
+import { deleteEvent as deleteEventApi, updateEventConfirmed, removeMediaAsset } from "../services/apiClient";
+import { extractYouTubeId, getYouTubeThumbnail } from "../services/youtubeDirectUpload";
 import {
   FolderOpen,
   Folder,
@@ -683,6 +681,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     });
   }, [events]);
 
+  const isXtraworxDeveloper = currentUser?.email?.toLowerCase().trim() === "xtraworxng@gmail.com";
   const [selectedFolder, setSelectedFolder] = useState<GroupEvent | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -779,14 +778,10 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
         );
       })
       .sort((a, b) => {
-        // "newest"/"oldest" rank by createdAt — the folder's own creation
-        // timestamp, which attachApprovedMedia() also re-stamps on every
-        // newly approved photo/video — so a folder that just received fresh
-        // media jumps to the top even if its nominal activity `date` is old.
-        // Falls back to `date` only for legacy records with no createdAt.
+        // "newest"/"oldest" rank strictly by the folder's own event `date` —
+        // the source of truth for its position — never by upload/approval
+        // activity, so a folder never moves just because it received media.
         const recencyOf = (e: GroupEvent) => {
-          const t = e.createdAt ? new Date(e.createdAt).getTime() : NaN;
-          if (!isNaN(t)) return t;
           const d = e.date ? new Date(e.date).getTime() : NaN;
           return isNaN(d) ? 0 : d;
         };
@@ -923,36 +918,20 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     setLightboxIndex(null);
     setSelectedFolder(null);
 
-    const folderToDelete = mappedEvents.find((e) => e.id === folderId) || selectedFolder;
-
-    // 2. Permanently delete all cloud storage files and YouTube videos
-    if (folderToDelete) {
-      const allVideos = Array.from<string>(
-        new Set(
-          (folderToDelete.youtubeVideoUrls || (folderToDelete.youtubeVideoUrl ? [folderToDelete.youtubeVideoUrl] : [])).filter((u): u is string => Boolean(u))
-        )
-      );
-
-      for (const vUrl of allVideos) {
-        deleteYouTubeVideo(vUrl).catch(() => {});
-      }
-
-      for (const imgUrl of folderToDelete.driveImageUrls || []) {
-        if (imgUrl && imgUrl.includes("firebasestorage.googleapis.com")) {
-          try {
-            const fileRef = ref(storage, imgUrl);
-            deleteObject(fileRef).catch(() => {});
-          } catch (e) {}
-        }
-      }
-    }
-
-    // 3. Delete from Firestore & local state
+    // 2. The server moves the folder (and its photos/videos/pending
+    // approvals) into the recycle bin and removes the live doc — nothing is
+    // actually destroyed here; a developer-admin purge is what deletes the
+    // real Storage/YouTube files, later.
     try {
-      await FirebaseSyncManager.deleteEvent(folderId);
       await deleteEventApi(folderId);
+      alert(
+        isXtraworxDeveloper
+          ? "Folder moved to the recycle bin."
+          : "This folder has been moved to the Recycle Bin. Only the developer administrator (xtraworxng@gmail.com) can permanently delete or restore it."
+      );
     } catch (err) {
       logger.warn("Delete folder notice", { error: err });
+      alert("Failed to delete this folder. Please try again.");
     }
     const current = AppStateManager.getEvents();
     const clean = current.filter((evt) => evt.id !== folderId);
@@ -997,17 +976,16 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     return false;
   };
 
-  // Asset-level deletion permission: allows admins, folder creators, and active members to delete their posted clips/photos
+  // Asset-level deletion permission: admins and the folder's
+  // creator/owner only — matches canEditOrDeleteFolder exactly. This used
+  // to also grant any signed-in non-guest member permission to delete any
+  // photo/video in any folder, which was a bug, not intended design.
   const canEditOrDeleteAsset = (
     folder?: GroupEvent | null,
     item?: { url: string; videoUrl?: string; type: "photo" | "video"; title?: string }
   ): boolean => {
     if (!currentUser) return false;
-    if (currentUser.role === "admin") return true;
-    if (canEditOrDeleteFolder(folder)) return true;
-    // Any authenticated group member has control to remove their media from community galleries
-    if (currentUser.id && currentUser.id !== "mem_guest") return true;
-    return false;
+    return canEditOrDeleteFolder(folder);
   };
 
   const handlePromptDeleteFolder = (folderId: string, folderTitle: string, count: number, e?: React.MouseEvent) => {
@@ -1055,60 +1033,37 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       const targetUrl = item.videoUrl || item.url;
       const isVideo = item.type === "video" || !!item.videoUrl;
 
-      // 1. Get raw arrays from active folder
+      // Compute what the folder's arrays will look like after removal, so we
+      // know whether the folder becomes empty (and should itself be moved to
+      // the recycle bin) — the actual removal + recycle-bin snapshot happens
+      // server-side, nothing is destroyed here.
       let existingVideos = [...(currentActiveFolder.youtubeVideoUrls || (currentActiveFolder.youtubeVideoUrl ? [currentActiveFolder.youtubeVideoUrl] : []))].filter(Boolean);
       let existingImages = [...(currentActiveFolder.driveImageUrls || [])].filter(Boolean);
-
-      // 2. Remove ONLY the specific single instance
       if (isVideo) {
-        let vIdx = existingVideos.findIndex((u) => u === item.videoUrl || u === targetUrl || u === item.url);
-        if (vIdx !== -1) {
-          existingVideos.splice(vIdx, 1);
-        } else {
-          let imgVIdx = existingImages.findIndex((u) => u === item.videoUrl || u === targetUrl || u === item.url);
-          if (imgVIdx !== -1) {
-            existingImages.splice(imgVIdx, 1);
-          }
-        }
+        existingVideos = existingVideos.filter((u) => u !== targetUrl);
       } else {
-        let pIdx = existingImages.findIndex((u) => u === targetUrl || u === item.url);
-        if (pIdx !== -1) {
-          existingImages.splice(pIdx, 1);
-        }
+        existingImages = existingImages.filter((u) => u !== targetUrl);
       }
 
-      // 3. Purge from cloud storage ONLY if no other item in the folder references the same URL
-      const isUrlStillReferenced = existingVideos.some((u) => u === targetUrl) || existingImages.some((u) => u === targetUrl);
-
-      if (!isUrlStillReferenced) {
-        if (isVideo && item.videoUrl && (item.videoUrl.includes("youtube.com") || item.videoUrl.includes("youtu.be"))) {
-          deleteYouTubeVideo(item.videoUrl).catch((err) => {
-            logger.warn("YouTube video delete notice:", err);
-          });
-        }
-        if (targetUrl && targetUrl.includes("firebasestorage.googleapis.com")) {
-          try {
-            const fileRef = ref(storage, targetUrl);
-            deleteObject(fileRef).catch((err) => {
-              logger.warn("Firebase storage delete notice:", err);
-            });
-          } catch (e) {}
-        }
-      }
+      await removeMediaAsset(currentActiveFolder.id, targetUrl, isVideo ? "video" : "photo");
 
       const isFolderEmpty = existingImages.length === 0 && existingVideos.length === 0;
 
       if (isFolderEmpty) {
+        // performDeleteFolder shows its own recycle-bin notice for the folder.
         await performDeleteFolder(currentActiveFolder.id);
       } else {
+        alert(
+          isXtraworxDeveloper
+            ? "Media moved to the recycle bin."
+            : "This item has been moved to the Recycle Bin. Only the developer administrator (xtraworxng@gmail.com) can permanently delete or restore it."
+        );
         const updatedFolder: GroupEvent = {
           ...currentActiveFolder,
           driveImageUrls: existingImages,
           youtubeVideoUrls: existingVideos,
           youtubeVideoUrl: existingVideos[0] || "",
         };
-
-        await FirebaseSyncManager.saveEvent(updatedFolder);
 
         const currentEvents = AppStateManager.getEvents();
         const idx = currentEvents.findIndex((evt) => evt.id === currentActiveFolder.id);
@@ -1122,6 +1077,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       setLightboxIndex(null);
     } catch (err) {
       logger.error("Failed to delete asset:", err);
+      alert("Failed to delete this item. Please try again.");
     } finally {
       setIsDeletingProcessing(false);
       setDeletingAssetItem(null);
@@ -1174,37 +1130,21 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       existingVideos = existingVideos.filter((vUrl) => !selectedItemKeys.has(vUrl));
       existingImages = existingImages.filter((imgUrl) => !selectedItemKeys.has(imgUrl));
 
-      // 3. Purge from cloud storage / YouTube
+      // 3. Move each selected item to the recycle bin server-side — nothing
+      // is destroyed here, only detached from the folder's arrays.
       for (const it of itemsToDelete) {
         const targetUrl = it.videoUrl || it.url;
         const isVideo = it.type === "video" || !!it.videoUrl;
-
-        // Check if URL is still referenced elsewhere in the folder
-        const isStillInVideos = existingVideos.includes(targetUrl);
-        const isStillInImages = existingImages.includes(targetUrl);
-
-        if (!isStillInVideos && !isStillInImages) {
-          if (isVideo && it.videoUrl && (it.videoUrl.includes("youtube.com") || it.videoUrl.includes("youtu.be"))) {
-            deleteYouTubeVideo(it.videoUrl).catch((err) => {
-              logger.warn("YouTube video batch delete notice:", err);
-            });
-          }
-          if (targetUrl && targetUrl.includes("firebasestorage.googleapis.com")) {
-            try {
-              const fileRef = ref(storage, targetUrl);
-              deleteObject(fileRef).catch((err) => {
-                logger.warn("Firebase storage batch delete notice:", err);
-              });
-            } catch (e) {}
-          }
-        }
+        await removeMediaAsset(currentActiveFolder.id, targetUrl, isVideo ? "video" : "photo").catch((err) => {
+          logger.warn("Batch media asset removal notice:", err);
+        });
       }
 
       const isFolderEmpty = existingImages.length === 0 && existingVideos.length === 0;
 
       if (isFolderEmpty) {
         await performDeleteFolder(currentActiveFolder.id);
-        notify("🗑️ All media was deleted. Empty folder removed.", "info");
+        notify("🗑️ All media was moved to the recycle bin. Empty folder also moved.", "info");
       } else {
         const updatedFolder: GroupEvent = {
           ...currentActiveFolder,
@@ -1213,20 +1153,18 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
           youtubeVideoUrl: existingVideos[0] || "",
         };
 
-        await FirebaseSyncManager.saveEvent(updatedFolder);
-        await updateEvent(currentActiveFolder.id, {
-          driveImageUrls: existingImages,
-          youtubeVideoUrls: existingVideos,
-          youtubeVideoUrl: existingVideos[0] || "",
-        });
-
         const currentEvents = AppStateManager.getEvents();
         const idx = currentEvents.findIndex((evt) => evt.id === currentActiveFolder.id);
         if (idx !== -1) currentEvents[idx] = updatedFolder;
         AppStateManager.saveEvents(currentEvents);
         setSelectedFolder(updatedFolder);
         if (onRefreshEvents) onRefreshEvents();
-        notify(`🗑️ Successfully deleted ${itemsToDelete.length} selected media item(s).`, "success");
+        notify(
+          isXtraworxDeveloper
+            ? `🗑️ Moved ${itemsToDelete.length} selected item(s) to the recycle bin.`
+            : `🗑️ Moved ${itemsToDelete.length} item(s) to the Recycle Bin. Only the developer administrator (xtraworxng@gmail.com) can permanently delete or restore them.`,
+          "success"
+        );
       }
 
       setIsSelectionMode(false);
@@ -1285,7 +1223,6 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
     
     try {
       if (isSourceFolderEmpty) {
-        await FirebaseSyncManager.deleteEvent(selectedFolder.id);
         await deleteEventApi(selectedFolder.id);
       } else {
         await FirebaseSyncManager.saveEvent(sourceUpdatedFolder);
@@ -1303,7 +1240,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
       if (targetIdx !== -1) clean[targetIdx] = targetUpdatedFolder;
       AppStateManager.saveEvents(clean);
       setSelectedFolder(null);
-      alert(`Asset moved successfully. The source folder became empty and was automatically deleted.`);
+      alert(`Asset moved successfully. The source folder became empty and was moved to the recycle bin.`);
     } else {
       const sourceIdx = current.findIndex((evt) => evt.id === selectedFolder.id);
       if (sourceIdx !== -1) current[sourceIdx] = sourceUpdatedFolder;
@@ -1931,7 +1868,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                 <button
                   onClick={(e) => handlePromptDeleteSingleAsset(galleryItems[lightboxIndex], e)}
                   className="px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-red-600/90 hover:bg-red-600 active:scale-95 text-white text-[10px] sm:text-xs font-medium transition flex items-center gap-1 cursor-pointer shadow-xs"
-                  title={`Permanently delete this ${galleryItems[lightboxIndex].type === "video" ? "video" : "photo"}`}
+                  title={`Move this ${galleryItems[lightboxIndex].type === "video" ? "video" : "photo"} to the recycle bin`}
                 >
                   <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                   <span className="hidden sm:inline">Delete</span>
@@ -2097,8 +2034,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
                   Confirm Delete {deletingAssetItem.type === "video" ? "Video Clip" : "Photo"}
                 </h3>
-                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 font-medium">
-                  ⚠️ This action cannot be undone.
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
+                  Moved to the Recycle Bin — recoverable only by the developer administrator.
                 </p>
               </div>
             </div>
@@ -2125,7 +2062,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              Are you sure you want to permanently delete this {deletingAssetItem.type === "video" ? "video clip instance" : "photo"} from the gallery and cloud storage?
+              Are you sure you want to remove this {deletingAssetItem.type === "video" ? "video clip instance" : "photo"} from the gallery? It will move to the Recycle Bin — only the developer administrator (xtraworxng@gmail.com) can permanently delete or restore it.
             </p>
 
             <div className="flex items-center justify-end space-x-2.5 pt-2">
@@ -2172,8 +2109,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
                   Confirm Delete Entire Folder
                 </h3>
-                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 font-medium">
-                  ⚠️ This will delete all media inside this folder.
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
+                  Moved to the Recycle Bin — recoverable only by the developer administrator.
                 </p>
               </div>
             </div>
@@ -2188,7 +2125,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              Are you sure you want to permanently delete this media folder and purge all attached photos and videos from YouTube and cloud storage?
+              Are you sure you want to remove this media folder and all its photos/videos from the gallery? It will move to the Recycle Bin — only the developer administrator (xtraworxng@gmail.com) can permanently delete or restore it.
             </p>
 
             <div className="flex items-center justify-end space-x-2.5 pt-2">
@@ -2235,8 +2172,8 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
                   Confirm Batch Deletion
                 </h3>
-                <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 font-medium">
-                  ⚠️ This action cannot be undone.
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5 font-medium">
+                  Moved to the Recycle Bin — recoverable only by the developer administrator.
                 </p>
               </div>
             </div>
@@ -2251,7 +2188,7 @@ export const EventMediaView: React.FC<EventMediaViewProps> = ({
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              Are you sure you want to permanently delete these <strong>{selectedItemKeys.size}</strong> selected photo(s) and video clip(s) from this event gallery and cloud storage?
+              Are you sure you want to remove these <strong>{selectedItemKeys.size}</strong> selected photo(s) and video clip(s) from this event gallery? They will move to the Recycle Bin — only the developer administrator (xtraworxng@gmail.com) can permanently delete or restore them.
             </p>
 
             <div className="flex items-center justify-end space-x-2.5 pt-2">

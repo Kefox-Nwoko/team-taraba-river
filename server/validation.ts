@@ -125,13 +125,6 @@ export const MemberContactSearchSchema = z.object({
   query: z.string().min(1, 'Search query is required').max(500),
 });
 
-// --- Admin Member Restore Schema ---
-
-export const MemberRestoreSchema = z.object({
-  originalId: z.string().min(1, 'originalId is required'),
-  member: z.any().optional(),
-});
-
 // --- Direct-to-Google Resumable Upload Bridge Schema ---
 // Backs the endpoint that opens a Drive resumable upload session with
 // server-held credentials, handing the client only the resulting

@@ -4,8 +4,14 @@ service firebase.storage {
     match /{allPaths=**} {
       // Any authenticated member can read media
       allow read: if request.auth != null;
-      // Authenticated members can upload media
-      allow write: if request.auth != null;
+      // Authenticated members can upload/replace media, but never delete it
+      // directly — every "delete" in the app goes through the recycle bin
+      // (server endpoints, Admin SDK) so nothing is destroyed until a
+      // developer-admin purge. Without this, any signed-in member could
+      // permanently delete any file in the bucket straight from the
+      // browser console, bypassing the recycle bin entirely.
+      allow create, update: if request.auth != null;
+      allow delete: if false;
     }
   }
 }

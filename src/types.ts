@@ -146,10 +146,31 @@ export interface TestResult {
   errorDetails?: string;
 }
 
-export interface DeletedMemberEntry {
+// Mirrors server/recycleBin.ts's RecycleBinEntry — every deleted object of
+// every type lands in one unified, developer-admin-only recycle bin.
+export type RecycleObjectType = "member" | "event" | "mediaAsset" | "approvalRequest";
+
+export interface RecycleBinEntry {
+  id: string;
+  objectType: RecycleObjectType;
+  originalCollection: string;
   originalId: string;
-  member: Member;
+  snapshot: Record<string, any>;
+  assetUrls?: string[];
+  parentEventId?: string;
+  originalLocation: string;
   deletedAt: string;
-  deletedBy?: string;
-  originalLocation?: string;
+  deletedBy: { uid: string; email: string; name: string };
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: "delete" | "restore" | "purge";
+  objectType: RecycleObjectType;
+  objectId: string;
+  actorUid: string;
+  actorEmail: string;
+  actorName: string;
+  summary: string;
+  timestamp: string;
 }

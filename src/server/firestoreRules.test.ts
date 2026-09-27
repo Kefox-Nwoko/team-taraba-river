@@ -167,12 +167,12 @@ describe.skipIf(!testEnv)("firestore.rules", () => {
       await assertFails(member.firestore().collection("members").doc("mem_x").delete());
     });
 
-    it("allows an admin to delete a member", async () => {
+    it("denies even an admin from deleting a member directly (recycle bin only)", async () => {
       await testEnv!.withSecurityRulesDisabled(async (ctx) => {
         await ctx.firestore().collection("members").doc("mem_x").set({ fullName: "X" });
       });
       const admin = testEnv!.authenticatedContext("admin_uid", { email: ADMIN_EMAIL });
-      await assertSucceeds(admin.firestore().collection("members").doc("mem_x").delete());
+      await assertFails(admin.firestore().collection("members").doc("mem_x").delete());
     });
   });
 
@@ -195,13 +195,13 @@ describe.skipIf(!testEnv)("firestore.rules", () => {
       await assertFails(member.firestore().collection("events").doc("evt_new").set({ title: "Hack" }));
     });
 
-    it("allows an admin to create/update/delete an event", async () => {
+    it("allows an admin to create/update an event, but never delete it directly", async () => {
       const admin = testEnv!.authenticatedContext("admin_uid", { email: ADMIN_EMAIL });
       await assertSucceeds(admin.firestore().collection("events").doc("evt_admin").set({ title: "Real" }));
       await assertSucceeds(
         admin.firestore().collection("events").doc("evt_admin").update({ title: "Updated" })
       );
-      await assertSucceeds(admin.firestore().collection("events").doc("evt_admin").delete());
+      await assertFails(admin.firestore().collection("events").doc("evt_admin").delete());
     });
   });
 
@@ -230,7 +230,7 @@ describe.skipIf(!testEnv)("firestore.rules", () => {
       );
     });
 
-    it("allows an admin to approve/delete a photo request", async () => {
+    it("allows an admin to approve a photo request, but never delete it directly", async () => {
       await testEnv!.withSecurityRulesDisabled(async (ctx) => {
         await ctx.firestore().collection("photoRequests").doc("req_4").set({ status: "pending" });
       });
@@ -238,7 +238,41 @@ describe.skipIf(!testEnv)("firestore.rules", () => {
       await assertSucceeds(
         admin.firestore().collection("photoRequests").doc("req_4").update({ status: "approved" })
       );
-      await assertSucceeds(admin.firestore().collection("photoRequests").doc("req_4").delete());
+      await assertFails(admin.firestore().collection("photoRequests").doc("req_4").delete());
+    });
+  });
+
+  describe("recycleBin", () => {
+    it("denies everyone, including admins, from reading or writing the recycle bin directly", async () => {
+      await testEnv!.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().collection("recycleBin").doc("entry_1").set({ objectType: "member" });
+      });
+      const admin = testEnv!.authenticatedContext("admin_uid", { email: ADMIN_EMAIL });
+      const developer = testEnv!.authenticatedContext("dev_uid", { email: OTHER_ADMIN_EMAIL });
+      await assertFails(admin.firestore().collection("recycleBin").doc("entry_1").get());
+      await assertFails(developer.firestore().collection("recycleBin").doc("entry_1").get());
+      await assertFails(developer.firestore().collection("recycleBin").doc("entry_1").delete());
+    });
+  });
+
+  describe("auditLogs", () => {
+    it("allows any admin to read the audit log, but never write it", async () => {
+      await testEnv!.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().collection("auditLogs").doc("log_1").set({ action: "delete" });
+      });
+      const admin = testEnv!.authenticatedContext("admin_uid", { email: ADMIN_EMAIL });
+      const member = testEnv!.authenticatedContext("mem_1", { email: NON_ADMIN_EMAIL });
+      await assertSucceeds(admin.firestore().collection("auditLogs").doc("log_1").get());
+      await assertFails(member.firestore().collection("auditLogs").doc("log_1").get());
+      await assertFails(admin.firestore().collection("auditLogs").doc("log_2").set({ action: "forged" }));
+    });
+  });
+
+  describe("deleted_members (deprecated)", () => {
+    it("denies everyone, including admins, now that it's superseded by recycleBin", async () => {
+      const admin = testEnv!.authenticatedContext("admin_uid", { email: ADMIN_EMAIL });
+      await assertFails(admin.firestore().collection("deleted_members").doc("entry_1").get());
+      await assertFails(admin.firestore().collection("deleted_members").doc("entry_1").set({}));
     });
   });
 

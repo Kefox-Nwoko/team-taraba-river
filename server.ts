@@ -11,7 +11,7 @@ import { config, isAdminEmail } from "./server/config";
 
 // Server modules
 import { db, adminAuth, checkFirestoreConnection, isFirestoreAvailable, FieldValue, deleteStorageFileByUrl } from "./server/firebaseAdmin";
-import { authMiddleware, requireAdmin } from "./server/authMiddleware";
+import { authMiddleware, requireAdmin, requireDeveloperAdmin } from "./server/authMiddleware";
 import {
   validateBody,
   MemberRegistrationSchema,
@@ -26,7 +26,6 @@ import {
   LoginCodeVerifySchema,
   AdminAISearchSchema,
   MemberContactSearchSchema,
-  MemberRestoreSchema,
   DriveUploadInitSchema,
   DriveMakePublicSchema,
 } from "./server/validation";
@@ -39,6 +38,16 @@ import {
     generateVideoThumbnailFromUrl,
     getDriveAuthClient,
 } from "./server/mediaPipeline";
+import {
+  moveToRecycleBin,
+  getRecycleBinEntries,
+  restoreFromRecycleBin,
+  purgeFromRecycleBin,
+  restoreAllFromRecycleBin,
+  purgeAllFromRecycleBin,
+  getAuditLog,
+  RecycleActor,
+} from "./server/recycleBin";
 import { isMemberCredentialMatch } from "./src/lib/authMatching";
 import { CSV_SEED_MEMBERS } from "./src/data/csvMembers";
 import { getUpcomingNextMonthCelebrants, getTomorrowCelebrants, getWATDate } from "./server/birthdayService";
@@ -638,6 +647,20 @@ function conditionalRequireAdmin(req: Request, res: Response, next: NextFunction
     return;
   }
   requireAdmin(req, res, next);
+}
+
+// Same shape as conditionalRequireAdmin, but for recycle-bin restore/purge
+// and other developer-admin-only actions — see requireDeveloperAdmin.
+function conditionalRequireDeveloperAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (!isFirestoreAvailable()) {
+    if (isDeployedEnv) {
+      res.status(503).json({ error: 'Service temporarily unavailable (Firestore Admin not connected).' });
+      return;
+    }
+    next();
+    return;
+  }
+  requireDeveloperAdmin(req, res, next);
 }
 
 // ===================================================================
@@ -1511,14 +1534,17 @@ app.put("/api/members/:id", conditionalAuth, async (req: Request, res: Response)
   }
 });
 
-// 6b. Member Service: Delete Profile (Admin only)
+// 6b. Member Service: Delete Profile (Admin only) — moves to the recycle
+// bin; nothing is ever actually destroyed here. Only the developer-admin
+// can restore or permanently purge it (see the /api/admin/recycle-bin/*
+// routes below).
 app.delete("/api/members/:id", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
     if (!isFirestoreAvailable()) {
       fallbackMembers = fallbackMembers.filter((m) => m.id !== id);
       _membersCache = null;
-      res.json({ success: true, message: "Member deleted successfully." });
+      res.json({ success: true, message: "Member moved to the recycle bin." });
       return;
     }
 
@@ -1530,6 +1556,20 @@ app.delete("/api/members/:id", conditionalAuth, conditionalRequireAdmin, async (
     }
 
     const memberData = docSnap.data() as Member;
+    const actor = {
+      uid: req.user?.uid || "unknown",
+      email: req.user?.email || "unknown",
+      name: memberData?.fullName || "Admin",
+    };
+
+    await moveToRecycleBin({
+      objectType: "member",
+      originalCollection: COLLECTIONS.members,
+      originalId: id,
+      snapshot: memberData,
+      originalLocation: memberData?.fullName || id,
+      deletedBy: actor,
+    });
     await docRef.delete();
     _membersCache = null;
 
@@ -1537,70 +1577,15 @@ app.delete("/api/members/:id", conditionalAuth, conditionalRequireAdmin, async (
       id: `act_${Date.now()}`,
       memberId: id,
       memberName: memberData?.fullName || "Member",
-      action: `Admin permanently deleted member profile (${memberData?.fullName || id})`,
+      action: `Admin moved member profile to the recycle bin (${memberData?.fullName || id})`,
       timestamp: new Date().toISOString(),
       pointsEarned: 0,
     });
 
-    res.json({ success: true, message: "Member deleted successfully." });
+    res.json({ success: true, message: "Member moved to the recycle bin." });
   } catch (error) {
     serverLogger.error("Delete member error", error);
     res.status(500).json({ error: "Failed to delete member profile." });
-  }
-});
-
-// 6c. Member Service: Restore Profile from Recycle Bin (Admin only)
-app.post("/api/admin/members/restore", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
-  const validation = validateBody(MemberRestoreSchema, req.body);
-  if (!validation.success) {
-    res.status(400).json({ error: (validation as any).error });
-    return;
-  }
-
-  const { originalId, member } = validation.data;
-
-  try {
-    if (!isFirestoreAvailable()) {
-      res.status(500).json({ error: "Firestore is not available." });
-      return;
-    }
-
-    const deletedDocRef = db.collection("deleted_members").doc(originalId);
-    let memberToRestore: Member | null = member || null;
-
-    try {
-      const deletedDocSnap = await deletedDocRef.get();
-      if (deletedDocSnap.exists) {
-        const deletedData = deletedDocSnap.data() as any;
-        if (!memberToRestore) memberToRestore = deletedData.member;
-        await deletedDocRef.delete().catch(() => {});
-      }
-    } catch {}
-
-    if (!memberToRestore || !memberToRestore.id) {
-      res.status(400).json({ error: "Invalid member data for restoration." });
-      return;
-    }
-
-    const membersCol = db.collection(COLLECTIONS.members);
-    await membersCol.doc(memberToRestore.id).set(memberToRestore);
-    _membersCache = null;
-
-    await deletedDocRef.delete();
-
-    await addActivityLog({
-      id: `act_${Date.now()}`,
-      memberId: memberToRestore.id,
-      memberName: memberToRestore.fullName || "Member",
-      action: `Admin restored member profile from recycle bin (${memberToRestore.fullName || originalId})`,
-      timestamp: new Date().toISOString(),
-      pointsEarned: 0,
-    });
-
-    res.json({ success: true, member: memberToRestore });
-  } catch (error) {
-    serverLogger.error("Restore member error", error);
-    res.status(500).json({ error: "Failed to restore member profile." });
   }
 });
 
@@ -1758,7 +1743,10 @@ app.put("/api/events/:id", conditionalAuth, conditionalRequireAdmin, async (req:
   }
 });
 
-// 8c. Events Service: Delete
+// 8c. Events Service: Delete — moves the event (announcement or media
+// folder alike) and every pending approval submitted for it into the
+// recycle bin. The poster/photos/videos are left untouched in
+// Storage/YouTube until a developer-admin purge.
 app.delete("/api/events/:id", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
@@ -1769,14 +1757,48 @@ app.delete("/api/events/:id", conditionalAuth, conditionalRequireAdmin, async (r
         const eventDoc = await eventRef.get();
         if (eventDoc.exists) existing = { id: eventDoc.id, ...eventDoc.data() } as GroupEvent;
       }
-      // No recycle bin for announcements — permanently delete the poster
-      // image along with the record. Gated on !isMediaFolder and scoped to
-      // posterUrl only: media folders/galleries (driveImageUrls,
-      // youtubeVideoUrls) are a completely separate flow and must never be
-      // touched here, even though this same route also deletes those.
-      if (existing && !isMediaFolder(existing)) {
-        await deleteStorageFileByUrl(existing.posterUrl);
+
+      if (existing) {
+        const actor: RecycleActor = {
+          uid: req.user?.uid || "unknown",
+          email: req.user?.email || "unknown",
+          name: "Admin",
+        };
+        const assetUrls = [
+          existing.posterUrl,
+          ...(existing.driveImageUrls || []),
+          ...(existing.youtubeVideoUrls || (existing.youtubeVideoUrl ? [existing.youtubeVideoUrl] : [])),
+        ].filter((u): u is string => Boolean(u));
+
+        await moveToRecycleBin({
+          objectType: "event",
+          originalCollection: COLLECTIONS.events,
+          originalId: id,
+          snapshot: existing,
+          assetUrls,
+          originalLocation: `Event: ${existing.title || id}`,
+          deletedBy: actor,
+        });
+
+        // Cascade: any pending approval submitted for this event has nowhere
+        // to be approved into anymore — move it into the bin too instead of
+        // hard-deleting it, so a purge/restore decision can still be made.
+        const relatedApprovals = await db.collection(COLLECTIONS.photoRequests).where("eventId", "==", id).get();
+        for (const approvalDoc of relatedApprovals.docs) {
+          const approvalData = approvalDoc.data() as PhotoApprovalRequest;
+          await moveToRecycleBin({
+            objectType: "approvalRequest",
+            originalCollection: COLLECTIONS.photoRequests,
+            originalId: approvalDoc.id,
+            snapshot: approvalData,
+            assetUrls: approvalData.photoUrl ? [approvalData.photoUrl] : [],
+            originalLocation: `Pending upload for: ${existing.title || id}`,
+            deletedBy: actor,
+          });
+          await approvalDoc.ref.delete();
+        }
       }
+
       await eventRef.delete();
     }
     const eventTitle = existing ? existing.title : id;
@@ -1787,7 +1809,7 @@ app.delete("/api/events/:id", conditionalAuth, conditionalRequireAdmin, async (r
       id: `act_${Date.now()}`,
       memberId: req.user?.uid || 'local_dev',
       memberName: 'Admin',
-      action: `Deleted event: ${eventTitle}`,
+      action: `Moved event to the recycle bin: ${eventTitle}`,
       timestamp: new Date().toISOString(),
       pointsEarned: 0,
     });
@@ -1992,19 +2014,166 @@ app.post("/api/admin/approvals/:id/decision", conditionalAuth, conditionalRequir
   }
 });
 
-// 11b. Admin Service: Delete Approval Request (Zero-residue purge)
+// 11b. Admin Service: Delete Approval Request — used both after a successful
+// approval (bookkeeping cleanup; the photo/video already lives durably on
+// its event) and after a rejection (the submission itself is being
+// discarded). Either way it's moved to the recycle bin first, so a rejected
+// upload's file is never actually destroyed until a developer-admin purges.
 app.delete("/api/admin/approvals/:id", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
     if (isFirestoreAvailable()) {
-      await db.collection(COLLECTIONS.photoRequests).doc(id).delete();
+      const approvalRef = db.collection(COLLECTIONS.photoRequests).doc(id);
+      const approvalSnap = await approvalRef.get();
+      if (approvalSnap.exists) {
+        const approvalData = approvalSnap.data() as PhotoApprovalRequest;
+        const actor: RecycleActor = {
+          uid: req.user?.uid || "unknown",
+          email: req.user?.email || "unknown",
+          name: "Admin",
+        };
+        await moveToRecycleBin({
+          objectType: "approvalRequest",
+          originalCollection: COLLECTIONS.photoRequests,
+          originalId: id,
+          snapshot: approvalData,
+          assetUrls: approvalData.photoUrl ? [approvalData.photoUrl] : [],
+          originalLocation: `Upload by ${approvalData.memberName || "a member"} for: ${approvalData.folderName || approvalData.title || "an event"}`,
+          deletedBy: actor,
+        });
+        await approvalRef.delete();
+      }
     } else {
       fallbackApprovals = fallbackApprovals.filter((a) => a.id !== id);
     }
-    res.json({ success: true, message: "Approval request removed." });
+    res.json({ success: true, message: "Approval request moved to the recycle bin." });
   } catch (error) {
     serverLogger.error("Delete approval error", error);
     res.status(500).json({ error: "Failed to delete approval request." });
+  }
+});
+
+// 11c. Media Service: Remove a single photo/video from a folder — moves it
+// to the recycle bin instead of deleting the Storage/YouTube file. Used by
+// the gallery's single/batch asset delete and the upload replace-purge flow.
+app.post("/api/admin/media-assets/remove", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
+  const { eventId, assetUrl, type } = req.body || {};
+  if (!eventId || !assetUrl || (type !== "photo" && type !== "video")) {
+    res.status(400).json({ error: "eventId, assetUrl, and type ('photo'|'video') are required." });
+    return;
+  }
+  try {
+    if (!isFirestoreAvailable()) {
+      res.status(503).json({ error: "Firestore is not available." });
+      return;
+    }
+    const eventRef = db.collection(COLLECTIONS.events).doc(eventId);
+    const eventSnap = await eventRef.get();
+    if (!eventSnap.exists) {
+      res.status(404).json({ error: "Event not found." });
+      return;
+    }
+    const eventData = eventSnap.data() as GroupEvent;
+    const actor: RecycleActor = {
+      uid: req.user?.uid || "unknown",
+      email: req.user?.email || "unknown",
+      name: "Admin",
+    };
+
+    await moveToRecycleBin({
+      objectType: "mediaAsset",
+      originalCollection: COLLECTIONS.events,
+      originalId: `${eventId}_${Date.now()}`,
+      snapshot: { assetUrl, type },
+      assetUrls: [assetUrl],
+      parentEventId: eventId,
+      originalLocation: `${type === "video" ? "Video" : "Photo"} in: ${eventData.title || eventId}`,
+      deletedBy: actor,
+    });
+
+    const field = type === "video" ? "youtubeVideoUrls" : "driveImageUrls";
+    const update: Record<string, any> = { [field]: FieldValue.arrayRemove(assetUrl) };
+    if (type === "video" && eventData.youtubeVideoUrl === assetUrl) {
+      const remaining = (eventData.youtubeVideoUrls || []).filter((u) => u !== assetUrl);
+      update.youtubeVideoUrl = remaining[0] || "";
+    }
+    await eventRef.update(update);
+
+    res.json({ success: true, message: "Media moved to the recycle bin." });
+  } catch (error) {
+    serverLogger.error("Remove media asset error", error);
+    res.status(500).json({ error: "Failed to remove media asset." });
+  }
+});
+
+// 11d. Recycle Bin — list is developer-admin only (per requirement: "the
+// Recycle Bin should be accessible exclusively by the developer-admin").
+app.get("/api/admin/recycle-bin", conditionalAuth, conditionalRequireDeveloperAdmin, async (req: Request, res: Response) => {
+  try {
+    const entries = await getRecycleBinEntries();
+    res.json({ entries });
+  } catch (error) {
+    serverLogger.error("Fetch recycle bin error", error);
+    res.status(500).json({ error: "Failed to fetch recycle bin." });
+  }
+});
+
+function actorFromRequest(req: Request): RecycleActor {
+  return { uid: req.user?.uid || "unknown", email: req.user?.email || "unknown", name: req.user?.email || "Developer Admin" };
+}
+
+app.post("/api/admin/recycle-bin/:id/restore", conditionalAuth, conditionalRequireDeveloperAdmin, async (req: Request, res: Response) => {
+  try {
+    const entry = await restoreFromRecycleBin(req.params.id, actorFromRequest(req));
+    _membersCache = null;
+    _eventsCache = null;
+    res.json({ success: true, entry });
+  } catch (error: any) {
+    serverLogger.error("Restore recycle bin entry error", error);
+    res.status(500).json({ error: error?.message || "Failed to restore item." });
+  }
+});
+
+app.post("/api/admin/recycle-bin/:id/purge", conditionalAuth, conditionalRequireDeveloperAdmin, async (req: Request, res: Response) => {
+  try {
+    await purgeFromRecycleBin(req.params.id, actorFromRequest(req));
+    res.json({ success: true });
+  } catch (error: any) {
+    serverLogger.error("Purge recycle bin entry error", error);
+    res.status(500).json({ error: error?.message || "Failed to purge item." });
+  }
+});
+
+app.post("/api/admin/recycle-bin/restore-all", conditionalAuth, conditionalRequireDeveloperAdmin, async (req: Request, res: Response) => {
+  try {
+    const count = await restoreAllFromRecycleBin(actorFromRequest(req));
+    _membersCache = null;
+    _eventsCache = null;
+    res.json({ success: true, count });
+  } catch (error: any) {
+    serverLogger.error("Restore-all recycle bin error", error);
+    res.status(500).json({ error: error?.message || "Failed to restore all items." });
+  }
+});
+
+app.post("/api/admin/recycle-bin/purge-all", conditionalAuth, conditionalRequireDeveloperAdmin, async (req: Request, res: Response) => {
+  try {
+    const count = await purgeAllFromRecycleBin(actorFromRequest(req));
+    res.json({ success: true, count });
+  } catch (error: any) {
+    serverLogger.error("Purge-all recycle bin error", error);
+    res.status(500).json({ error: error?.message || "Failed to purge all items." });
+  }
+});
+
+// 11e. Audit Log — any admin can read who deleted/restored/purged what.
+app.get("/api/admin/audit-log", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
+  try {
+    const entries = await getAuditLog();
+    res.json({ entries });
+  } catch (error) {
+    serverLogger.error("Fetch audit log error", error);
+    res.status(500).json({ error: "Failed to fetch audit log." });
   }
 });
 
@@ -2033,7 +2202,7 @@ app.get("/api/system/visits", async (req: Request, res: Response) => {
   }
 });
 
-app.post("/api/admin/reset-data", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
+app.post("/api/admin/reset-data", conditionalAuth, conditionalRequireDeveloperAdmin, async (req: Request, res: Response) => {
   try {
     // 1. Reset all members' activity points to 0
     const membersSnap = await db.collection(COLLECTIONS.members).get();

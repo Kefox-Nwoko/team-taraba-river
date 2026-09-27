@@ -49,34 +49,57 @@ service cloud.firestore {
         (isAdmin() && request.auth.uid == memberId);
     }
 
+    // delete is `if false` everywhere below that has real user content —
+    // every "delete" in the app now goes through the recycle bin (server
+    // endpoints, Admin SDK) instead. This is what actually stops an admin
+    // from bypassing the recycle bin via direct client SDK/console access;
+    // the app's own UI never needed client-side delete permission anyway.
     match /members/{memberId} {
       allow read: if isAuthenticated();
       allow create: if !isAdminProfileWrite(memberId);
       allow update: if (isOwner(memberId) || isAdmin()) && !isAdminProfileWrite(memberId);
-      allow delete: if isAdmin();
+      allow delete: if false;
     }
 
-    // Recycle bin / deleted members collection — admin dashboard only.
+    // Deprecated legacy recycle bin — superseded by the unified
+    // `recycleBin` collection below. No longer read or written anywhere.
     match /deleted_members/{entryId} {
-      allow read, write: if isAdmin();
+      allow read, write: if false;
     }
 
     // Events collection — public read (community media galleries are
     // viewable by anonymous visitors, e.g. on mobile devices without a
-    // persisted Firebase session); only admins create/update/delete via
-    // the dashboard (RSVP goes through the authenticated Express API,
-    // which uses the Admin SDK, not this path).
+    // persisted Firebase session); only admins create/update via the
+    // dashboard (RSVP goes through the authenticated Express API, which
+    // uses the Admin SDK, not this path).
     match /events/{eventId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update: if isAdmin();
+      allow delete: if false;
     }
 
     // Photo approval requests — any signed-in member can submit one;
-    // only admins decide (approve/reject) or delete them.
+    // only admins decide (approve/reject) them.
     match /photoRequests/{requestId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // Unified recycle bin — every deleted object of every type lands here.
+    // Server-only (Admin SDK bypasses rules): restore/purge is gated to the
+    // developer-admin account at the route layer in server.ts, and even a
+    // regular admin's client SDK has zero access, by design.
+    match /recycleBin/{entryId} {
+      allow read, write: if false;
+    }
+
+    // Audit log of every delete/restore/purge — any admin can read (who did
+    // what, when); never client-writable, so it can't be tampered with.
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
 
     // Activity logs — community feed. Any signed-in member's actions can
@@ -143,6 +166,34 @@ service cloud.firestore {
     // (Admin SDK), never touched by any client.
     match /loginCodes/{memberId} {
       allow read, write: if false;
+    }
+
+    // Confluence Jersey Party Feedback
+    function isValidRating(val) {
+      return val is int && val >= 1 && val <= 5;
+    }
+
+    function isValidTeam(team) {
+      return team in ['Team Gongola', 'Team Taraba', 'Guest / Neutral'];
+    }
+
+    match /feedback/{feedbackId} {
+      allow create: if 
+        request.resource.data.team is string &&
+        isValidTeam(request.resource.data.team) &&
+        isValidRating(request.resource.data.musicRating) &&
+        isValidRating(request.resource.data.foodRating) &&
+        isValidRating(request.resource.data.gamesRating) &&
+        isValidRating(request.resource.data.venueRating) &&
+        isValidRating(request.resource.data.networkingRating) &&
+        isValidRating(request.resource.data.overallRating) &&
+        (!('highlight' in request.resource.data) || request.resource.data.highlight is string && request.resource.data.highlight.size() <= 1000) &&
+        (!('improvements' in request.resource.data) || request.resource.data.improvements is string && request.resource.data.improvements.size() <= 1000) &&
+        (!('attendeeName' in request.resource.data) || request.resource.data.attendeeName is string && request.resource.data.attendeeName.size() <= 100) &&
+        (!('gradYear' in request.resource.data) || request.resource.data.gradYear is string && request.resource.data.gradYear.size() <= 30) &&
+        request.resource.data.createdAt != null;
+      allow read: if isAuthenticated();
+      allow update, delete: if isAdmin();
     }
 
     // Deny all other documents by default

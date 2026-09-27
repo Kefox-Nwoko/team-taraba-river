@@ -28,7 +28,8 @@ import {
   StopCircle,
   XCircle,
 } from "lucide-react";
-import { uploadVideoViaServerRelay, deleteYouTubeVideo } from "../services/youtubeDirectUpload";
+import { uploadVideoViaServerRelay } from "../services/youtubeDirectUpload";
+import { removeMediaAsset } from "../services/apiClient";
 import { uploadImageDirectToDrive } from "../services/googleDriveDirectUpload";
 import { AppStateManager } from "../services/storage";
 import { EventLocationMap } from "./EventLocationMap";
@@ -1011,17 +1012,15 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // PERFORM CLOUD PURGE OF REPLACED ASSETS (Admin only)
+    // MOVE REPLACED ASSETS TO THE RECYCLE BIN (Admin only) — detaches each
+    // replaced file from the event's arrays and stages it in the recycle
+    // bin server-side. Nothing is actually destroyed until a developer-admin
+    // purge; this used to call deleteYouTubeVideo/deleteObject immediately.
     // ──────────────────────────────────────────────────────────────────
     if (isAdmin) {
       for (const repl of replacementsToExecute) {
-        if (repl.type === "video" && repl.replaceUrl) {
-          deleteYouTubeVideo(repl.replaceUrl).catch(() => {});
-        } else if (repl.type === "photo" && repl.replaceUrl && repl.replaceUrl.includes("firebasestorage.googleapis.com")) {
-          try {
-            const fileRef = ref(storage, repl.replaceUrl);
-            deleteObject(fileRef).catch(() => {});
-          } catch (e) {}
+        if (repl.replaceUrl) {
+          await removeMediaAsset(eventId, repl.replaceUrl, repl.type).catch(() => {});
         }
       }
     }
@@ -1087,16 +1086,16 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
               youtubeVideoUrl: updatedYtList[0] || "",
             };
 
-            // Atomic arrayUnion/arrayRemove against Firestore's own current
-            // value, NOT a full overwrite computed from the (possibly
-            // stale) `existingEvent` snapshot above — that snapshot is only
-            // used for the optimistic local `targetEvent` UI object.
+            // Atomic arrayUnion against Firestore's own current value, NOT a
+            // full overwrite computed from the (possibly stale)
+            // `existingEvent` snapshot above — that snapshot is only used
+            // for the optimistic local `targetEvent` UI object. Replaced
+            // URLs were already detached by removeMediaAsset above, so
+            // there's nothing left to remove here.
             await FirebaseSyncManager.attachMediaBatch({
               eventId: targetEvent.id,
               addPhotoUrls: photoFinalUrls,
               addVideoUrls: videoFinalUrls,
-              removePhotoUrls: replacementsToExecute.filter((r) => r.type === "photo").map((r) => r.replaceUrl),
-              removeVideoUrls: replacementsToExecute.filter((r) => r.type === "video").map((r) => r.replaceUrl),
             });
             const currentEvents = AppStateManager.getEvents();
             const existingIndex = currentEvents.findIndex((e) => e.id === targetEvent.id);

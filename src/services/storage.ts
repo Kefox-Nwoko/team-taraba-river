@@ -1,4 +1,4 @@
-import { Member, GroupEvent, PhotoApprovalRequest, ActivityLog, DeletedMemberEntry } from "../types";
+import { Member, GroupEvent, PhotoApprovalRequest, ActivityLog } from "../types";
 import { logger } from "../lib/logger";
 import { clientConfig, isAdminAccount } from "../lib/config";
 import { isMemberCredentialMatch } from "../lib/authMatching";
@@ -13,7 +13,6 @@ const LOCAL_STORAGE_KEY_SESSION_COUNT = "taraba_river_session_counter_v2";
 const LOCAL_STORAGE_KEY_ACTIVE_SESSION = "taraba_river_active_session_user_v2";
 const LOCAL_STORAGE_KEY_USER_HISTORY = "taraba_river_user_history_v2";
 const LOCAL_STORAGE_KEY_CLOUD_CONFIG = "taraba_river_cloud_media_config_v1";
-const LOCAL_STORAGE_KEY_RECYCLE_BIN = "taraba_river_recycle_bin_v1";
 
 export interface CloudMediaConfig {
   dedicatedDriveUrl: string;
@@ -140,125 +139,16 @@ export class AppStateManager {
     } catch {}
   }
 
-  public static getRecycleBin(): DeletedMemberEntry[] {
-    try {
-      const allMembers = this.getRawMembers();
-      const entriesMap = new Map<string, DeletedMemberEntry>();
-
-      // 1. All soft-deleted members in raw storage
-      allMembers
-        .filter((m) => m.isDeleted === true)
-        .forEach((m) => {
-          entriesMap.set(m.id, {
-            originalId: m.id,
-            member: m,
-            deletedAt: m.deletedAt || new Date().toISOString(),
-            deletedBy: m.deletedBy || "Admin",
-            originalLocation: "Member Directory",
-          });
-        });
-
-      // 2. Backward compatibility with any staged entries in LOCAL_STORAGE_KEY_RECYCLE_BIN
-      const rawBin = localStorage.getItem(LOCAL_STORAGE_KEY_RECYCLE_BIN);
-      if (rawBin) {
-        try {
-          const legacyEntries: DeletedMemberEntry[] = JSON.parse(rawBin);
-          legacyEntries.forEach((e) => {
-            if (!entriesMap.has(e.originalId) && !entriesMap.has(e.member.id)) {
-              const current = allMembers.find((m) => m.id === e.originalId || m.id === e.member.id);
-              if (!current || current.isDeleted !== false) {
-                entriesMap.set(e.originalId, e);
-              }
-            }
-          });
-        } catch {}
-      }
-
-      // 3. Fallback to deleted blacklist if any candidates are not in the map
-      const deletedIds = this.getDeletedMemberIds();
-      if (deletedIds.size > 0) {
-        allMembers.forEach((m) => {
-          if (m.isDeleted !== false && (deletedIds.has(m.id) || (m.email && deletedIds.has(`email:${m.email.toLowerCase()}`)))) {
-            if (!entriesMap.has(m.id)) {
-              entriesMap.set(m.id, {
-                originalId: m.id,
-                member: m,
-                deletedAt: m.deletedAt || new Date().toISOString(),
-                deletedBy: m.deletedBy || "Admin",
-                originalLocation: "Member Directory",
-              });
-            }
-          }
-        });
-      }
-
-      return Array.from(entriesMap.values()).sort(
-        (a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime()
-      );
-    } catch {
-      return [];
-    }
-  }
-
-  public static addToRecycleBin(entry: DeletedMemberEntry): void {
-    try {
-      const current = this.getRecycleBin().filter((e) => e.originalId !== entry.originalId && e.member.id !== entry.member.id);
-      current.unshift(entry);
-      localStorage.setItem(LOCAL_STORAGE_KEY_RECYCLE_BIN, JSON.stringify(current));
-      this.notify();
-    } catch {}
-  }
-
-  public static removeFromRecycleBin(originalId: string): void {
-    try {
-      const current = this.getRecycleBin().filter((e) => e.originalId !== originalId && e.member.id !== originalId);
-      localStorage.setItem(LOCAL_STORAGE_KEY_RECYCLE_BIN, JSON.stringify(current));
-      this.notify();
-    } catch {}
-  }
-
-  public static purgeMember(originalId: string): void {
-    try {
-      const allMembers = this.getRawMembers();
-      const filtered = allMembers.filter((m) => m.id !== originalId);
-      localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(filtered));
-      this.removeFromRecycleBin(originalId);
-      this.unmarkMemberAsDeleted(originalId);
-      this.notify();
-    } catch {}
-  }
-
-  public static clearRecycleBin(): void {
-    try {
-      const allMembers = this.getRawMembers();
-      const filtered = allMembers.filter((m) => m.isDeleted !== true);
-      localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(filtered));
-      localStorage.setItem(LOCAL_STORAGE_KEY_RECYCLE_BIN, JSON.stringify([]));
-      this.notify();
-    } catch {}
-  }
-
+  // Restores an optimistic local soft-delete (e.g. when the server-side
+  // delete call fails and apiClient.deleteMember needs to revert its own
+  // optimistic AppStateManager.deleteMember call). The recycle bin itself
+  // — restore/purge for a delete that DID succeed — is entirely server-side
+  // and developer-admin-only now; this is only ever an error rollback.
   public static restoreMember(originalId: string, memberObj?: Member): Member | null {
     try {
-      let targetMember: Member | null = memberObj || null;
       const allMembers = this.getRawMembers();
-
-      if (!targetMember) {
-        const match = allMembers.find((m) => m.id === originalId);
-        if (match) targetMember = match;
-      }
-
-      if (!targetMember) {
-        const recycleBin = this.getRecycleBin();
-        const targetEntry = recycleBin.find((e) => e.originalId === originalId || e.member.id === originalId);
-        if (targetEntry) {
-          targetMember = targetEntry.member;
-        } else {
-          const initialMatch = INITIAL_MEMBERS.find((m) => m.id === originalId);
-          if (initialMatch) targetMember = initialMatch;
-        }
-      }
-
+      let targetMember: Member | null =
+        memberObj || allMembers.find((m) => m.id === originalId) || INITIAL_MEMBERS.find((m) => m.id === originalId) || null;
       if (!targetMember) return null;
 
       const restoredMember: Member = {
@@ -268,27 +158,13 @@ export class AppStateManager {
         deletedBy: undefined,
       };
 
-      // 1. Thoroughly remove from deleted blacklist
       this.unmarkMemberAsDeleted(
         restoredMember.id,
         restoredMember.email,
         restoredMember.phoneNumber,
         restoredMember.whatsappNumber
       );
-      if (originalId && originalId !== restoredMember.id) {
-        this.unmarkMemberAsDeleted(
-          originalId,
-          restoredMember.email,
-          restoredMember.phoneNumber,
-          restoredMember.whatsappNumber
-        );
-      }
 
-      // 2. Remove from recycle bin storage
-      this.removeFromRecycleBin(originalId);
-      this.removeFromRecycleBin(restoredMember.id);
-
-      // 3. Update in raw members list with isDeleted: false
       const updatedAll = allMembers.filter((m) => m.id !== restoredMember.id && m.id !== originalId);
       updatedAll.unshift(restoredMember);
       localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(updatedAll));
@@ -409,15 +285,6 @@ export class AppStateManager {
     const updated = allMembers.filter((m) => m.id !== memberId);
     updated.unshift(softDeleted);
     localStorage.setItem(LOCAL_STORAGE_KEY_MEMBERS, JSON.stringify(updated));
-
-    const entry: DeletedMemberEntry = {
-      originalId: memberId,
-      member: softDeleted,
-      deletedAt,
-      deletedBy: "Admin",
-      originalLocation: "Member Directory",
-    };
-    this.addToRecycleBin(entry);
     this.markMemberAsDeleted(memberId, email, phone);
 
     this.notify();

@@ -3,7 +3,8 @@ import {
   GroupEvent,
   PhotoApprovalRequest,
   AIQueryResponse,
-  DeletedMemberEntry,
+  RecycleBinEntry,
+  AuditLogEntry,
 } from "../types";
 import { auth } from "../lib/firebase";
 import { logger } from "../lib/logger";
@@ -76,16 +77,10 @@ export async function fetchMembers(): Promise<Member[]> {
 }
 
 export async function deleteMember(memberId: string, member?: Member): Promise<void> {
-  // 1. Mark soft-deleted in local storage & local recycle bin (optimistic)
+  // Optimistic local hide — the server call below is authoritative: it
+  // snapshots the member into the recycle bin, then removes the live doc.
   AppStateManager.deleteMember(memberId, member?.email, member?.phoneNumber, member);
 
-  // 2. Soft-delete in Firestore (marks isDeleted: true without destroying the doc)
-  await FirebaseSyncManager.deleteMember(memberId, member?.email, member?.phoneNumber, member);
-
-  // 3. Confirm with the backend (the authoritative, Admin-SDK-backed delete).
-  // If this fails, the change never actually reached the server — revert the
-  // optimistic local hide instead of leaving the member permanently stuck in
-  // limbo (hidden locally, still active on the server).
   let serverConfirmed = false;
   try {
     const headers = await getAuthHeaders();
@@ -102,42 +97,67 @@ export async function deleteMember(memberId: string, member?: Member): Promise<v
   }
 }
 
-export async function fetchRecycleBin(): Promise<DeletedMemberEntry[]> {
-  return await FirebaseSyncManager.getRecycleBin();
+// Removes a single photo/video from an event/folder — moves it to the
+// recycle bin server-side instead of ever calling deleteObject/
+// deleteYouTubeVideo from the client.
+export async function removeMediaAsset(eventId: string, assetUrl: string, type: "photo" | "video"): Promise<void> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/admin/media-assets/remove"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ eventId, assetUrl, type }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Failed to remove media.");
 }
 
-export async function restoreDeletedMember(originalId: string, memberObj?: Member): Promise<Member | null> {
-  let restored = await FirebaseSyncManager.restoreMemberFromRecycleBin(originalId, memberObj);
+// --- Recycle Bin (developer-admin only — server enforces this, not just the UI) ---
 
-  try {
-    const headers = await getAuthHeaders();
-    const res = await fetch(apiUrl("/api/admin/members/restore"), {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ originalId, member: restored || memberObj }),
-    });
-    const contentType = res.headers.get("content-type") || "";
-    if (res.ok && contentType.includes("application/json")) {
-      const data = await res.json();
-      if (data && data.member && typeof data.member === "object" && data.member.id) {
-        // Merge while strictly guaranteeing active status
-        restored = { ...restored, ...data.member, isDeleted: false, deletedAt: undefined, deletedBy: undefined };
-      }
-    }
-  } catch {}
-
-  if (restored) {
-    restored.isDeleted = false;
-  }
-  return restored;
+export async function fetchRecycleBin(): Promise<RecycleBinEntry[]> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/admin/recycle-bin"), { headers });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.entries || [];
 }
 
-export async function purgeDeletedMember(originalId: string): Promise<void> {
-  await FirebaseSyncManager.purgeMemberFromRecycleBin(originalId);
+export async function restoreFromRecycleBin(entryId: string): Promise<RecycleBinEntry> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl(`/api/admin/recycle-bin/${entryId}/restore`), { method: "POST", headers });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to restore item.");
+  return data.entry;
 }
 
-export async function emptyRecycleBin(): Promise<void> {
-  await FirebaseSyncManager.emptyRecycleBin();
+export async function purgeFromRecycleBin(entryId: string): Promise<void> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl(`/api/admin/recycle-bin/${entryId}/purge`), { method: "POST", headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Failed to purge item.");
+}
+
+export async function restoreAllFromRecycleBin(): Promise<number> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/admin/recycle-bin/restore-all"), { method: "POST", headers });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to restore all items.");
+  return data.count || 0;
+}
+
+export async function purgeAllFromRecycleBin(): Promise<number> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/admin/recycle-bin/purge-all"), { method: "POST", headers });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to purge all items.");
+  return data.count || 0;
+}
+
+export async function fetchAuditLog(): Promise<AuditLogEntry[]> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/admin/audit-log"), { headers });
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.entries || [];
 }
 
 export interface RequestLoginCodeResult {
@@ -569,17 +589,23 @@ export async function parseEventPosterWithAI(imageBase64: string, mimeType: stri
   return data as ParsedPosterDetails;
 }
 
+// The server route moves the event (and any pending approvals for it) into
+// the recycle bin and removes the live doc via the Admin SDK — there is no
+// client-SDK counterpart anymore (Firestore rules deny client-side event
+// deletes entirely now, so there'd be nothing left for one to do).
 export async function deleteEvent(id: string): Promise<void> {
-  try {
-    const headers = await getAuthHeaders();
-    await fetch(apiUrl(`/api/events/${id}`), {
-      method: "DELETE",
-      headers,
-    });
-  } catch {}
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl(`/api/events/${id}`), {
+    method: "DELETE",
+    headers,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Failed to delete event.");
 
-  // Direct Firestore deletion
-  await FirebaseSyncManager.deleteEvent(id);
+  // The server also cascades any pending approvals for this event into the
+  // recycle bin — scrub the local approvals cache to match.
+  const cleanApprovals = AppStateManager.getApprovals().filter((a) => a.eventId !== id);
+  AppStateManager.saveApprovals(cleanApprovals);
 }
 export async function submitEventRSVP(
   eventId: string,
@@ -624,6 +650,7 @@ export async function decideApproval(
 }
 
 export async function deleteApproval(id: string): Promise<void> {
+  AppStateManager.removeApproval(id);
   try {
     const headers = await getAuthHeaders();
     await fetch(apiUrl(`/api/admin/approvals/${id}`), {

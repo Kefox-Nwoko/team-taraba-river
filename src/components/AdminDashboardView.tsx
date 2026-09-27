@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { logger } from "../lib/logger";
 import { clientConfig } from "../lib/config";
-import { Member, PhotoApprovalRequest, GroupEvent, DeletedMemberEntry } from "../types";
+import { Member, PhotoApprovalRequest, GroupEvent, RecycleBinEntry, AuditLogEntry } from "../types";
 import { MemberDirectoryView } from "./MemberDirectoryView";
 import { AppStateManager } from "../services/storage";
 import { FirebaseSyncManager } from "../services/firebaseService";
@@ -10,15 +10,18 @@ import {
   resetSystemData,
   resetPortalVisits,
   fetchRecycleBin,
-  restoreDeletedMember,
-  purgeDeletedMember,
-  emptyRecycleBin,
+  restoreFromRecycleBin,
+  purgeFromRecycleBin,
+  restoreAllFromRecycleBin,
+  purgeAllFromRecycleBin,
+  fetchAuditLog,
   deleteEvent as deleteEventApi,
+  deleteApproval as deleteApprovalApi,
 } from "../services/apiClient";
 import { db } from "../lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 
-import { deleteYouTubeVideo, extractYouTubeId, getYouTubeThumbnail } from "../services/youtubeDirectUpload";
+import { extractYouTubeId, getYouTubeThumbnail } from "../services/youtubeDirectUpload";
 import { CreateEventModal } from "./CreateEventModal";
 import { ReturnButton } from "./ReturnButton";
 import { isOfficialFutureEvent } from "../utils/eventUtils";
@@ -410,71 +413,65 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   // Developer access restriction guard
   const isXtraworxDeveloper = currentUser?.email?.toLowerCase().trim() === 'xtraworxng@gmail.com';
 
-  // Recycle Bin State (Windows PC Model)
-  const [recycleBin, setRecycleBin] = useState<DeletedMemberEntry[]>(() => AppStateManager.getRecycleBin());
+  // Recycle Bin State — unified across every object type. Fetched fresh
+  // from the server on each visit to this tab: it's developer-admin-only,
+  // low-traffic, and the server is the sole source of truth now, so there's
+  // no benefit to a local/offline cache the way the rest of the app has one.
+  const [recycleBin, setRecycleBin] = useState<RecycleBinEntry[]>([]);
+  const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([]);
   const [isPurgingAll, setIsPurgingAll] = useState(false);
   const [isRestoringAll, setIsRestoringAll] = useState(false);
-  const [processingOriginalId, setProcessingOriginalId] = useState<string | null>(null);
+  const [processingEntryId, setProcessingEntryId] = useState<string | null>(null);
+
+  const refreshRecycleBin = () => {
+    fetchRecycleBin().then((entries) => setRecycleBin(entries || []));
+  };
 
   useEffect(() => {
     if (activeTab === "developer") {
-      FirebaseSyncManager.getRecycleBin().then((entries) => {
-        setRecycleBin(entries || []);
-      });
-      const unsubFirestore = FirebaseSyncManager.subscribeRecycleBin((entries) => {
-        setRecycleBin(entries || []);
-      });
-      const unsubLocal = AppStateManager.subscribe(() => {
-        setRecycleBin(AppStateManager.getRecycleBin());
-      });
-      return () => {
-        unsubFirestore();
-        unsubLocal();
-      };
+      refreshRecycleBin();
+      fetchAuditLog().then((entries) => setAuditLog(entries || []));
     }
   }, [activeTab]);
 
-  const handleRestoreMember = async (entry: DeletedMemberEntry) => {
-    const name = formatMemberDisplayName(entry.member.title, entry.member.fullName);
+  const handleRestoreEntry = async (entry: RecycleBinEntry) => {
     const confirmed = window.confirm(
-      `🔄 RESTORE MEMBER (Windows Recovery Model):\n\nDo you want to restore "${name}" back to the active member directory?\n\nThis will remove them from the Recycle Bin and reactivate their profile across the portal.`
+      `🔄 RESTORE:\n\nDo you want to restore "${entry.originalLocation}" back to its original location?\n\nThis will remove it from the Recycle Bin and reactivate it across the portal.`
     );
     if (!confirmed) return;
 
     try {
-      setProcessingOriginalId(entry.originalId);
-      const restored = await restoreDeletedMember(entry.originalId, entry.member);
-      if (restored) {
-        setRecycleBin((prev) => prev.filter((e) => e.originalId !== entry.originalId && e.member.id !== entry.member.id));
-        if (onMemberRestored) onMemberRestored(restored);
-        await Promise.resolve(onRefreshData());
-        alert(`✅ Success: Member "${name}" has been restored to the active directory!`);
-      } else {
-        alert(`❌ Error: Member "${name}" could not be restored.`);
+      setProcessingEntryId(entry.id);
+      await restoreFromRecycleBin(entry.id);
+      setRecycleBin((prev) => prev.filter((e) => e.id !== entry.id));
+      if (entry.objectType === "member" && onMemberRestored) {
+        onMemberRestored(entry.snapshot as Member);
       }
+      await Promise.resolve(onRefreshData());
+      alert(`✅ Success: "${entry.originalLocation}" has been restored.`);
     } catch (err: any) {
-      alert(`❌ Error restoring member: ${err.message || "Failed to restore"}`);
+      alert(`❌ Error restoring item: ${err.message || "Failed to restore"}`);
     } finally {
-      setProcessingOriginalId(null);
+      setProcessingEntryId(null);
     }
   };
 
   const handleRestoreAll = async () => {
     if (recycleBin.length === 0) return;
     const confirmed = window.confirm(
-      `🔄 RESTORE ALL MEMBERS (Windows Recovery Model):\n\nDo you want to restore all ${recycleBin.length} deleted member records back into the active Member Directory?\n\nThey will all immediately return to the directory, celebrants, and event RSVPs.`
+      `🔄 RESTORE ALL (Windows Recovery Model):\n\nDo you want to restore all ${recycleBin.length} deleted items back to their original locations?`
     );
     if (!confirmed) return;
 
     try {
       setIsRestoringAll(true);
-      for (const entry of recycleBin) {
-        const restored = await restoreDeletedMember(entry.originalId, entry.member);
-        if (restored && onMemberRestored) onMemberRestored(restored);
+      if (onMemberRestored) {
+        recycleBin.filter((e) => e.objectType === "member").forEach((e) => onMemberRestored(e.snapshot as Member));
       }
+      await restoreAllFromRecycleBin();
       setRecycleBin([]);
       await Promise.resolve(onRefreshData());
-      alert(`✅ Success: All staged deleted member records have been restored to the active directory!`);
+      alert(`✅ Success: All items have been restored.`);
     } catch (err: any) {
       alert(`❌ Error restoring all: ${err.message || "Failed to restore"}`);
     } finally {
@@ -482,37 +479,36 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
   };
 
-  const handlePurgeMember = async (entry: DeletedMemberEntry) => {
-    const name = formatMemberDisplayName(entry.member.title, entry.member.fullName);
+  const handlePurgeEntry = async (entry: RecycleBinEntry) => {
     const confirmed = window.confirm(
-      `⚠️ PERMANENT PURGE (Windows PC Model):\n\nAre you sure you want to permanently delete "${name}"?\n\nThis will destroy all stored entry data for this member. It cannot be recovered.`
+      `⚠️ PERMANENT PURGE:\n\nAre you sure you want to permanently delete "${entry.originalLocation}"?\n\nThis destroys any underlying file (photo/video) too. It cannot be recovered.`
     );
     if (!confirmed) return;
 
     try {
-      setProcessingOriginalId(entry.originalId);
-      await purgeDeletedMember(entry.originalId);
-      setRecycleBin((prev) => prev.filter((e) => e.originalId !== entry.originalId));
-      alert(`🗑️ Purged: Entry for "${name}" has been permanently deleted.`);
+      setProcessingEntryId(entry.id);
+      await purgeFromRecycleBin(entry.id);
+      setRecycleBin((prev) => prev.filter((e) => e.id !== entry.id));
+      alert(`🗑️ Purged: "${entry.originalLocation}" has been permanently deleted.`);
     } catch (err: any) {
-      alert(`❌ Error purging member: ${err.message || "Failed to purge"}`);
+      alert(`❌ Error purging item: ${err.message || "Failed to purge"}`);
     } finally {
-      setProcessingOriginalId(null);
+      setProcessingEntryId(null);
     }
   };
 
   const handleEmptyRecycleBin = async () => {
     if (recycleBin.length === 0) return;
     const confirmed = window.confirm(
-      `⚠️ EMPTY RECYCLE BIN (Final Purge):\n\nAre you sure you want to permanently delete all ${recycleBin.length} entries in the Recycle Bin?\n\nNone of these records can be recovered after this action.`
+      `⚠️ EMPTY RECYCLE BIN (Final Purge):\n\nAre you sure you want to permanently delete all ${recycleBin.length} entries in the Recycle Bin?\n\nNone of these records (or their underlying files) can be recovered after this action.`
     );
     if (!confirmed) return;
 
     try {
       setIsPurgingAll(true);
-      await emptyRecycleBin();
+      await purgeAllFromRecycleBin();
       setRecycleBin([]);
-      alert("🗑️ Empty Recycle Bin: All staged deleted member records have been permanently purged.");
+      alert("🗑️ Empty Recycle Bin: All entries have been permanently purged.");
     } catch (err: any) {
       alert(`❌ Error emptying recycle bin: ${err.message || "Failed to empty"}`);
     } finally {
@@ -548,13 +544,20 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       setEvents((prev) => prev.filter((e) => e.id !== eventId));
       const remainingEvents = AppStateManager.getEvents().filter((e) => e.id !== eventId);
       AppStateManager.saveEvents(remainingEvents);
-      await FirebaseSyncManager.deleteEvent(eventId);
-      try {
-        await deleteEventApi(eventId);
-      } catch {}
+      await deleteEventApi(eventId);
+      alert(
+        isXtraworxDeveloper
+          ? "Event moved to the recycle bin."
+          : "This event has been moved to the Recycle Bin. Only the developer administrator (xtraworxng@gmail.com) can permanently delete or restore it."
+      );
       await Promise.resolve(onRefreshData());
     } catch (err) {
       logger.error("Delete event failed", err);
+      // The server call is authoritative — if it failed, the optimistic
+      // local removal above must not stand, or the event would look gone
+      // here while still existing server-side.
+      await Promise.resolve(onRefreshData());
+      alert("Failed to delete this event. Please try again.");
     } finally {
       setDeletingEventId(null);
       setDeletingCalendarEventTarget(null);
@@ -672,7 +675,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     const eventId = req.eventId || `folder_${Date.now()}`;
     const targetEvt = allEvents.find((e) => e.id === eventId);
 
-    const createFields: Partial<GroupEvent> = {
+    // Only set on first creation — the folder's `date` is the source of
+    // truth for its sort position, so a later approval into an existing
+    // folder must never touch it (or any other creation-only field).
+    const createFields: Partial<GroupEvent> = targetEvt ? {} : {
       title: req.folderName || req.title || "Community Event",
       date: req.date || req.uploadedAt?.split("T")[0] || new Date().toISOString().split("T")[0],
       time: "09:00",
@@ -695,7 +701,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         createFields,
       });
     } catch (e) {
-      logger.warn("attachApprovedMedia notice:", e);
+      // The attach write is the only thing that actually persists this
+      // media to the event — if it fails, the approval must NOT be treated
+      // as resolved: leave it in the pending queue (untouched, undeleted)
+      // so the upload isn't lost and the admin can retry. Reporting success
+      // here (or purging the approval below) would silently drop the upload.
+      logger.error("attachApprovedMedia failed — leaving approval pending for retry:", e);
+      alert(
+        `❌ Could not attach "${req.folderName || req.title || "this upload"}" to the event gallery (connection issue). It was NOT approved — it's still in the pending queue so you can try again.`
+      );
+      return undefined;
     }
 
     // Optimistic local update for instant UI feedback in this browser only —
@@ -729,9 +744,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     }
     AppStateManager.saveEvents(allEvents);
 
-    // 3. Zero-residue: Delete approval request document from Firestore immediately
+    // 3. Move the now-resolved approval record to the recycle bin (cleanup —
+    // its photo/video already lives durably on the event above).
     try {
-      await FirebaseSyncManager.deleteApproval(req.id);
+      await deleteApprovalApi(req.id);
     } catch (e) {
       logger.warn("Admin delete approval notice", { error: e });
     }
@@ -744,15 +760,9 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   };
 
   const handleRejectPhoto = async (req: PhotoApprovalRequest, shouldRefresh: boolean = true) => {
-    // If rejecting a video, also delete it from YouTube to prevent orphaned assets
-    if (req.type === "video" && req.photoUrl) {
-      try {
-        await deleteYouTubeVideo(req.photoUrl);
-      } catch (ytErr) {
-        logger.warn("YouTube video delete on reject notice", ytErr);
-      }
-    }
-
+    // The rejected file itself is moved to the recycle bin by
+    // apiClient.deleteApproval below (not destroyed here) — actual YouTube/
+    // Storage deletion only happens if a developer-admin later purges it.
     const allEvents = AppStateManager.getEvents();
     let targetEvt = req.eventId
       ? allEvents.find((e) => e.id === req.eventId)
@@ -774,7 +784,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         const remainingEvents = allEvents.filter((e) => e.id !== targetEvt!.id);
         AppStateManager.saveEvents(remainingEvents);
         try {
-          await FirebaseSyncManager.deleteEvent(targetEvt.id);
+          await deleteEventApi(targetEvt.id);
         } catch (e) {}
       } else {
         AppStateManager.saveEvents(allEvents);
@@ -784,9 +794,10 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       }
     }
 
-    // Zero-residue: Delete rejected approval request document from Firestore immediately
+    // Move the rejected submission to the recycle bin (the file itself is
+    // not destroyed until a developer-admin purges it).
     try {
-      await FirebaseSyncManager.deleteApproval(req.id);
+      await deleteApprovalApi(req.id);
     } catch (e) {
       logger.warn("Admin delete approval notice", { error: e });
     }
@@ -1511,39 +1522,38 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2">
                     <h3 className="text-base sm:text-lg text-slate-900 dark:text-white font-semibold leading-snug break-words">
-                      Recycle Bin: Deleted Member Entries &amp; Recovery Console
+                      Recycle Bin: Every Deleted Item &amp; Recovery Console
                     </h3>
                     <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-400 border border-rose-300 dark:border-rose-800">
-                      Windows PC Model
+                      Developer Only
                     </span>
                   </div>
                   <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-                    Staged deleted member repository with one-click recovery and final permanent purging
+                    Members, events/folders, individual photos/videos, and rejected uploads — one
+                    unified staging area with one-click recovery and final permanent purging.
                   </p>
                 </div>
               </div>
 
-              {/* Windows Recycle Bin Global Action Buttons */}
+              {/* Recycle Bin Global Action Buttons */}
               <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto shrink-0">
-                {/* Windows "Restore All Items" Button */}
                 <button
                   type="button"
                   onClick={handleRestoreAll}
                   disabled={isRestoringAll || isPurgingAll || recycleBin.length === 0}
                   className="flex-1 sm:flex-none px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-2 cursor-pointer shadow-sm border border-emerald-500/30 disabled:opacity-40 disabled:pointer-events-none"
-                  title="Restore all staged deleted members back to active directory"
+                  title="Restore every staged deleted item"
                 >
                   <RotateCcw className={`w-4 h-4 ${isRestoringAll ? "animate-spin" : ""}`} />
                   <span>{isRestoringAll ? "Restoring All..." : "Restore All Items"}</span>
                 </button>
 
-                {/* Windows "Empty Recycle Bin" Global Button */}
                 <button
                   type="button"
                   onClick={handleEmptyRecycleBin}
                   disabled={isPurgingAll || isRestoringAll || recycleBin.length === 0}
                   className="flex-1 sm:flex-none px-4 py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-2 cursor-pointer shadow-sm border border-rose-500/30 disabled:opacity-40 disabled:pointer-events-none"
-                  title="Permanently purge all staged deleted member records"
+                  title="Permanently purge every staged deleted item"
                 >
                   <Trash2 className={`w-4 h-4 ${isPurgingAll ? "animate-bounce" : ""}`} />
                   <span>{isPurgingAll ? "Purging All..." : "Empty Recycle Bin"}</span>
@@ -1558,12 +1568,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 <span className="font-semibold text-slate-800 dark:text-slate-200">
                   {recycleBin.length === 0
                     ? "The Recycle Bin is empty."
-                    : `${recycleBin.length} deleted member ${recycleBin.length === 1 ? "entry" : "entries"} currently staged in storage`}
+                    : `${recycleBin.length} deleted ${recycleBin.length === 1 ? "item" : "items"} currently staged`}
                 </span>
               </div>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">
-                Recovered members instantly return to Directory &amp; Celebrants
-              </span>
+              <button type="button" onClick={refreshRecycleBin} className="text-[11px] text-teal-600 dark:text-teal-400 hover:underline">
+                Refresh
+              </button>
             </div>
 
             {/* Recycle Bin Items List */}
@@ -1576,15 +1586,15 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   Recycle Bin is Empty
                 </h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                  When members are removed from the Member Directory, their records are staged here safely following the Windows PC Recycle Bin model.
+                  Every delete anywhere in the app — a member, an event/folder, a single photo or
+                  video, or a rejected upload — is staged here first, safely, before it can ever
+                  be permanently destroyed.
                 </p>
               </div>
             ) : (
               <div className="space-y-3">
                 {recycleBin.map((entry) => {
-                  const m = entry.member;
-                  const isProcessing = processingOriginalId === entry.originalId;
-                  const displayName = formatMemberDisplayName(m.title, m.fullName);
+                  const isProcessing = processingEntryId === entry.id;
                   const deletedDate = new Date(entry.deletedAt).toLocaleString(undefined, {
                     month: "short",
                     day: "numeric",
@@ -1592,76 +1602,55 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     hour: "numeric",
                     minute: "2-digit",
                   });
+                  const TypeIcon = entry.objectType === "member" ? Users : entry.objectType === "event" ? Calendar : entry.objectType === "mediaAsset" ? Play : Clock;
+                  const typeLabel =
+                    entry.objectType === "member" ? "Member" : entry.objectType === "event" ? "Event / Folder" : entry.objectType === "mediaAsset" ? "Photo / Video" : "Pending Upload";
 
                   return (
                     <div
-                      key={entry.originalId}
+                      key={entry.id}
                       className="p-4 bg-white dark:bg-slate-900/80 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all hover:border-slate-300 dark:hover:border-slate-700"
                     >
-                      {/* Left: Member Identity & Deletion Details */}
                       <div className="flex items-start sm:items-center space-x-3.5 min-w-0 w-full md:w-auto">
                         <div className="w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center overflow-hidden shrink-0 border border-slate-300 dark:border-slate-700">
-                          {m.photoUrl ? (
-                            <img
-                              src={m.photoUrl}
-                              alt={displayName}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                (e.currentTarget as HTMLElement).style.display = "none";
-                              }}
-                            />
-                          ) : (
-                            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">
-                              {(m.firstName?.[0] || m.fullName?.[0] || "M").toUpperCase()}
-                            </span>
-                          )}
+                          <TypeIcon className="w-5 h-5 text-slate-500 dark:text-slate-400" />
                         </div>
 
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                              {displayName}
+                              {entry.originalLocation}
                             </h4>
                             <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                              {m.role || "Member"}
+                              {typeLabel}
                             </span>
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            {m.email && <span className="truncate">📧 {m.email}</span>}
-                            {m.phoneNumber && <span>📞 {m.phoneNumber}</span>}
-                            {m.gradYear && <span>🎓 Class of {m.gradYear}</span>}
-                          </div>
-
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-400 dark:text-slate-500 mt-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800/60">
-                            <span>📁 Original Location: Member Directory</span>
-                            <span>🕒 Date Deleted: {deletedDate}</span>
-                            {entry.deletedBy && <span>👤 Deleted By: {entry.deletedBy}</span>}
+                            <span>🕒 Deleted: {deletedDate}</span>
+                            <span>👤 By: {entry.deletedBy?.name || entry.deletedBy?.email || "Admin"}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Right: Windows-style Actions (Restore vs Final Purge) */}
                       <div className="flex items-center space-x-2.5 self-end md:self-auto shrink-0 w-full sm:w-auto justify-end">
-                        {/* Option 1: Recovery / Restore */}
                         <button
                           type="button"
-                          onClick={() => handleRestoreMember(entry)}
+                          onClick={() => handleRestoreEntry(entry)}
                           disabled={isProcessing}
                           className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-semibold rounded-xl transition flex items-center space-x-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                          title="Restore this member back to the active directory"
+                          title="Restore this item back to its original location"
                         >
                           <RotateCcw className={`w-3.5 h-3.5 ${isProcessing ? "animate-spin" : ""}`} />
                           <span>Restore</span>
                         </button>
 
-                        {/* Option 2: Final Purging */}
                         <button
                           type="button"
-                          onClick={() => handlePurgeMember(entry)}
+                          onClick={() => handlePurgeEntry(entry)}
                           disabled={isProcessing}
                           className="px-3.5 py-2 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 active:scale-95 text-xs font-semibold rounded-xl transition flex items-center space-x-1.5 cursor-pointer shadow-xs disabled:opacity-50"
-                          title="Permanently purge this member record (cannot be undone)"
+                          title="Permanently purge this item (cannot be undone)"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                           <span>Purge</span>
@@ -1670,6 +1659,47 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+
+          {/* ── CARD 4: AUDIT LOG ── */}
+          <div className="bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 md:p-8 rounded-3xl border border-slate-200 dark:border-slate-800 space-y-4 shadow-sm">
+            <div className="flex items-center space-x-3.5">
+              <div className="p-3 bg-gradient-to-br from-slate-600 to-slate-800 text-white rounded-2xl shadow-sm shrink-0">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg text-slate-900 dark:text-white font-semibold">Audit Log</h3>
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">Every delete, restore, and purge, with who did it and when — visible to any admin.</p>
+              </div>
+            </div>
+            {auditLog.length === 0 ? (
+              <p className="text-xs text-slate-500 dark:text-slate-400 py-4 text-center">No activity recorded yet.</p>
+            ) : (
+              <div className="space-y-1.5 max-h-96 overflow-y-auto">
+                {auditLog.map((log) => (
+                  <div key={log.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-white dark:bg-slate-900/60 rounded-xl border border-slate-200/80 dark:border-slate-800/80 text-xs">
+                    <div className="min-w-0 flex-1">
+                      <span
+                        className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase mr-2 ${
+                          log.action === "purge"
+                            ? "bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400"
+                            : log.action === "restore"
+                            ? "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                        }`}
+                      >
+                        {log.action}
+                      </span>
+                      <span className="text-slate-700 dark:text-slate-300">{log.summary}</span>
+                    </div>
+                    <div className="text-right text-slate-400 dark:text-slate-500 shrink-0">
+                      <div>{log.actorName || log.actorEmail}</div>
+                      <div>{new Date(log.timestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>

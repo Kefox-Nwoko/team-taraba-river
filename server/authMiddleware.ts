@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { adminAuth } from './firebaseAdmin';
-import { config, isAdminEmail } from './config';
+import { config, isAdminEmail, isDeveloperAdminEmail } from './config';
 
 /**
  * Decoded user attached to the Express request after token verification.
@@ -70,6 +70,28 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
 
   if (req.user.role !== 'admin') {
     res.status(403).json({ error: 'Forbidden. Administrator access required.' });
+    return;
+  }
+
+  next();
+}
+
+/**
+ * Middleware: Require Developer-Admin (the single account authorized to
+ * restore or permanently purge recycle-bin items).
+ *
+ * Must be used AFTER `authMiddleware`. Stricter than `requireAdmin` — every
+ * admin passes `requireAdmin`, but only `config.developerAdminEmail` passes
+ * this. Returns 403 Forbidden otherwise.
+ */
+export function requireDeveloperAdmin(req: Request, res: Response, next: NextFunction): void {
+  if (!req.user) {
+    res.status(401).json({ error: 'Authentication required.' });
+    return;
+  }
+
+  if (!isDeveloperAdminEmail(req.user.email)) {
+    res.status(403).json({ error: 'Forbidden. Developer administrator access required.' });
     return;
   }
 

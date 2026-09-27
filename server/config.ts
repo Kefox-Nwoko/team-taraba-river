@@ -17,6 +17,11 @@ export const config = {
     ])
   ),
   ownerEmail: process.env.OWNER_EMAIL || 'tarabateam@gmail.com',
+  // The single account authorized to restore or permanently purge anything
+  // in the recycle bin. Deliberately separate from `adminEmails` — every
+  // admin can move something into the bin, only this one account can ever
+  // take it back out or make the deletion permanent.
+  developerAdminEmail: (process.env.DEVELOPER_ADMIN_EMAIL || 'xtraworxng@gmail.com').trim().toLowerCase(),
   googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
   youtubeApiKey: process.env.YOUTUBE_API_KEY || '',
   youtubeClientId: process.env.YOUTUBE_CLIENT_ID || '',
@@ -33,4 +38,9 @@ export const isAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
   const normalized = email.trim().toLowerCase();
   return config.adminEmails.includes(normalized);
+};
+
+export const isDeveloperAdminEmail = (email?: string | null): boolean => {
+  if (!email) return false;
+  return email.trim().toLowerCase() === config.developerAdminEmail;
 };
