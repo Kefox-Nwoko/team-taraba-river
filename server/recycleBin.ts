@@ -111,11 +111,22 @@ async function restoreEntry(entry: RecycleBinEntry): Promise<void> {
       break;
     case 'mediaAsset': {
       if (!entry.parentEventId) throw new Error('Recycle bin entry is missing its parent event.');
+      const eventRef = db.collection('events').doc(entry.parentEventId);
+      const eventSnap = await eventRef.get();
+      if (!eventSnap.exists) {
+        // The folder itself was deleted after this asset was — it's sitting
+        // in the recycle bin too. Restore the folder first, then this.
+        throw new Error('The folder this item belongs to is also in the recycle bin — restore the folder first.');
+      }
       const field = entry.snapshot.type === 'video' ? 'youtubeVideoUrls' : 'driveImageUrls';
-      await db
-        .collection('events')
-        .doc(entry.parentEventId)
-        .update({ [field]: FieldValue.arrayUnion(entry.snapshot.assetUrl) });
+      const update: Record<string, any> = { [field]: FieldValue.arrayUnion(entry.snapshot.assetUrl) };
+      // youtubeVideoUrls is the array; youtubeVideoUrl is a separate
+      // "primary video" field the UI reads directly — restoring the array
+      // alone leaves it stale/empty if this was the folder's last video.
+      if (entry.snapshot.type === 'video' && !eventSnap.data()?.youtubeVideoUrl) {
+        update.youtubeVideoUrl = entry.snapshot.assetUrl;
+      }
+      await eventRef.update(update);
       break;
     }
   }
@@ -164,12 +175,21 @@ export async function purgeFromRecycleBin(entryId: string, actor: RecycleActor):
 
 export async function restoreAllFromRecycleBin(actor: RecycleActor): Promise<number> {
   const entries = await getRecycleBinEntries();
+  let restoredCount = 0;
   for (const entry of entries) {
-    await restoreEntry(entry);
-    await db.collection(RECYCLE_BIN_COLLECTION).doc(entry.id).delete();
-    await writeAuditLog('restore', entry, actor, `Restored ${entry.objectType} "${entry.originalLocation}" from the recycle bin`);
+    try {
+      await restoreEntry(entry);
+      await db.collection(RECYCLE_BIN_COLLECTION).doc(entry.id).delete();
+      await writeAuditLog('restore', entry, actor, `Restored ${entry.objectType} "${entry.originalLocation}" from the recycle bin`);
+      restoredCount++;
+    } catch (err) {
+      // One entry failing (e.g. a photo whose parent folder is also still
+      // in the bin and hasn't been restored yet) must not block the rest —
+      // it's left in the bin for a retry once its dependency is resolved.
+      serverLogger.error(`Failed to restore recycle bin entry ${entry.id} during restore-all`, { error: String(err) });
+    }
   }
-  return entries.length;
+  return restoredCount;
 }
 
 export async function purgeAllFromRecycleBin(actor: RecycleActor): Promise<number> {
