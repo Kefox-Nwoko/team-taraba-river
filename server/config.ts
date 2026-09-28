@@ -29,6 +29,10 @@ export const config = {
   youtubeRefreshToken: process.env.YOUTUBE_REFRESH_TOKEN || '',
   youtubeRedirectUri: process.env.YOUTUBE_REDIRECT_URI || 'http://localhost:3000/oauth2callback',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
+  // Cloudflare Turnstile secret — the human check on member registration.
+  // Server-only (never a VITE_ var); the matching public site key is
+  // VITE_TURNSTILE_SITE_KEY on the client.
+  turnstileSecretKey: process.env.TURNSTILE_SECRET_KEY || '',
   firestoreProjectId: process.env.FIRESTORE_PROJECT_ID || 'Team Taraba River',
   googleApplicationCredentials: process.env.GOOGLE_APPLICATION_CREDENTIALS || '',
   appUrl: process.env.APP_URL || 'https://team-taraba-river.web.app',

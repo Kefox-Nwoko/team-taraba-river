@@ -1,6 +1,31 @@
 import { Request, Response, NextFunction } from 'express';
-import { adminAuth } from './firebaseAdmin';
+import { adminAuth, db } from './firebaseAdmin';
 import { config, isAdminEmail, isDeveloperAdminEmail } from './config';
+
+// A valid Firebase login proves nothing about membership — anyone (or any
+// script) can mint a Google account. Membership means a members/{uid} doc,
+// which only the server creates (POST /api/members, or the email-match
+// migration in /api/auth/verify). Positive lookups are cached briefly so this
+// isn't a Firestore read on every request; a removed member loses access
+// within the TTL.
+const ROSTER_CACHE_MS = 60_000;
+const rosterCache = new Map<string, number>();
+
+export async function isRosterMember(uid: string): Promise<boolean> {
+  const cachedUntil = rosterCache.get(uid);
+  if (cachedUntil && cachedUntil > Date.now()) return true;
+  const snap = await db.collection('members').doc(uid).get();
+  if (!snap.exists) {
+    rosterCache.delete(uid);
+    return false;
+  }
+  rosterCache.set(uid, Date.now() + ROSTER_CACHE_MS);
+  return true;
+}
+
+export function forgetRosterMember(uid: string): void {
+  rosterCache.delete(uid);
+}
 
 /**
  * Decoded user attached to the Express request after token verification.
@@ -41,6 +66,11 @@ export async function authMiddleware(req: Request, res: Response, next: NextFunc
     const decodedToken = await adminAuth.verifyIdToken(idToken);
     const emailStr = decodedToken.email || '';
     const role = (decodedToken.role === 'admin' || isAdminEmail(emailStr)) ? 'admin' : 'member';
+
+    if (role !== 'admin' && !(await isRosterMember(decodedToken.uid))) {
+      res.status(403).json({ error: 'This account is not a registered member.', code: 'NOT_REGISTERED' });
+      return;
+    }
 
     req.user = {
       uid: decodedToken.uid,

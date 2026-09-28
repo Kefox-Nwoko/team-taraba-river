@@ -253,7 +253,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           {/* Day labels */}
           <div className="grid grid-cols-7 gap-1 mb-2">
             {DAY_LABELS.map((label) => (
-              <div key={label} className="text-center text-xs font-semibold text-slate-400 dark:text-slate-500 py-1">
+              <div key={label} className="text-center text-xs font-semibold text-slate-500 dark:text-slate-400 py-1">
                 {label}
               </div>
             ))}
@@ -305,7 +305,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
             <button
               type="button"
               onClick={handleToday}
-              className="text-sm text-cyan-500 hover:text-cyan-600 dark:hover:text-cyan-400 transition font-medium cursor-pointer"
+              className="text-sm text-cyan-700 hover:text-cyan-800 dark:text-cyan-400 dark:hover:text-cyan-300 transition font-medium cursor-pointer"
             >
               Today
             </button>

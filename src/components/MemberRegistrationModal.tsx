@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { logger } from "../lib/logger";
 import { Member } from "../types";
 import { registerMember, updateMemberProfile } from "../services/apiClient";
@@ -28,6 +28,7 @@ import {
 import { DatePicker } from "./DatePicker";
 import { MemberAvatar, getMemberInitials } from "./MemberAvatar";
 import { TShirtSizeGuideModal } from "./TShirtSizeGuideModal";
+import { TurnstileWidget } from "./TurnstileWidget";
 import {
   extractAndCleanMemberNames,
   stripTitlePrefixes,
@@ -99,6 +100,20 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [isSizeGuideOpen, setIsSizeGuideOpen] = useState(false);
+  // Bot tripwires, checked by POST /api/members: a hidden field no human ever
+  // sees or fills, and how long the form was open before submit.
+  const honeypotRef = useRef<HTMLInputElement>(null);
+  const openedAtRef = useRef(Date.now());
+  // Human check for NEW registrations (Cloudflare Turnstile). Off when no
+  // site key is configured, so local dev and un-configured deploys still work.
+  const turnstileSiteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined) || "";
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaResetKey, setCaptchaResetKey] = useState(0);
+  const needsHumanCheck = !!turnstileSiteKey && !memberToEdit;
+  const resetHumanCheck = () => {
+    setCaptchaToken(null);
+    setCaptchaResetKey((k) => k + 1);
+  };
 
   if (!isOpen) return null;
 
@@ -192,6 +207,11 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
       return;
     }
 
+    if (needsHumanCheck && !captchaToken) {
+      setError("Please complete the human verification check before submitting.");
+      return;
+    }
+
     const cleanedNames = extractAndCleanMemberNames({
       title: formData.title,
       firstName: formData.firstName,
@@ -270,8 +290,13 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
           AppStateManager.saveMembers(members);
         }
       } else {
-        const { member, serverConfirmed } = await registerMember(payload);
+        const { member, serverConfirmed } = await registerMember(payload, {
+          website: honeypotRef.current?.value ?? "",
+          fillTimeMs: Date.now() - openedAtRef.current,
+          captchaToken: captchaToken || undefined,
+        });
         if (!serverConfirmed) {
+          resetHumanCheck();
           setError("Could not complete registration on the server. Please check your connection and try again.");
           return;
         }
@@ -288,6 +313,8 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
       onClose();
     } catch (err: any) {
       logger.error("Member registration error", err);
+      // Turnstile tokens are single-use — any failed attempt needs a fresh one.
+      resetHumanCheck();
       setError(err.message || "Failed to save member details. Please try again.");
     } finally {
       setIsSubmitting(false);
@@ -331,6 +358,15 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
       {/* Main Form Body - No background block */}
       <div className="space-y-6 font-normal">
         <form onSubmit={handleSubmit} className="space-y-8 font-normal">
+          <input
+            ref={honeypotRef}
+            type="text"
+            name="website"
+            tabIndex={-1}
+            autoComplete="off"
+            aria-hidden="true"
+            className="absolute -left-[9999px] h-0 w-0 opacity-0"
+          />
           {isForceUpdate && (
             <div className="p-5 bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-300 text-sm rounded-2xl flex items-start space-x-3.5 font-normal shadow-xs animate-fadeIn">
               <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
@@ -395,13 +431,13 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                       >
                         <div className="flex items-center justify-between mb-1">
                           <label className="block text-sm text-slate-800 dark:text-slate-200 font-normal">
-                            {field.label} {field.required && <span className="text-red-500">*</span>}
+                            {field.label} {field.required && <span className="text-red-600 dark:text-red-400">*</span>}
                           </label>
                           {field.key === "jerseySize" && (
                             <button
                               type="button"
                               onClick={() => setIsSizeGuideOpen(true)}
-                              className="text-xs font-semibold text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 flex items-center gap-1 hover:underline cursor-pointer bg-teal-50 dark:bg-teal-950/60 px-2.5 py-1 rounded-lg border border-teal-200 dark:border-teal-800/60 transition"
+                              className="text-xs font-semibold text-teal-800 dark:text-teal-300 hover:text-teal-900 dark:hover:text-teal-200 flex items-center gap-1 hover:underline cursor-pointer bg-teal-50 dark:bg-teal-950/60 px-2.5 py-1 rounded-lg border border-teal-300 dark:border-teal-700/70 transition"
                             >
                               <Ruler className="w-3.5 h-3.5" />
                               <span>📐 View Size Chart</span>
@@ -413,7 +449,7 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                             required={field.required}
                             value={value}
                             onChange={(e) => handleFieldChange(field.key, e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm font-normal"
+                            className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm font-normal"
                           >
                             <option value="">-- {field.placeholder || "Select option"} --</option>
                             {field.key === "schoolName" ? (
@@ -515,11 +551,11 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                             value={value}
                             placeholder={field.placeholder}
                             onChange={(e) => handleFieldChange(field.key, e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm resize-none font-normal"
+                            className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm resize-none font-normal"
                           />
                         ) : field.type === "file" ? (
                           <div className="flex flex-col space-y-3">
-                            <label className="w-fit cursor-pointer inline-block bg-teal-50 text-teal-700 hover:bg-teal-100 py-3 px-6 rounded-xl text-sm font-semibold transition shadow-sm border border-teal-200 dark:border-teal-800">
+                            <label className="w-fit cursor-pointer inline-block bg-teal-50 text-teal-800 hover:bg-teal-100 dark:bg-teal-950/70 dark:text-teal-200 dark:hover:bg-teal-900/70 py-3 px-6 rounded-xl text-sm font-semibold transition shadow-sm border border-teal-300 dark:border-teal-700">
                               Choose Image
                               <input
                                 required={field.required && !value}
@@ -538,12 +574,12 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                           </div>
                         ) : field.key === "dateOfBirth" ? (
                           <div className="relative w-full rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-5 py-4 flex items-center justify-between text-sm text-slate-900 dark:text-white cursor-pointer select-none shadow-sm hover:border-teal-500/60 transition font-normal">
-                            <span className={`truncate ${!value ? "text-slate-400 dark:text-slate-500" : "text-slate-900 dark:text-white font-medium"}`}>
+                            <span className={`truncate ${!value ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-white font-medium"}`}>
                               {formatBirthdayLabel(value)}
                             </span>
                             <div className="flex items-center space-x-1 text-slate-400 dark:text-slate-500 shrink-0">
                               <Calendar className="w-4 h-4 text-teal-600 dark:text-teal-400" />
-                              <ChevronDown className="w-4 h-4 text-cyan-500" />
+                              <ChevronDown className="w-4 h-4 text-cyan-700 dark:text-cyan-400" />
                             </div>
                             <DatePicker
                               value={getNormalizedIsoDate(value)}
@@ -571,7 +607,7 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                             value={value}
                             placeholder={field.placeholder}
                             onChange={(e) => handleFieldChange(field.key, e.target.value)}
-                            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm font-normal"
+                            className="w-full bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-600 rounded-2xl px-5 py-4 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 transition shadow-sm font-normal"
                           />
                         )}
                       </div>
@@ -592,7 +628,7 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                   required
                   checked={acceptedTerms}
                   onChange={(e) => setAcceptedTerms(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-600 dark:border-slate-600 dark:bg-slate-700 dark:ring-offset-slate-900 transition-colors"
+                  className="w-4 h-4 rounded border-slate-400 text-teal-600 focus:ring-teal-600 dark:border-slate-500 dark:bg-slate-700 dark:ring-offset-slate-900 transition-colors"
                 />
               </div>
               <div className="text-sm">
@@ -602,13 +638,22 @@ export const MemberRegistrationModal: React.FC<MemberRegistrationModalProps> = (
                 <button
                   type="button"
                   onClick={onOpenTerms}
-                  className="text-teal-600 dark:text-teal-400 hover:underline font-medium"
+                  className="text-teal-700 dark:text-teal-400 underline underline-offset-2 hover:text-teal-900 dark:hover:text-teal-300 font-medium"
                 >
                   Terms and Conditions
                 </button>
               </div>
             </label>
           </div>
+
+          {needsHumanCheck && (
+            <div className="pt-2 space-y-2">
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                Human verification — this runs automatically; nothing to tick. If it doesn't complete, refresh the page.
+              </p>
+              <TurnstileWidget siteKey={turnstileSiteKey} onToken={setCaptchaToken} resetKey={captchaResetKey} />
+            </div>
+          )}
 
           <div className="flex flex-wrap items-center justify-center sm:justify-between gap-3 pt-6 border-t border-slate-200 dark:border-slate-800">
             {!isForceUpdate ? (

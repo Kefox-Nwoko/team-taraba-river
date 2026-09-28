@@ -100,7 +100,7 @@ export const TShirtSizeGuideModal: React.FC<TShirtSizeGuideModalProps> = ({
             <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-400 flex items-center gap-2">
               <span>🇳🇬 Asian Sizing (Nigerian Local Markets)</span>
             </h3>
-            <span className="text-[11px] text-slate-500">Standard for locally-bought clothes</span>
+            <span className="text-[11px] text-slate-600 dark:text-slate-400">Standard for locally-bought clothes</span>
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
             {ASIAN_SIZES.map((item) => {
@@ -135,7 +135,7 @@ export const TShirtSizeGuideModal: React.FC<TShirtSizeGuideModalProps> = ({
             <h3 className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 flex items-center gap-2">
               <span>🇺🇸 American / UK Sizing</span>
             </h3>
-            <span className="text-[11px] text-slate-500">For US/UK imported brands</span>
+            <span className="text-[11px] text-slate-600 dark:text-slate-400">For US/UK imported brands</span>
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
             {US_SIZES.map((item) => {

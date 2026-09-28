@@ -58,7 +58,7 @@ describe.skipIf(!testEnv)("firestore.rules", () => {
       await assertFails(anon.firestore().collection("members").doc("mem_1").get());
     });
 
-    it("allows any signed-in user to read a member document", async () => {
+    it("allows a member to read their own document", async () => {
       const member = testEnv!.authenticatedContext("mem_1", { email: NON_ADMIN_EMAIL });
       await testEnv!.withSecurityRulesDisabled(async (ctx) => {
         await ctx.firestore().collection("members").doc("mem_1").set({ fullName: "Test" });
@@ -66,10 +66,52 @@ describe.skipIf(!testEnv)("firestore.rules", () => {
       await assertSucceeds(member.firestore().collection("members").doc("mem_1").get());
     });
 
-    it("allows an anonymous visitor to create a brand-new member document (registration)", async () => {
+    it("denies a member from reading ANOTHER member's document or listing the collection", async () => {
+      await testEnv!.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().collection("members").doc("mem_1").set({ fullName: "Me" });
+        await ctx.firestore().collection("members").doc("mem_2").set({ fullName: "Someone Else" });
+      });
+      const member = testEnv!.authenticatedContext("mem_1", { email: NON_ADMIN_EMAIL });
+      await assertFails(member.firestore().collection("members").doc("mem_2").get());
+      await assertFails(member.firestore().collection("members").get());
+    });
+
+    it("allows an admin to read any member document", async () => {
+      await testEnv!.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().collection("members").doc("mem_2").set({ fullName: "Someone Else" });
+      });
+      const admin = testEnv!.authenticatedContext("admin_uid", { email: ADMIN_EMAIL, role: "admin" });
+      await assertSucceeds(admin.firestore().collection("members").doc("mem_2").get());
+    });
+
+    it("denies an anonymous visitor from creating a member document (registration is server-only)", async () => {
       const anon = testEnv!.unauthenticatedContext();
-      await assertSucceeds(
+      await assertFails(
         anon.firestore().collection("members").doc("mem_new").set({ fullName: "New Registrant" })
+      );
+    });
+
+    it("denies a signed-in user with no roster entry from creating their own member document", async () => {
+      const stranger = testEnv!.authenticatedContext("stranger_uid", { email: NON_ADMIN_EMAIL });
+      await assertFails(
+        stranger.firestore().collection("members").doc("stranger_uid").set({ fullName: "Stranger" })
+      );
+    });
+
+    it("denies a signed-in user with no roster entry from writing shared collections", async () => {
+      const stranger = testEnv!.authenticatedContext("stranger_uid", { email: NON_ADMIN_EMAIL });
+      await assertFails(
+        stranger.firestore().collection("photoRequests").doc("req_x").set({ status: "pending" })
+      );
+      await assertFails(
+        stranger.firestore().collection("system").doc("metrics").set({ totalVisits: 1 }, { merge: true })
+      );
+    });
+
+    it("allows an admin to create a member document", async () => {
+      const admin = testEnv!.authenticatedContext("admin_uid", { email: ADMIN_EMAIL, role: "admin" });
+      await assertSucceeds(
+        admin.firestore().collection("members").doc("mem_admin_created").set({ fullName: "Added By Admin", email: "added@example.com" })
       );
     });
 
@@ -207,6 +249,9 @@ describe.skipIf(!testEnv)("firestore.rules", () => {
 
   describe("photoRequests", () => {
     it("allows any signed-in member to submit a photo request", async () => {
+      await testEnv!.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().collection("members").doc("mem_1").set({ fullName: "Test" });
+      });
       const member = testEnv!.authenticatedContext("mem_1", { email: NON_ADMIN_EMAIL });
       await assertSucceeds(
         member.firestore().collection("photoRequests").doc("req_1").set({ status: "pending" })
@@ -293,6 +338,9 @@ describe.skipIf(!testEnv)("firestore.rules", () => {
     });
 
     it("allows any signed-in member to write the visit-metrics document", async () => {
+      await testEnv!.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().collection("members").doc("mem_1").set({ fullName: "Test" });
+      });
       const member = testEnv!.authenticatedContext("mem_1", { email: NON_ADMIN_EMAIL });
       await assertSucceeds(
         member.firestore().collection("system").doc("metrics").set({ totalVisits: 1 }, { merge: true })
@@ -323,6 +371,9 @@ describe.skipIf(!testEnv)("firestore.rules", () => {
     });
 
     it("allows any signed-in member to write systemConfig/visit_metrics", async () => {
+      await testEnv!.withSecurityRulesDisabled(async (ctx) => {
+        await ctx.firestore().collection("members").doc("mem_1").set({ fullName: "Test" });
+      });
       const member = testEnv!.authenticatedContext("mem_1", { email: NON_ADMIN_EMAIL });
       await assertSucceeds(
         member.firestore().collection("systemConfig").doc("visit_metrics").set({ totalVisits: 1 }, { merge: true })

@@ -339,7 +339,9 @@ export default function App() {
   useEffect(() => {
     async function initData() {
       try {
-        const seededMembers = await FirebaseSyncManager.seedCSVDataIfNeeded();
+        // Server-filtered by role: admins get the roster, members get only
+        // their own record plus a name/photo/birthday view of the others.
+        const seededMembers = await fetchMembers();
         // Live Firestore list is authoritative — unioning it with the local
         // cache kept records deleted server-side counted forever on devices
         // that had cached them. The cache is only a fallback when offline.
@@ -368,15 +370,6 @@ export default function App() {
       }
     }
     initData();
-
-    const unsubMembers = FirebaseSyncManager.subscribeMembers((updatedList) => {
-      if (updatedList) {
-        // Snapshot is authoritative (see initData above).
-        const clean = AppStateManager.filterDeleted(updatedList);
-        setMembers(clean);
-        AppStateManager.saveMembers(clean);
-      }
-    });
 
     const unsubEvents = FirebaseSyncManager.subscribeEvents((updatedEvents) => {
       if (updatedEvents) {
@@ -422,13 +415,46 @@ export default function App() {
     window.addEventListener("online", handleVisibilityChange);
 
     return () => {
-      unsubMembers();
       unsubEvents();
       unsubApprovals();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("online", handleVisibilityChange);
     };
   }, []);
+
+  // The member list is no longer bundled into the client, so it has to be
+  // (re)loaded once someone is signed in — the mount-time fetch above runs
+  // before login and comes back empty/unauthorized.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let active = true;
+    fetchMembers()
+      .then((list) => {
+        if (!active) return;
+        const clean = AppStateManager.filterDeleted(list);
+        setMembers(clean);
+        AppStateManager.saveMembers(clean);
+      })
+      .catch(() => {});
+
+    // Live roster listener is admin-only: firestore.rules deny a regular
+    // member reading other members' documents directly.
+    if (currentUser.role !== "admin") {
+      return () => { active = false; };
+    }
+    const unsubMembers = FirebaseSyncManager.subscribeMembers((updatedList) => {
+      if (updatedList) {
+        // Snapshot is authoritative (see initData above).
+        const clean = AppStateManager.filterDeleted(updatedList);
+        setMembers(clean);
+        AppStateManager.saveMembers(clean);
+      }
+    });
+    return () => {
+      active = false;
+      unsubMembers();
+    };
+  }, [currentUser?.id, currentUser?.role]);
 
   const handleRefreshEvents = async (savedEvent?: GroupEvent) => {
     if (savedEvent && savedEvent.id) {
@@ -627,7 +653,9 @@ export default function App() {
         />
         {registerModalOpen && (
           <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md px-4 sm:px-6 lg:px-8 pt-28 sm:pt-32 pb-16 overflow-y-auto flex items-start justify-center animate-fadeIn">
-            <div className="w-full max-w-[1600px] mx-auto">
+            {/* The form's text/buttons follow the light/dark theme, so it must sit on a themed card —
+                on the bare dark overlay, light-theme labels and buttons were dark-on-dark and invisible. */}
+            <div className="w-full max-w-[1600px] mx-auto bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-200 dark:border-slate-800 my-8">
               <Suspense fallback={<ModalFallback />}>
                 <MemberRegistrationModal
                   isOpen={registerModalOpen}

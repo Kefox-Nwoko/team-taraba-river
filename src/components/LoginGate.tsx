@@ -5,11 +5,8 @@ import {
   signInWithCustomToken,
   triggerGoogleAdminSignIn,
   checkGoogleRedirectResult,
-  FirebaseSyncManager,
 } from "../services/firebaseService";
 import { AppStateManager } from "../services/storage";
-import { isMemberCredentialMatch } from "../lib/authMatching";
-import { INITIAL_MEMBERS } from "../data/seedData";
 import { LogIn, UserPlus, ArrowRight, AlertCircle, CheckCircle2, ShieldCheck, BookOpen, X } from "lucide-react";
 import { BRAND_LOGO, LOGIN_WALL_BG } from "../constants/assets";
 import { logger } from "../lib/logger";
@@ -67,7 +64,7 @@ export const LoginGate: React.FC<LoginGateProps> = ({
 
     if (isAdmin) {
       const cached = AppStateManager.getMembers();
-      const pool = availableMembers.length > 0 ? availableMembers : (cached.length > 0 ? cached : INITIAL_MEMBERS);
+      const pool = availableMembers.length > 0 ? availableMembers : cached;
       const match = pool.find((m) => m.email?.toLowerCase().trim() === userEmail);
       memberSession = {
         ...(match || googleMember),
@@ -79,25 +76,15 @@ export const LoginGate: React.FC<LoginGateProps> = ({
         photoUrl: googleMember.photoUrl || match?.photoUrl || serverMember?.photoUrl || "",
         photoStatus: "approved",
       };
-    } else {
-      const cached = AppStateManager.getMembers();
-      const pool = availableMembers.length > 0 ? availableMembers : (cached.length > 0 ? cached : INITIAL_MEMBERS);
-      let match = pool.find((m) => isMemberCredentialMatch(m, userEmail));
-
-      if (!match) {
-        try {
-          const live = await FirebaseSyncManager.seedCSVDataIfNeeded();
-          match = live.find((m) => isMemberCredentialMatch(m, userEmail));
-        } catch {}
-      }
-
-      if (match) {
-        memberSession = {
-          ...match,
-          isGoogleAuth: true,
-          photoUrl: match.photoUrl || googleMember.photoUrl || "",
-        };
-      }
+    } else if (serverMember) {
+      // The server only returns a member for someone already on the roster
+      // (it answers 403 NOT_REGISTERED otherwise), so a bare Google account
+      // can never get a session here — it has to go through registration.
+      memberSession = {
+        ...serverMember,
+        isGoogleAuth: true,
+        photoUrl: serverMember.photoUrl || googleMember.photoUrl || "",
+      };
     }
 
     if (memberSession) {

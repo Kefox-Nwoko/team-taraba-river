@@ -255,7 +255,8 @@ export async function verifySession(): Promise<Member | null> {
   }
 }
 export async function registerMember(
-  memberData: Partial<Member>
+  memberData: Partial<Member>,
+  antiBot?: { website: string; fillTimeMs: number; captchaToken?: string }
 ): Promise<{ member: Member; serverConfirmed: boolean }> {
   const sanitizedInput = sanitizeMemberRecord(memberData);
   const newMember: Member = {
@@ -275,40 +276,38 @@ export async function registerMember(
     ...sanitizedInput,
   };
 
+  let res: Response;
   try {
     const headers = await getAuthHeaders();
-    const res = await fetch(apiUrl("/api/members"), {
+    res = await fetch(apiUrl("/api/members"), {
       method: "POST",
       headers,
-      body: JSON.stringify(newMember),
+      body: JSON.stringify({ ...newMember, ...antiBot }),
     });
-    const contentType = res.headers.get("content-type") || "";
-    if (res.ok && contentType.includes("application/json")) {
-      const data = await res.json();
-      if (data && data.member) {
-        // Establish a real Firebase session for the new member (uid == their
-        // doc ID) so firestore.rules' isOwner() check allows their own
-        // follow-up profile edits, same as the login flow.
-        if (data.customToken) {
-          await signInWithCustomToken(data.customToken).catch(() => {});
-        }
-        return { member: sanitizeMemberRecord(data.member), serverConfirmed: true };
-      }
-    }
-  } catch {}
-
-  // Direct Firestore fallback (server/network unreachable). Report whether
-  // this actually persisted — a rules-rejected write (e.g. no signed-in
-  // session yet) must not be reported as a successful registration, or the
-  // new member ends up looking registered locally while never reaching
-  // Firestore at all.
-  try {
-    await FirebaseSyncManager.saveMember(newMember);
-    return { member: newMember, serverConfirmed: true };
-  } catch (err) {
-    logger.error("Direct Firestore member registration fallback failed", err);
+  } catch {
     return { member: newMember, serverConfirmed: false };
   }
+
+  const contentType = res.headers.get("content-type") || "";
+  const data = contentType.includes("application/json") ? await res.json().catch(() => null) : null;
+  if (res.ok && data && data.member) {
+    // Establish a real Firebase session for the new member (uid == their
+    // doc ID) so firestore.rules' isOwner() check allows their own
+    // follow-up profile edits, same as the login flow.
+    if (data.customToken) {
+      await signInWithCustomToken(data.customToken).catch(() => {});
+    }
+    return { member: sanitizeMemberRecord(data.member), serverConfirmed: true };
+  }
+
+  // Registration is server-only: firestore.rules no longer lets a client
+  // create a member document, and a direct-write fallback here would also let
+  // a rejected request (duplicate email, rate limit, bot check) sidestep the
+  // very checks that rejected it. Surface the server's reason instead.
+  if (data && typeof data.error === "string") {
+    throw new Error(data.error);
+  }
+  return { member: newMember, serverConfirmed: false };
 }
 export async function updateMemberProfile(
   id: string,

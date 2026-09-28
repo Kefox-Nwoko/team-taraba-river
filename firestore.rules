@@ -23,6 +23,18 @@ service cloud.firestore {
       );
     }
 
+    // Helper: a signed-in user who is actually on the roster (or an admin).
+    // A Firebase login alone proves nothing — anyone, or any script, can mint
+    // a Google account — so every "signed-in user" grant below requires a
+    // members/{uid} doc, which only the server (Admin SDK) creates. This is
+    // invisible to real members: registering through the form creates that doc.
+    function isMember() {
+      return isAdmin() || (
+        isAuthenticated() &&
+        exists(/databases/$(database)/documents/members/$(request.auth.uid))
+      );
+    }
+
     // Helper: Check if the requesting user owns this document (their
     // Firebase Auth uid matches the member document's ID — true for both
     // Google-authenticated members and code-verified members, since the
@@ -32,13 +44,13 @@ service cloud.firestore {
     }
 
     // Members collection.
-    // - read: any signed-in user (directory + profile lookups). Credential
-    //   matching for login happens server-side via the Admin SDK, so an
-    //   anonymous visitor never needs to read this collection.
-    // - create: public — a brand-new registrant has no session yet. Firestore
-    //   only routes a write here if the document does not already exist;
-    //   once it exists, further writes are evaluated as `update` below, so
-    //   this can't be used to overwrite an existing member.
+    // - read: the member's own document, or an admin. Members never read each
+    //   other's profiles directly — the server's business-opportunity search
+    //   (Admin SDK) is the only way to look someone up. Credential matching for
+    //   login also happens server-side.
+    // - create: admin only. Registration goes through POST /api/members
+    //   (Admin SDK), which validates and bot-checks it — a client-side create
+    //   would bypass all of that.
     // - update: the member themselves, or an admin.
     // - delete: admin only.
     // - Admin accounts are not team members: no create/update may write a
@@ -55,8 +67,8 @@ service cloud.firestore {
     // from bypassing the recycle bin via direct client SDK/console access;
     // the app's own UI never needed client-side delete permission anyway.
     match /members/{memberId} {
-      allow read: if isAuthenticated();
-      allow create: if !isAdminProfileWrite(memberId);
+      allow read: if isOwner(memberId) || isAdmin();
+      allow create: if isAdmin() && !isAdminProfileWrite(memberId);
       allow update: if (isOwner(memberId) || isAdmin()) && !isAdminProfileWrite(memberId);
       allow delete: if false;
     }
@@ -81,8 +93,8 @@ service cloud.firestore {
     // Photo approval requests — any signed-in member can submit one;
     // only admins decide (approve/reject) them.
     match /photoRequests/{requestId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
+      allow read: if isMember();
+      allow create: if isMember();
       allow update: if isAdmin();
       allow delete: if false;
     }
@@ -105,8 +117,8 @@ service cloud.firestore {
     // Activity logs — community feed. Any signed-in member's actions can
     // append entries; only admins bulk-edit or clear them.
     match /activityLogs/{logId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
+      allow read: if isMember();
+      allow create: if isMember();
       allow update, delete: if isAdmin();
     }
 
@@ -118,16 +130,16 @@ service cloud.firestore {
     // So the email_config exception has to live as a condition inside this
     // one match block, not as a separate (and silently ineffective) rule.
     match /system/{metricId} {
-      allow read: if metricId == 'email_config' ? isAdmin() : isAuthenticated();
-      allow write: if metricId == 'email_config' ? isAdmin() : isAuthenticated();
+      allow read: if metricId == 'email_config' ? isAdmin() : isMember();
+      allow write: if metricId == 'email_config' ? isAdmin() : isMember();
     }
 
     // System config — cloud pipeline settings are admin-only, except the
     // visit-metrics mirror which any signed-in member updates. Same
     // single-match-block reasoning as system/{metricId} above.
     match /systemConfig/{configId} {
-      allow read: if isAuthenticated();
-      allow write: if configId == 'visit_metrics' ? isAuthenticated() : isAdmin();
+      allow read: if isMember();
+      allow write: if configId == 'visit_metrics' ? isMember() : isAdmin();
     }
 
     // Settings (email config etc) — not used by any client code path today;
@@ -151,7 +163,7 @@ service cloud.firestore {
     // Knowledge base articles — read by any signed-in member (AI assistant
     // context); only admins manage content.
     match /knowledgeBase/{articleId} {
-      allow read: if isAuthenticated();
+      allow read: if isMember();
       allow write: if isAdmin();
     }
 
@@ -192,7 +204,7 @@ service cloud.firestore {
         (!('attendeeName' in request.resource.data) || request.resource.data.attendeeName is string && request.resource.data.attendeeName.size() <= 100) &&
         (!('gradYear' in request.resource.data) || request.resource.data.gradYear is string && request.resource.data.gradYear.size() <= 30) &&
         request.resource.data.createdAt != null;
-      allow read: if isAuthenticated();
+      allow read: if isMember();
       allow update, delete: if isAdmin();
     }
 

@@ -11,7 +11,9 @@ import { config, isAdminEmail } from "./server/config";
 
 // Server modules
 import { db, adminAuth, checkFirestoreConnection, isFirestoreAvailable, FieldValue, deleteStorageFileByUrl } from "./server/firebaseAdmin";
-import { authMiddleware, requireAdmin, requireDeveloperAdmin } from "./server/authMiddleware";
+import { authMiddleware, requireAdmin, requireDeveloperAdmin, isRosterMember, forgetRosterMember } from "./server/authMiddleware";
+import { toCommunityView } from "./server/memberPrivacy";
+import { isHumanVerificationConfigured, verifyHuman } from "./server/humanVerification";
 import {
   validateBody,
   MemberRegistrationSchema,
@@ -231,6 +233,13 @@ app.use('/api/media/drive/init-upload', uploadSessionRateLimiter);
 
 // Auth-specific: 10 req/min per IP (used as route middleware on auth endpoints)
 const rateLimiter = createRateLimiter(10, 60_000);
+
+// Registration is the one place an anonymous request creates data, so it gets
+// its own much stricter bucket: 5 sign-ups per 10 minutes per IP (enough for a
+// household or a meetup sharing one connection, far too few to flood the roster).
+const registrationRateLimiter = createRateLimiter(5, 10 * 60_000);
+// A real person can't fill ~20 required fields (plus a photo) faster than this.
+const MIN_REGISTRATION_FILL_MS = 5_000;
 
 // --- Firestore Collection References ---
 const COLLECTIONS = {
@@ -624,10 +633,15 @@ function optionalAuth(req: Request, res: Response, next: NextFunction): void {
     const idToken = authHeader.split('Bearer ')[1];
     adminAuth
       .verifyIdToken(idToken)
-      .then((decodedToken) => {
+      .then(async (decodedToken) => {
         const role = decodedToken.role === 'admin' || isAdminEmail(decodedToken.email || '')
           ? 'admin' as const
           : 'member' as const;
+        // A login with no roster entry is treated as anonymous, not a member.
+        if (role === 'member' && !(await isRosterMember(decodedToken.uid))) {
+          next();
+          return;
+        }
         req.user = { uid: decodedToken.uid, email: decodedToken.email, role };
         next();
       })
@@ -878,8 +892,10 @@ app.post("/api/auth/verify", rateLimiter, async (req: Request, res: Response) =>
       // profile under a legacy ID (e.g. a mem_csv_* seed import) keyed by
       // email instead. Migrate that record onto the UID-keyed doc rather
       // than creating a second, duplicate profile for the same person.
+      // Only trusted for a provider-verified email, so nobody can claim
+      // someone else's roster entry with an unverified address.
       let existingByEmail: FirebaseFirestore.QueryDocumentSnapshot | null = null;
-      if (email) {
+      if (email && decodedToken.email_verified) {
         const dupQuery = await db.collection(COLLECTIONS.members).where('email', '==', email).limit(1).get();
         if (!dupQuery.empty) existingByEmail = dupQuery.docs[0];
       }
@@ -899,32 +915,12 @@ app.post("/api/auth/verify", rateLimiter, async (req: Request, res: Response) =>
         }
         await incrementGlobalVisits(member.fullName);
       } else {
-        member = {
-          id: uid,
-          fullName: decodedToken.name || (email.split('@')[0] || 'Community Member'),
-          email: email,
-          phoneNumber: decodedToken.phone_number || '',
-          dateOfBirth: '',
-          occupation: 'Community Member',
-          skills: ['Community Support'],
-          photoUrl: decodedToken.picture || '',
-          photoStatus: 'approved' as PhotoApprovalStatus,
-          role: 'member' as UserRole,
-          activityPoints: 10,
-          joinedAt: new Date().toISOString(),
-          lastActive: new Date().toISOString(),
-        };
-        await db.collection(COLLECTIONS.members).doc(uid).set(member);
-        await incrementGlobalVisits(member.fullName);
-
-        await addActivityLog({
-          id: `act_${Date.now()}`,
-          memberId: uid,
-          memberName: member.fullName,
-          action: 'Visited the application portal today (First Sign In) (+10 points)',
-          timestamp: new Date().toISOString(),
-          pointsEarned: 10,
-        });
+        // Not on the roster. A valid Google/Firebase login alone is not
+        // membership — anyone (or any script) can mint one — so this route
+        // must never create a member. New people register through
+        // POST /api/members, which is validated and bot-checked.
+        res.status(403).json({ error: 'This account is not a registered member.', code: 'NOT_REGISTERED' });
+        return;
       }
     }
 
@@ -1144,10 +1140,20 @@ app.post("/api/auth/login/verify-code", rateLimiter, async (req: Request, res: R
 // ===================================================================
 
 // 4. Member Service: Directory List
+// Admins get the full roster. A regular member gets only their own full
+// record plus a name/photo/birthday view of everyone else (for the birthday
+// calendar and member count) — other members' contact details and profile
+// data are reachable only through the business-opportunity search below.
 app.get("/api/members", conditionalAuth, async (req: Request, res: Response) => {
   try {
     const members = await getMembers();
-    res.json({ members });
+    if (req.user?.role === 'admin') {
+      res.json({ members });
+      return;
+    }
+    res.json({
+      members: members.map((m) => (m.id === req.user?.uid ? m : toCommunityView(m))),
+    });
   } catch (error) {
       serverLogger.error("Fetch members error", error);
     res.status(500).json({ error: 'Failed to fetch members.' });
@@ -1165,12 +1171,18 @@ app.post("/api/members/search", conditionalAuth, async (req: Request, res: Respo
   const { query } = validation.data;
   let members: Member[] = [];
 
+  // Business-opportunity search is the one way a member may look up another
+  // member. Cap how many come back per query for non-admins so "list all
+  // members" can't be used to harvest every phone number and email at once.
+  const MAX_MEMBER_RESULTS = 10;
+  const cap = <T,>(list: T[]): T[] => (req.user?.role === 'admin' ? list : list.slice(0, MAX_MEMBER_RESULTS));
+
   try {
     members = await getMembers();
     const ai = getGeminiClient();
 
     if (!ai || members.length === 0) {
-      const fallback = simpleContactSearch(members, query);
+      const fallback = cap(simpleContactSearch(members, query));
       return res.json({ members: fallback, total: fallback.length, aiPowered: false });
     }
 
@@ -1254,7 +1266,7 @@ Return format: ["id1", "id2", ...]`;
     }
 
     if (matchedIds.length === 0) {
-      const fallback = simpleContactSearch(members, query);
+      const fallback = cap(simpleContactSearch(members, query));
       return res.json({ members: fallback, total: fallback.length, aiPowered: true });
     }
 
@@ -1277,10 +1289,11 @@ Return format: ["id1", "id2", ...]`;
         gradYear: m.gradYear ? String(m.gradYear) : undefined,
       }));
 
-    res.json({ members: results, total: results.length, aiPowered: true });
+    const capped = cap(results);
+    res.json({ members: capped, total: capped.length, aiPowered: true });
   } catch (error) {
     serverLogger.error("Member search error", error);
-    const fallback = simpleContactSearch(members, query);
+    const fallback = cap(simpleContactSearch(members, query));
     res.json({ members: fallback, total: fallback.length, aiPowered: false });
   }
 });
@@ -1359,7 +1372,19 @@ function simpleContactSearch(members: Member[], query: string): Array<{ id: stri
 // session (uid == the new member's doc ID), matching how /api/auth/login
 // establishes sessions — otherwise firestore.rules' isOwner() check would
 // reject the member's own follow-up profile edits.
-app.post("/api/members", rateLimiter, async (req: Request, res: Response) => {
+app.post("/api/members", registrationRateLimiter, async (req: Request, res: Response) => {
+  // Bot tripwires (sent by MemberRegistrationModal): a hidden `website` field
+  // no human sees, and how long the form was open. Scripts that POST the API
+  // directly, or blindly fill every input, trip one of these. Not a CAPTCHA —
+  // it stops naive bots, not a determined attacker.
+  const { website, fillTimeMs } = (req.body ?? {}) as { website?: unknown; fillTimeMs?: unknown };
+  const filledTooFast = typeof fillTimeMs !== 'number' || !Number.isFinite(fillTimeMs) || fillTimeMs < MIN_REGISTRATION_FILL_MS;
+  if ((typeof website === 'string' && website.trim() !== '') || filledTooFast) {
+    serverLogger.warn('[Registration] Blocked bot-like submission', { ip: req.ip, honeypot: !!website, fillTimeMs });
+    res.status(400).json({ error: 'Registration could not be completed. Please reload the page and try again.' });
+    return;
+  }
+
   const validation = validateBody(MemberRegistrationSchema, req.body);
   if (!validation.success) {
     res.status(400).json({ error: (validation as any).error });
@@ -1371,6 +1396,18 @@ app.post("/api/members", rateLimiter, async (req: Request, res: Response) => {
   if (isAdminEmail(data.email)) {
     res.status(403).json({ error: 'Admin accounts cannot be registered as members.' });
     return;
+  }
+
+  // Human check (Cloudflare Turnstile). Runs after body validation so a typo
+  // doesn't burn the single-use token, and before any database work.
+  if (isHumanVerificationConfigured()) {
+    if (!(await verifyHuman(req.body?.captchaToken, req.ip))) {
+      serverLogger.warn('[Registration] Human verification failed', { ip: req.ip });
+      res.status(400).json({ error: 'Human verification failed. Please complete the check and try again.', code: 'CAPTCHA_FAILED' });
+      return;
+    }
+  } else if (isDeployedEnv) {
+    serverLogger.warn('[Registration] TURNSTILE_SECRET_KEY is not set — registration has no human verification, only the hidden-field/timing/rate-limit checks');
   }
 
   try {
@@ -1572,6 +1609,7 @@ app.delete("/api/members/:id", conditionalAuth, conditionalRequireAdmin, async (
     });
     await docRef.delete();
     _membersCache = null;
+    forgetRosterMember(id);
 
     await addActivityLog({
       id: `act_${Date.now()}`,
@@ -2603,7 +2641,7 @@ async function checkAdminRole(req: Request): Promise<boolean> {
 }
 
 // 15. AI Automated Query Router (Gemini API)
-app.post("/api/ai/query-router", async (req: Request, res: Response) => {
+app.post("/api/ai/query-router", conditionalAuth, async (req: Request, res: Response) => {
   const validation = validateBody(AIQuerySchema, req.body);
   if (!validation.success) {
     res.status(400).json({ error: (validation as any).error });
@@ -2636,8 +2674,11 @@ app.post("/api/ai/query-router", async (req: Request, res: Response) => {
       } else if (qLower.includes("birthday") || qLower.includes("born") || qLower.includes("july") || qLower.includes("august")) {
         intent = "MEMBER_SEARCH";
         routedService = "Member & Birthday Microservice";
-        const birthdayMembers = members.map(m => `${m.fullName} (${m.dateOfBirth})`);
-        answer = `Here are the birthdates of URIP members: ${birthdayMembers.join(', ')}. Upcoming birthday celebrations are highlighted on the Group Calendar!`;
+        // Members must not see each other's birth dates here (only the
+        // calendar shows month + day) — full DOBs are admin-only.
+        answer = isAdmin
+          ? `Here are the birthdates of URIP members: ${members.map(m => `${m.fullName} (${m.dateOfBirth})`).join(', ')}. Upcoming birthday celebrations are highlighted on the Group Calendar!`
+          : "Upcoming birthday celebrations are highlighted on the Group Calendar!";
         sources = ["Member Directory DB"];
         suggestedActions = [{ label: "Open Event & Birthday Calendar", actionType: "NAVIGATE_EVENTS" }];
       } else if (qLower.includes("event") || qLower.includes("gathering") || qLower.includes("outing") || qLower.includes("sports") || qLower.includes("workshop") || qLower.includes("meeting")) {
