@@ -15,4 +15,5 @@ scratch/
 generate_emails.ts
 *_test.html
 copy_db.cjs
+.claude/settings.local.json
 
