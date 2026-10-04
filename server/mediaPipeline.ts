@@ -62,7 +62,7 @@ export async function getDriveAuthClient(): Promise<any> {
   return cachedDriveAuthClient;
 }
 
-async function getDriveRootFolderId(): Promise<string | null> {
+export async function getDriveRootFolderId(): Promise<string | null> {
   const folderIdFromEnv = config.googleDriveFolderId;
   if (folderIdFromEnv && folderIdFromEnv.length > 10 && !folderIdFromEnv.includes('1a2b3c')) {
     return folderIdFromEnv;

@@ -1,7 +1,7 @@
 import { google } from 'googleapis';
 import type { Firestore } from 'firebase-admin/firestore';
 import { serverLogger } from './logger';
-import { getDriveAuthClient, getYouTubeOAuthClient } from './mediaPipeline';
+import { getDriveAuthClient, getDriveRootFolderId, getYouTubeOAuthClient } from './mediaPipeline';
 
 /**
  * Daily Drive -> YouTube drain.
@@ -147,18 +147,91 @@ async function collectCandidates(db: Firestore): Promise<Candidate[]> {
   return out;
 }
 
+export interface DrivePreview {
+  eventsScanned: number;
+  waiting: number;
+  bySource: Record<string, number>;
+  drive?: {
+    videoFiles: number;
+    totalMB: number;
+    linkedToEvents: number;
+    notLinkedToEvents: number;
+    notLinkedByFolder: Array<{ folder: string; count: number; files: string[] }>;
+  };
+  driveScanError?: string;
+}
+
+/** Video files sitting in the portal's Drive folders (the root and its event subfolders). */
+async function listPortalDriveVideos(drive: any): Promise<Array<{ id: string; name: string; size: number; folder: string }>> {
+  const rootId = await getDriveRootFolderId();
+  if (!rootId) return [];
+
+  const folders: Array<{ id: string; name: string }> = [{ id: rootId, name: '(root)' }];
+  let pageToken: string | undefined;
+  do {
+    const res = await drive.files.list({
+      q: `'${rootId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+      fields: 'nextPageToken, files(id, name)',
+      pageSize: 1000,
+      pageToken,
+    });
+    for (const f of res.data.files || []) folders.push({ id: f.id, name: f.name || f.id });
+    pageToken = res.data.nextPageToken || undefined;
+  } while (pageToken);
+
+  const out: Array<{ id: string; name: string; size: number; folder: string }> = [];
+  for (const folder of folders) {
+    pageToken = undefined;
+    do {
+      const res = await drive.files.list({
+        q: `'${folder.id}' in parents and mimeType contains 'video/' and trashed = false`,
+        fields: 'nextPageToken, files(id, name, size)',
+        pageSize: 1000,
+        pageToken,
+      });
+      for (const f of res.data.files || []) out.push({ id: f.id, name: f.name || f.id, size: Number(f.size || 0), folder: folder.name });
+      pageToken = res.data.nextPageToken || undefined;
+    } while (pageToken);
+  }
+  return out;
+}
+
 /** Counts what the drain would move, without uploading or changing anything. */
-export async function previewDriveVideoBacklog(db: Firestore): Promise<{ eventsScanned: number; waiting: number; bySource: Record<string, number> }> {
+export async function previewDriveVideoBacklog(db: Firestore): Promise<DrivePreview> {
   const snap = await db.collection(EVENTS_COLLECTION).get();
   const bySource: Record<string, number> = { youtubeVideoUrls: 0, driveImageUrls: 0 };
+  const linkedIds = new Set<string>();
   let waiting = 0;
   for (const doc of snap.docs) {
-    for (const { source } of findDriveVideoUrls(doc.data())) {
+    const data = doc.data() as any;
+    for (const { source } of findDriveVideoUrls(data)) {
       bySource[source]++;
       waiting++;
     }
+    for (const u of [...(data.youtubeVideoUrls || []), ...(data.youtubeVideoUrl ? [data.youtubeVideoUrl] : []), ...(data.driveImageUrls || [])]) {
+      const id = extractDriveFileId(u);
+      if (id) linkedIds.add(id);
+    }
   }
-  return { eventsScanned: snap.size, waiting, bySource };
+
+  const preview: DrivePreview = { eventsScanned: snap.size, waiting, bySource };
+  try {
+    const drive = google.drive({ version: 'v3', auth: await getDriveAuthClient() });
+    const files = await listPortalDriveVideos(drive);
+    const unlinked = files.filter((f) => !linkedIds.has(f.id));
+    const byFolder = new Map<string, string[]>();
+    for (const f of unlinked) byFolder.set(f.folder, [...(byFolder.get(f.folder) || []), f.name]);
+    preview.drive = {
+      videoFiles: files.length,
+      totalMB: Math.round(files.reduce((sum, f) => sum + f.size, 0) / (1024 * 1024)),
+      linkedToEvents: files.length - unlinked.length,
+      notLinkedToEvents: unlinked.length,
+      notLinkedByFolder: [...byFolder.entries()].map(([folder, names]) => ({ folder, count: names.length, files: names.slice(0, 5) })),
+    };
+  } catch (err: any) {
+    preview.driveScanError = err?.message || String(err);
+  }
+  return preview;
 }
 
 /** Swaps oldUrl for newUrl in the event's video fields. Returns false if oldUrl is no longer on the event. */
