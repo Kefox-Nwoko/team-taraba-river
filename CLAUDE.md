@@ -112,7 +112,12 @@ Client-side persistence/services (`src/services/`):
 
 ### Media upload pipeline
 
-Two cloud storage targets: Google Drive (photos, and video fallback) and YouTube (videos).
+Two cloud storage targets: Google Drive (photos, and the temporary home of every new video)
+and YouTube (final home of videos). The browser never uploads to YouTube: new videos go to
+Drive (Firebase Storage as a safety net), and the cron route `/api/cron/youtube-drain`
+(`server/youtubeDrain.ts`, Cloud Scheduler + `CRON_SECRET`) moves Drive videos listed on events
+to YouTube one at a time, stops at the first "blocked" answer (daily upload limit / quota /
+auth) for that run, swaps the event's video URL to the YouTube link, and deletes the Drive copy.
 Two upload strategies coexist:
 1. Base64 staged upload: `POST /api/media/upload` stages a base64 payload (in Firestore, or
    an in-memory `Map` fallback if Firestore is unavailable), then `POST /api/media/finalize`

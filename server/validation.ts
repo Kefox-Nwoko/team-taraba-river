@@ -129,8 +129,8 @@ export const MemberContactSearchSchema = z.object({
 // Backs the endpoint that opens a Drive resumable upload session with
 // server-held credentials, handing the client only the resulting
 // short-lived, single-use session URL (never the client secret / refresh
-// token). YouTube uploads instead relay through the server directly (see
-// relayVideoToYouTube) and so don't need a matching init-session schema.
+// token). Videos also go to Drive first; the server moves them to YouTube
+// itself (server/youtubeDrain.ts), so there is no YouTube init-session schema.
 
 export const DriveUploadInitSchema = z.object({
   fileName: z.string().min(1, 'fileName is required').max(300),

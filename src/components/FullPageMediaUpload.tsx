@@ -28,7 +28,6 @@ import {
   StopCircle,
   XCircle,
 } from "lucide-react";
-import { uploadVideoViaServerRelay } from "../services/youtubeDirectUpload";
 import { removeMediaAsset } from "../services/apiClient";
 import { uploadImageDirectToDrive } from "../services/googleDriveDirectUpload";
 import { AppStateManager } from "../services/storage";
@@ -107,7 +106,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   const abortControllerRef = useRef<AbortController | null>(null);
   // Real Google Drive folder id for the batch currently uploading, learned
   // from the server's init-upload response the first time a Drive upload
-  // (photo, or a video that fell back off YouTube) opens a session. Every
+  // (a photo or a video) opens a session. Every
   // file in one batch shares the same folder, so one capture per batch is
   // enough — used instead of fabricating a driveFolderId on the event record.
   const driveFolderIdRef = useRef<string | null>(null);
@@ -291,30 +290,14 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
 
     const isVideo = item.type === "video";
 
-    // 1. For Videos: High-Assurance Pipeline (YouTube via server relay -> Google Drive Fallback -> Cloud Storage Safety Net)
+    // 1. For Videos: Google Drive (temporary home) -> Cloud Storage safety net.
+    // The browser never uploads to YouTube: the daily server job
+    // (server/youtubeDrain.ts) moves Drive videos to YouTube up to the
+    // channel's daily upload limit and then swaps the event's video URL.
     if (isVideo) {
-      // Tier 1: Relay through our server to the YouTube Channel (see
-      // uploadVideoViaServerRelay's own doc comment for why this isn't a
-      // direct browser-to-Google upload anymore)
-      try {
-        const ytUrl = await uploadVideoViaServerRelay(item.file, folderName, onFileProgress, signal);
-        return ytUrl;
-      } catch (ytErr: any) {
-        if (ytErr?.name === "AbortError" || signal?.aborted) {
-          throw ytErr;
-        }
-        logger.warn(`[MediaUpload] YouTube primary upload notice (${ytErr?.message || ytErr}), engaging Google Drive direct fallback:`, ytErr);
-      }
-
-      if (signal?.aborted) {
-        const err = new Error("Upload aborted by user.");
-        err.name = "AbortError";
-        throw err;
-      }
-
       const cleanVideoName = (item.file.name.replace(/\.[^/.]+$/, "") || `video_${index + 1}`).replace(/[^a-zA-Z0-9._-]/g, "_") + ".mp4";
 
-      // Tier 2: Fallback Stream directly to Google Drive Event Folder
+      // Tier 1: Stream directly to the Google Drive Event Folder
       try {
         const driveUrl = await uploadImageDirectToDrive(
           item.file,
@@ -324,13 +307,13 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
           signal,
           (folderId) => { driveFolderIdRef.current = folderId; }
         );
-        logger.info(`[MediaUpload] ✅ Video successfully uploaded via Google Drive fallback: ${driveUrl}`);
+        logger.info(`[MediaUpload] ✅ Video uploaded to Google Drive (queued for YouTube): ${driveUrl}`);
         return driveUrl;
       } catch (driveErr: any) {
         if (driveErr?.name === "AbortError" || signal?.aborted) {
           throw driveErr;
         }
-        logger.warn("[MediaUpload] Google Drive video fallback notice, engaging secondary Firebase Cloud Storage:", driveErr);
+        logger.warn("[MediaUpload] Google Drive video upload notice, engaging Firebase Cloud Storage safety net:", driveErr);
       }
 
       if (signal?.aborted) {
@@ -339,7 +322,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         throw err;
       }
 
-      // Tier 3: Safety Net - Firebase Cloud Storage
+      // Tier 2: Safety Net - Firebase Cloud Storage
       try {
         const storageRef = ref(storage, `events/${eventId}/videos/${Date.now()}_${index + 1}_${cleanVideoName}`);
         const downloadUrl = await new Promise<string>((resolve, reject) => {
@@ -415,7 +398,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
         if (storageErr?.name === "AbortError" || signal?.aborted) {
           throw storageErr;
         }
-        logger.error("[MediaUpload] All 3 video upload pipelines failed:", storageErr);
+        logger.error("[MediaUpload] All video upload pipelines failed:", storageErr);
         throw new Error(`Video upload could not be completed: ${storageErr?.message || storageErr}`);
       }
     }
@@ -1229,7 +1212,7 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
               Media Hub Uploader
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              High-Speed Resumable Pipeline (Direct YouTube & Cloud CDN)
+              High-Speed Resumable Pipeline (Google Drive & Cloud CDN)
             </p>
           </div>
         </div>

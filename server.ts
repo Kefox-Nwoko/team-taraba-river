@@ -34,12 +34,12 @@ import {
 import {
   initDriveUploadSession,
   makeDriveFilePublic,
-   relayVideoToYouTube,
    deleteYouTubeVideoServer,
     generateVideoThumbnail,
     generateVideoThumbnailFromUrl,
     getDriveAuthClient,
 } from "./server/mediaPipeline";
+import { drainDriveVideosToYouTube } from "./server/youtubeDrain";
 import {
   moveToRecycleBin,
   getRecycleBinEntries,
@@ -225,9 +225,7 @@ app.use('/api/usosa-news', heavyRateLimiter);
 // Upload sessions: 40 req/min per IP — a batch gallery upload calls one of
 // these per photo/video, so the 5/min "heavy" tier was throttling ordinary
 // batches past the 5th file. Kept on its own, higher bucket instead of the
-// shared heavy limiter. (Also applied directly to the YouTube relay-upload
-// route below, since that one carries a full video body per request rather
-// than just opening a session.)
+// shared heavy limiter.
 const uploadSessionRateLimiter = createRateLimiter(40, 60_000);
 app.use('/api/media/drive/init-upload', uploadSessionRateLimiter);
 
@@ -3792,17 +3790,6 @@ app.post("/api/media/drive/make-public", conditionalAuth, async (req: Request, r
   await makeDriveFilePublic(req, res);
 });
 
-// Relays a video from the browser straight to YouTube via the server (see
-// relayVideoToYouTube's own comment for why: it replaced a direct
-// browser-to-Google resumable upload that was failing on its completing
-// request with no diagnosable detail). No JSON/urlencoded body parser
-// touches this route — its Content-Type is a video type, so both parsers
-// skip it and leave the raw byte stream for relayVideoToYouTube to pipe
-// straight into the YouTube API client.
-app.post("/api/media/youtube/relay-upload", conditionalAuth, uploadSessionRateLimiter, async (req: Request, res: Response) => {
-  await relayVideoToYouTube(req, res);
-});
-
 app.delete("/api/media/youtube/:videoId", conditionalAuth, conditionalRequireAdmin, async (req: Request, res: Response) => {
   await deleteYouTubeVideoServer(req, res);
 });
@@ -3892,6 +3879,23 @@ const requireCronSecret = (req: Request, res: Response, next: NextFunction) => {
   }
   next();
 };
+
+// Moves videos waiting on Google Drive to YouTube, up to the channel's daily
+// upload limit (see server/youtubeDrain.ts). Long-running by design — the
+// scheduler must allow a long attempt deadline (Cloud Run timeout is 30 min).
+app.get("/api/cron/youtube-drain", requireCronSecret, async (req: Request, res: Response) => {
+  if (!db || !isFirestoreAvailable()) {
+    res.status(503).json({ error: "Firestore is not available." });
+    return;
+  }
+  try {
+    const result = await drainDriveVideosToYouTube(db);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    serverLogger.error("[Cron] YouTube drain failed", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.get("/api/cron/birthdays/monthly", requireCronSecret, async (req: Request, res: Response) => {
   try {

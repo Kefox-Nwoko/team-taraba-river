@@ -198,7 +198,7 @@ export async function makeDriveFilePublic(req: Request, res: Response): Promise<
   }
 }
 
-function getYouTubeOAuthClient() {
+export function getYouTubeOAuthClient() {
   if (!config.youtubeClientId || !config.youtubeClientSecret || !config.youtubeRefreshToken) {
     throw new Error(
       'YouTube upload credentials are not configured on the server. Set YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, and YOUTUBE_REFRESH_TOKEN.'
@@ -207,83 +207,6 @@ function getYouTubeOAuthClient() {
   const oauth2Client = new google.auth.OAuth2(config.youtubeClientId, config.youtubeClientSecret, config.youtubeRedirectUri);
   oauth2Client.setCredentials({ refresh_token: config.youtubeRefreshToken });
   return oauth2Client;
-}
-
-/**
- * Relays a video from the browser straight through to YouTube: the
- * incoming request body (the raw video bytes, un-parsed — this route is
- * never touched by the JSON/urlencoded body parsers because its
- * Content-Type is a video type, not application/json) is piped directly
- * into the official Google API client's upload call as `media.body`,
- * without ever buffering the whole file in server memory. The client
- * library handles the actual resumable-upload protocol with Google
- * server-side, including its own retry behavior — none of that is our
- * concern here.
- *
- * This exists so the browser never has to talk to googleapis.com directly.
- * See the client-side module comment in youtubeDirectUpload.ts for why
- * that mattered: a browser-to-Google resumable upload was consistently
- * failing on its completing request with zero diagnosable detail (the
- * browser's XHR/fetch error events carry no information distinguishing a
- * genuine dropped connection from a blocked/CORS-affected response).
- * Relaying server-to-server uses the Node client over a plain HTTPS
- * connection with no CORS involved, and any real failure comes back as an
- * actual Google API error object we can read and report accurately.
- */
-export async function relayVideoToYouTube(req: Request, res: Response): Promise<void> {
-  const fileName = decodeURIComponent(String(req.query.fileName || '')).slice(0, 300) || `video_${Date.now()}.mp4`;
-  const folderName = decodeURIComponent(String(req.query.folderName || '')).slice(0, 300) || 'Event Media';
-  const mimeType = (req.headers['content-type'] as string) || 'video/mp4';
-  const contentLength = req.headers['content-length'] ? parseInt(String(req.headers['content-length']), 10) : undefined;
-  const sizeMB = contentLength ? (contentLength / (1024 * 1024)).toFixed(1) : 'unknown';
-
-  try {
-    const oauth2Client = getYouTubeOAuthClient();
-    const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
-
-    const cleanTitle = fileName.replace(/\.[^/.]+$/, '').substring(0, 95) || `Team Taraba River Video ${new Date().toLocaleDateString()}`;
-
-    serverLogger.info(`[YT Relay] Relaying "${fileName}" (${sizeMB} MB) to YouTube...`);
-
-    const response = await (youtube.videos.insert as any)({
-      part: 'snippet,status',
-      requestBody: {
-        snippet: {
-          title: cleanTitle,
-          description: `Team Taraba River Community Event Media Archive (${folderName})\nUploaded via Team Taraba River Portal.`,
-          tags: ['Team Taraba River', 'Community', 'URIP', 'USOSA', 'Event'],
-          categoryId: '22',
-        },
-        status: {
-          privacyStatus: 'unlisted',
-          selfDeclaredMadeForKids: false,
-        },
-      },
-      media: {
-        mimeType,
-        body: req,
-      },
-    });
-
-    const videoId = response.data.id;
-    if (!videoId) {
-      throw new Error('YouTube upload completed but returned no video ID.');
-    }
-
-    const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    serverLogger.info(`[YT Relay] ✅ Success: ${youtubeUrl}`);
-    res.json({ success: true, youtubeUrl });
-  } catch (error: any) {
-    const detail =
-      error?.errors?.[0]?.message ||
-      error?.response?.data?.error?.message ||
-      error?.message ||
-      'Failed to relay video to YouTube.';
-    serverLogger.error('[YT Relay] Upload error', { error: detail, fileName, sizeMB });
-    if (!res.headersSent) {
-      res.status(500).json({ success: false, error: detail });
-    }
-  }
 }
 
 // Mirrors src/services/youtubeDirectUpload.ts's client-side extractYouTubeId
@@ -359,29 +282,47 @@ export async function generateVideoThumbnail(fileId: string): Promise<{ buffer: 
   const inputPath = path.join(process.cwd(), `tmp_thumb_${fileId}_${Date.now()}.mp4`);
   const outputPath = path.join(process.cwd(), `tmp_thumb_frame_${fileId}_${Date.now()}.webp`);
 
-  try {
-    const driveRes = await drive.files.get(
-      { fileId, alt: 'media' },
-      { responseType: 'stream', headers: { Range: 'bytes=0-2097152' } }
-    );
-
-    const writeStream = fs.createWriteStream(inputPath);
-    await new Promise<void>((resolve, reject) => {
-      driveRes.data.pipe(writeStream);
-      writeStream.on('finish', resolve);
-      writeStream.on('error', reject);
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      ffmpeg(inputPath)
+  const extractFrame = (input: string, inputOptions: string[] = []) =>
+    new Promise<void>((resolve, reject) => {
+      ffmpeg(input)
+        .inputOptions(inputOptions)
         .seekInput('0.5')
         .duration(0.1)
         .outputOptions(['-frames:v', '1', '-q:v', '2'])
         .format('webp')
         .save(outputPath)
-        .on('end', resolve)
+        .on('end', () => resolve())
         .on('error', reject);
     });
+
+  try {
+    try {
+      // Primary: let ffmpeg read straight from Drive over HTTP range
+      // requests. Phone/camera MP4s often keep their index (moov atom) at
+      // the END of the file, so a head-only download can't be decoded at
+      // all; ranged reads fetch only the index and the one frame needed.
+      const accessToken = (await auth.getAccessToken()).token;
+      if (!accessToken) throw new Error('No Drive access token');
+      await extractFrame(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+        ['-headers', `Authorization: Bearer ${accessToken}\r\n`]
+      );
+    } catch (directErr: any) {
+      serverLogger.warn(`[Thumbnail] Direct Drive read failed for ${fileId}, trying head-of-file download: ${directErr?.message || directErr}`);
+      const driveRes = await drive.files.get(
+        { fileId, alt: 'media' },
+        { responseType: 'stream', headers: { Range: 'bytes=0-2097152' } }
+      );
+
+      const writeStream = fs.createWriteStream(inputPath);
+      await new Promise<void>((resolve, reject) => {
+        driveRes.data.pipe(writeStream);
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+      });
+
+      await extractFrame(inputPath);
+    }
 
     const buffer = fs.readFileSync(outputPath);
     const result = { buffer, mimeType: 'image/webp' };
