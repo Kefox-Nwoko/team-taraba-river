@@ -75,25 +75,90 @@ interface Candidate {
   createdAt: string;
 }
 
+/** Drive links in the gallery's image list that are really videos (reverse-synced ones carry a #type=video / #name=*.mp4 marker). */
+function isDriveVideoLink(url: string): boolean {
+  const low = url.toLowerCase();
+  return low.includes('#type=video') || /#name=.*.(mp4|webm|mov|m4v|avi|mkv)$/.test(low);
+}
+
+/**
+ * Every Drive-hosted video on one event: any Drive link in the video list
+ * (what the upload page writes), plus Drive links in the image list that are
+ * marked as videos (older reverse-synced entries).
+ */
+export function findDriveVideoUrls(data: any): Array<{ url: string; fileId: string; source: 'youtubeVideoUrls' | 'driveImageUrls' }> {
+  const out: Array<{ url: string; fileId: string; source: 'youtubeVideoUrls' | 'driveImageUrls' }> = [];
+  const seen = new Set<string>();
+  const videoUrls: string[] = [
+    ...(Array.isArray(data?.youtubeVideoUrls) ? data.youtubeVideoUrls : []),
+    ...(data?.youtubeVideoUrl ? [data.youtubeVideoUrl] : []),
+  ];
+  for (const url of videoUrls) {
+    const fileId = typeof url === 'string' ? extractDriveFileId(url) : null;
+    if (fileId && !seen.has(url)) {
+      seen.add(url);
+      out.push({ url, fileId, source: 'youtubeVideoUrls' });
+    }
+  }
+  for (const url of Array.isArray(data?.driveImageUrls) ? data.driveImageUrls : []) {
+    if (typeof url !== 'string' || seen.has(url) || !isDriveVideoLink(url)) continue;
+    const fileId = extractDriveFileId(url);
+    if (fileId) {
+      seen.add(url);
+      out.push({ url, fileId, source: 'driveImageUrls' });
+    }
+  }
+  return out;
+}
+
+/**
+ * The Firestore update that replaces oldUrl with newUrl on an event, or null
+ * if oldUrl is no longer on it. A YouTube link always lives in the video list,
+ * so a video found in the image list is moved across.
+ */
+export function buildVideoUrlSwap(data: any, oldUrl: string, newUrl: string): Record<string, unknown> | null {
+  const videos: string[] = Array.isArray(data?.youtubeVideoUrls) ? data.youtubeVideoUrls : [];
+  const images: string[] = Array.isArray(data?.driveImageUrls) ? data.driveImageUrls : [];
+  const inVideos = videos.includes(oldUrl);
+  const isSingle = data?.youtubeVideoUrl === oldUrl;
+  const inImages = images.includes(oldUrl);
+  if (!inVideos && !isSingle && !inImages) return null;
+
+  const nextVideos = Array.from(new Set([...videos.map((u) => (u === oldUrl ? newUrl : u)), ...(inVideos ? [] : [newUrl])]));
+  const update: Record<string, unknown> = {
+    youtubeVideoUrls: nextVideos,
+    youtubeVideoUrl: isSingle ? newUrl : data?.youtubeVideoUrl || nextVideos[0] || '',
+  };
+  if (inImages) update.driveImageUrls = images.filter((u) => u !== oldUrl);
+  return update;
+}
+
 async function collectCandidates(db: Firestore): Promise<Candidate[]> {
   const snap = await db.collection(EVENTS_COLLECTION).get();
   const out: Candidate[] = [];
   for (const doc of snap.docs) {
     const data = doc.data() as any;
-    const urls = new Set<string>([
-      ...(Array.isArray(data.youtubeVideoUrls) ? data.youtubeVideoUrls : []),
-      ...(data.youtubeVideoUrl ? [data.youtubeVideoUrl] : []),
-    ]);
-    for (const url of urls) {
-      const fileId = extractDriveFileId(url);
-      if (fileId) {
-        out.push({ eventId: doc.id, eventTitle: String(data.title || 'Event'), url, fileId, createdAt: String(data.createdAt || '') });
-      }
+    for (const { url, fileId } of findDriveVideoUrls(data)) {
+      out.push({ eventId: doc.id, eventTitle: String(data.title || 'Event'), url, fileId, createdAt: String(data.createdAt || '') });
     }
   }
   // Oldest events first so the backlog drains in upload order.
   out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   return out;
+}
+
+/** Counts what the drain would move, without uploading or changing anything. */
+export async function previewDriveVideoBacklog(db: Firestore): Promise<{ eventsScanned: number; waiting: number; bySource: Record<string, number> }> {
+  const snap = await db.collection(EVENTS_COLLECTION).get();
+  const bySource: Record<string, number> = { youtubeVideoUrls: 0, driveImageUrls: 0 };
+  let waiting = 0;
+  for (const doc of snap.docs) {
+    for (const { source } of findDriveVideoUrls(doc.data())) {
+      bySource[source]++;
+      waiting++;
+    }
+  }
+  return { eventsScanned: snap.size, waiting, bySource };
 }
 
 /** Swaps oldUrl for newUrl in the event's video fields. Returns false if oldUrl is no longer on the event. */
@@ -102,16 +167,9 @@ async function replaceEventVideoUrl(db: Firestore, eventId: string, oldUrl: stri
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) return false;
-    const data = snap.data() as any;
-    const list: string[] = Array.isArray(data.youtubeVideoUrls) ? data.youtubeVideoUrls : [];
-    const inList = list.includes(oldUrl);
-    const isSingle = data.youtubeVideoUrl === oldUrl;
-    if (!inList && !isSingle) return false;
-    const nextList = Array.from(new Set(list.map((u) => (u === oldUrl ? newUrl : u))));
-    tx.update(ref, {
-      youtubeVideoUrls: nextList,
-      youtubeVideoUrl: isSingle ? newUrl : data.youtubeVideoUrl || '',
-    });
+    const update = buildVideoUrlSwap(snap.data(), oldUrl, newUrl);
+    if (!update) return false;
+    tx.update(ref, update);
     return true;
   });
 }

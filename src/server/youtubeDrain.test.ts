@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractDriveFileId, isYouTubeBlockedError } from "../../server/youtubeDrain";
+import { buildVideoUrlSwap, extractDriveFileId, findDriveVideoUrls, isYouTubeBlockedError } from "../../server/youtubeDrain";
 
 const ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345";
 
@@ -43,5 +43,66 @@ describe("isYouTubeBlockedError", () => {
   it("does not treat a bad single video as blocked", () => {
     expect(isYouTubeBlockedError({ message: "Invalid video file", code: 400 })).toBe(false);
     expect(isYouTubeBlockedError({ message: "socket hang up" })).toBe(false);
+  });
+});
+
+const ID2 = "1ZyXwVuTsRqPoNmLkJiHgFeDcBa987654";
+const YT = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+
+describe("findDriveVideoUrls", () => {
+  it("finds Drive videos in the video list, including the single-link field", () => {
+    const found = findDriveVideoUrls({
+      youtubeVideoUrls: [`https://lh3.googleusercontent.com/d/${ID}`, YT],
+      youtubeVideoUrl: `https://lh3.googleusercontent.com/d/${ID2}`,
+    });
+    expect(found.map((f) => f.fileId)).toEqual([ID, ID2]);
+    expect(found.every((f) => f.source === "youtubeVideoUrls")).toBe(true);
+  });
+
+  it("finds reverse-synced Drive videos hiding in the image list, but not real images", () => {
+    const found = findDriveVideoUrls({
+      driveImageUrls: [
+        `https://lh3.googleusercontent.com/d/${ID}#type=video&name=a.mp4`,
+        `https://lh3.googleusercontent.com/d/${ID2}#name=b.mp4`,
+        "https://lh3.googleusercontent.com/d/1PhotoPhotoPhotoPhotoPhoto123",
+      ],
+    });
+    expect(found.map((f) => f.fileId)).toEqual([ID, ID2]);
+    expect(found.every((f) => f.source === "driveImageUrls")).toBe(true);
+  });
+
+  it("ignores YouTube, Firebase Storage and events with no videos", () => {
+    expect(findDriveVideoUrls({ youtubeVideoUrls: [YT, "https://firebasestorage.googleapis.com/v0/b/x/o/a.mp4?alt=media"] })).toEqual([]);
+    expect(findDriveVideoUrls({})).toEqual([]);
+    expect(findDriveVideoUrls(null)).toEqual([]);
+  });
+});
+
+describe("buildVideoUrlSwap", () => {
+  const drive = `https://lh3.googleusercontent.com/d/${ID}`;
+
+  it("replaces the Drive link in the video list and single field", () => {
+    expect(buildVideoUrlSwap({ youtubeVideoUrls: [drive, "x"], youtubeVideoUrl: drive }, drive, YT)).toEqual({
+      youtubeVideoUrls: [YT, "x"],
+      youtubeVideoUrl: YT,
+    });
+  });
+
+  it("moves a video found in the image list across to the video list", () => {
+    const marked = `${drive}#type=video`;
+    expect(buildVideoUrlSwap({ youtubeVideoUrls: [], driveImageUrls: ["keep", marked] }, marked, YT)).toEqual({
+      youtubeVideoUrls: [YT],
+      youtubeVideoUrl: YT,
+      driveImageUrls: ["keep"],
+    });
+  });
+
+  it("keeps an existing single link that is a different video", () => {
+    const update = buildVideoUrlSwap({ youtubeVideoUrls: [drive], youtubeVideoUrl: "other" }, drive, YT);
+    expect(update?.youtubeVideoUrl).toBe("other");
+  });
+
+  it("returns null when the old link is gone from the event", () => {
+    expect(buildVideoUrlSwap({ youtubeVideoUrls: ["x"], driveImageUrls: [] }, drive, YT)).toBeNull();
   });
 });
