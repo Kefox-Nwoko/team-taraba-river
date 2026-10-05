@@ -17,6 +17,8 @@ import {
   fetchAuditLog,
   deleteEvent as deleteEventApi,
   deleteApproval as deleteApprovalApi,
+  checkDuplicateFolder,
+  type DuplicateFolderVerdict,
 } from "../services/apiClient";
 import { db } from "../lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
@@ -363,6 +365,20 @@ const PendingMediaModerationCard: React.FC<PendingMediaModerationCardProps> = ({
   );
 };
 
+// Approving a batch fires one handleApprovePhoto per card, all at once. They share one
+// duplicate-folder answer per title/date/location instead of asking the server N times.
+const folderDuplicateChecks = new Map<string, Promise<DuplicateFolderVerdict | null>>();
+function checkDuplicateFolderOnce(input: { title: string; date: string; location?: string }): Promise<DuplicateFolderVerdict | null> {
+  const key = [input.title, input.date, input.location || ""].join("|").toLowerCase();
+  let pending = folderDuplicateChecks.get(key);
+  if (!pending) {
+    pending = checkDuplicateFolder(input).catch(() => null);
+    folderDuplicateChecks.set(key, pending);
+    setTimeout(() => folderDuplicateChecks.delete(key), 30_000);
+  }
+  return pending;
+}
+
 export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
   members,
   currentUser,
@@ -672,8 +688,25 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     // serialization between them; a local-array read-then-setDoc silently
     // drops every contribution but the last writer's.
     const allEvents = AppStateManager.getEvents();
-    const eventId = req.eventId || `folder_${Date.now()}`;
-    const targetEvt = allEvents.find((e) => e.id === eventId);
+    let eventId = req.eventId || `folder_${Date.now()}`;
+    let targetEvt = allEvents.find((e) => e.id === eventId);
+
+    // One media folder per event: if this would create a NEW folder that duplicates one that
+    // already exists (e.g. another member's batch for the same event/day), join that folder.
+    // Only a folder this browser already holds is used, because attaching to a folder we have no
+    // local copy of would re-send its creation fields over the real ones.
+    if (!targetEvt) {
+      const verdict = await checkDuplicateFolderOnce({
+        title: req.folderName || req.title || "Community Event",
+        date: req.date || req.uploadedAt?.split("T")[0] || new Date().toISOString().split("T")[0],
+        location: req.location || undefined,
+      });
+      const existing = verdict?.duplicate && verdict.event ? allEvents.find((e) => e.id === verdict.event!.id) : undefined;
+      if (existing) {
+        eventId = existing.id;
+        targetEvt = existing;
+      }
+    }
 
     // Only set on first creation — the folder's `date` is the source of
     // truth for its sort position, so a later approval into an existing

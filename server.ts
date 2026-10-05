@@ -30,6 +30,7 @@ import {
   MemberContactSearchSchema,
   DriveUploadInitSchema,
   DriveMakePublicSchema,
+  DuplicateFolderCheckSchema,
 } from "./server/validation";
 import {
   initDriveUploadSession,
@@ -40,6 +41,7 @@ import {
     getDriveAuthClient,
 } from "./server/mediaPipeline";
 import { drainDriveVideosToYouTube, previewTransferPlan } from "./server/youtubeDrain";
+import { findDuplicateFolder, type AskAi } from "./server/duplicateFolder";
 import {
   moveToRecycleBin,
   getRecycleBinEntries,
@@ -236,6 +238,9 @@ const rateLimiter = createRateLimiter(10, 60_000);
 // its own much stricter bucket: 5 sign-ups per 10 minutes per IP (enough for a
 // household or a meetup sharing one connection, far too few to flood the roster).
 const registrationRateLimiter = createRateLimiter(5, 10 * 60_000);
+
+// Duplicate-folder check: one call per new-folder submit (plus one per approval batch), and it may call Gemini.
+const duplicateFolderRateLimiter = createRateLimiter(20, 60_000);
 // A real person can't fill ~20 required fields (plus a photo) faster than this.
 const MIN_REGISTRATION_FILL_MS = 5_000;
 
@@ -1633,6 +1638,51 @@ app.get("/api/events", optionalAuth, async (req: Request, res: Response) => {
   } catch (error) {
       serverLogger.error("Fetch events error", error);
     res.status(500).json({ error: 'Failed to fetch events.' });
+  }
+});
+
+// One media folder per event: before a new folder is created, ask whether one already exists
+// for the same day/event (rules + Gemini judge, see server/duplicateFolder.ts). Fails open
+// to the rules when Gemini is unavailable.
+const askGeminiAboutFolders: AskAi = async (prompt) => {
+  const ai = getGeminiClient();
+  if (!ai) return null;
+  const response = await Promise.race([
+    ai.models.generateContent({
+      model: "gemini-3.6-flash",
+      contents: [{ text: prompt }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            matchId: { type: Type.STRING },
+            confidence: { type: Type.NUMBER },
+            reason: { type: Type.STRING },
+          },
+          required: ["matchId", "confidence", "reason"],
+        },
+      },
+    }),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("AI folder check timed out")), 8000)),
+  ]);
+  return JSON.parse(response.text || "{}");
+};
+
+app.post("/api/events/check-duplicate-folder", conditionalAuth, duplicateFolderRateLimiter, async (req: Request, res: Response) => {
+  const validation = validateBody(DuplicateFolderCheckSchema, req.body);
+  if (!validation.success) {
+    res.status(400).json({ error: (validation as any).error });
+    return;
+  }
+  try {
+    const { title, date, location, excludeEventId } = validation.data;
+    const events = await getEvents();
+    const verdict = await findDuplicateFolder({ title, date, location }, events, askGeminiAboutFolders, excludeEventId);
+    res.json({ success: true, ...verdict });
+  } catch (error) {
+    serverLogger.error("Duplicate folder check error", error);
+    res.status(500).json({ error: "Could not check for an existing folder." });
   }
 });
 

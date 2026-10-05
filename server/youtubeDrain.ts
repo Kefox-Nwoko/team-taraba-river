@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import type { Firestore } from 'firebase-admin/firestore';
 import { serverLogger } from './logger';
+import { isChapterEvent } from '../src/utils/eventUtils';
 import { getDriveAuthClient, getDriveRootFolderId, getYouTubeOAuthClient } from './mediaPipeline';
 
 /**
@@ -63,6 +64,12 @@ export interface EventLite {
   id: string;
   title: string;
   date?: string;
+  /**
+   * True for media folders/galleries, false for calendar announcements (chapter
+   * events). Media only ever attaches to a media folder: announcements are
+   * purged the day after the event, so a video attached to one would be lost.
+   */
+  isMediaFolder: boolean;
 }
 
 export type EventLink = { eventId: string; url: string };
@@ -246,6 +253,7 @@ export function planDriveVideos(input: {
   }
 
   const eventTitle = (id: string) => input.events.find((e) => e.id === id)?.title;
+  const mediaFolders = input.events.filter((e) => e.isMediaFolder);
   const groups: PlanGroup[] = [];
 
   for (const [key, files] of byKey) {
@@ -281,7 +289,7 @@ export function planDriveVideos(input: {
     const matched = new Map<string, EventLite>();
     let ambiguous = false;
     for (const f of files) {
-      const m = matchEventForFolder(f.folder, input.events);
+      const m = matchEventForFolder(f.folder, mediaFolders);
       if (m.event) matched.set(m.event.id, m.event);
       if (m.ambiguous) ambiguous = true;
     }
@@ -393,7 +401,7 @@ async function loadTransferContext(db: Firestore, drive: any): Promise<TransferC
   const eventsSnap = await db.collection(EVENTS_COLLECTION).get();
   for (const doc of eventsSnap.docs) {
     const data = doc.data() as any;
-    events.push({ id: doc.id, title: String(data.title || 'Event'), date: data.date ? String(data.date) : undefined });
+    events.push({ id: doc.id, title: String(data.title || 'Event'), date: data.date ? String(data.date) : undefined, isMediaFolder: !isChapterEvent({ id: doc.id } as any) });
     for (const { url, fileId } of findEventDriveLinks(data)) links.set(fileId, [...(links.get(fileId) || []), { eventId: doc.id, url }]);
   }
 
@@ -504,6 +512,7 @@ export async function previewTransferPlan(db: Firestore) {
       folders: [...new Set(g.files.map((f) => f.folder))],
       action: g.action,
       event: g.eventTitle,
+      eventId: g.eventId,
       reason: g.reason,
     })),
     housekeeping: {

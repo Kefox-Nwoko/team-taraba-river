@@ -28,7 +28,7 @@ import {
   StopCircle,
   XCircle,
 } from "lucide-react";
-import { removeMediaAsset } from "../services/apiClient";
+import { removeMediaAsset, checkDuplicateFolder, type DuplicateFolderVerdict } from "../services/apiClient";
 import { uploadImageDirectToDrive } from "../services/googleDriveDirectUpload";
 import { AppStateManager } from "../services/storage";
 import { EventLocationMap } from "./EventLocationMap";
@@ -95,6 +95,12 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
   const [newCategory, setNewCategory] = useState<GroupEvent["category"]>("general");
   const [newLocation, setNewLocation] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  // One media folder per event: set when the server finds an existing folder for
+  // the same event/day, which blocks creating a second one.
+  const [duplicateFolder, setDuplicateFolder] = useState<DuplicateFolderVerdict | null>(null);
+  const [isCheckingFolder, setIsCheckingFolder] = useState(false);
+  // An admin who confirms "this is a different event" skips the check once.
+  const skipDuplicateCheckRef = useRef(false);
 
   const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -842,6 +848,19 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
       notify(`⚠️ ${msg}`, "error");
       return;
     }
+
+    // One media folder per event: before creating a new folder, check whether one
+    // already exists for the same day/event. A failed check never blocks the upload.
+    if (folderMode === "new" && !skipDuplicateCheckRef.current) {
+      setIsCheckingFolder(true);
+      const verdict = await checkDuplicateFolder({ title: newFolderTitle.trim(), date: newDate, location: newLocation.trim() || undefined }).catch(() => null);
+      setIsCheckingFolder(false);
+      if (verdict?.duplicate && verdict.event) {
+        setDuplicateFolder(verdict);
+        return;
+      }
+    }
+    skipDuplicateCheckRef.current = false;
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -1603,11 +1622,16 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             {/* Right side: Submit */}
             <button
               type="submit"
-              disabled={!isFormValid || isUploading}
-              style={{ cursor: !isFormValid || isUploading ? "not-allowed" : "pointer" }}
+              disabled={!isFormValid || isUploading || isCheckingFolder}
+              style={{ cursor: !isFormValid || isUploading || isCheckingFolder ? "not-allowed" : "pointer" }}
               className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 active:scale-95 text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center space-x-2 transition-all shadow-md"
             >
-              {isUploading ? (
+              {isCheckingFolder ? (
+                <>
+                  <Loader2 className="w-4 h-4 text-white animate-spin" />
+                  <span>Checking for an existing folder...</span>
+                </>
+              ) : isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 text-white animate-spin" />
                   <span>{isCancelling ? "Cancelling..." : "Uploading & Processing..."}</span>
@@ -1621,6 +1645,65 @@ export const FullPageMediaUpload: React.FC<FullPageMediaUploadProps> = ({
             </button>
           </div>
         </form>
+
+        {/* ── ONE FOLDER PER EVENT: an existing folder was found ── */}
+        {duplicateFolder?.event && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 animate-fadeIn">
+            <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4 text-slate-900 dark:text-white">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+                  <FolderOpen className="w-5 h-5" />
+                </div>
+                <h3 className="text-sm sm:text-base font-bold">This event already has a folder</h3>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm">
+                <div className="font-semibold">📁 {duplicateFolder.event.title}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {formatDateLabel(duplicateFolder.event.date || newDate)}
+                  {duplicateFolder.event.location ? ` · ${duplicateFolder.event.location}` : ""}
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                {duplicateFolder.reason} We keep <strong>one folder per event</strong>, so please add your photos and videos to it instead of creating another.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = duplicateFolder.event!;
+                    setFolderMode("existing");
+                    setSelectedFolderId(target.id);
+                    setDuplicateFolder(null);
+                    notify(`📁 Switched to the existing folder "${target.title}". Your selected files are kept, press upload to add them.`, "info");
+                  }}
+                  className="flex-1 px-4 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-sm cursor-pointer"
+                >
+                  Add to this folder
+                </button>
+                {currentUser?.role === "admin" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      skipDuplicateCheckRef.current = true;
+                      setDuplicateFolder(null);
+                      handleSubmit({ preventDefault() {} } as React.FormEvent);
+                    }}
+                    className="flex-1 px-4 py-2.5 rounded-2xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-sm cursor-pointer"
+                  >
+                    This is a different event
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setDuplicateFolder(null)}
+                  className="px-4 py-2.5 rounded-2xl text-slate-500 dark:text-slate-400 text-sm cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── DUPLICATE MEDIA RESOLUTION MODAL ── */}
         {currentDup && (

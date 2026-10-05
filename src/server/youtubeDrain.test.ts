@@ -131,10 +131,10 @@ describe("buildVideoUrlAttach", () => {
 
 describe("folder -> event matching", () => {
   const events: EventLite[] = [
-    { id: "e1", title: "The Confluence Jersey Party", date: "2026-09-26" },
-    { id: "e2", title: "Revisiting School Party", date: "2026-08-29" },
-    { id: "e3", title: "Club Nite", date: "2026-01-10" },
-    { id: "e4", title: "Club Nite", date: "2026-03-14" },
+    { id: "e1", title: "The Confluence Jersey Party", date: "2026-09-26", isMediaFolder: true },
+    { id: "e2", title: "Revisiting School Party", date: "2026-08-29", isMediaFolder: true },
+    { id: "e3", title: "Club Nite", date: "2026-01-10", isMediaFolder: true },
+    { id: "e4", title: "Club Nite", date: "2026-03-14", isMediaFolder: true },
   ];
 
   it("normalises the date prefix, case and spacing", () => {
@@ -163,8 +163,8 @@ describe("planDriveVideos", () => {
   const OLD = "2026-09-27T10:00:00Z";
   const GRACE = 12 * 60 * 60 * 1000;
   const events: EventLite[] = [
-    { id: "e1", title: "The Confluence Jersey Party", date: "2026-09-26" },
-    { id: "e2", title: "Revisiting School Party", date: "2026-08-29" },
+    { id: "e1", title: "The Confluence Jersey Party", date: "2026-09-26", isMediaFolder: true },
+    { id: "e2", title: "Revisiting School Party", date: "2026-08-29", isMediaFolder: true },
   ];
   const file = (id: string, over: Partial<DriveFileRow> = {}): DriveFileRow => ({
     id, name: "602675.mp4", size: 5 * 1024 * 1024, md5: "aaa", createdTime: OLD, folder: "2026-09-26 - The Confluence Jersey Party", ...over,
@@ -222,6 +222,19 @@ describe("planDriveVideos", () => {
   it("calls it ambiguous when identical copies sit in folders of two different events", () => {
     const groups = plan([file("f1"), file("f2", { folder: "Revisiting School Party" })]);
     expect(groups[0].action).toBe("ambiguous");
+  });
+
+  it("never attaches an unlinked video to a calendar announcement with the same title", () => {
+    const withAnnouncement = [...events, { id: "evt_100", title: "The Confluence Jersey Party", date: "2026-09-26", isMediaFolder: false }];
+    const groups = planDriveVideos({ files: [file("f1")], links: new Map(), protectedIds: new Set(), events: withAnnouncement, now: NOW, graceMs: GRACE });
+    expect(groups[0].action).toBe("move-orphan");
+    expect(groups[0].eventId).toBe("e1");
+  });
+
+  it("reports unmatched when the only same-titled event is a calendar announcement", () => {
+    const onlyAnnouncement = [{ id: "evt_100", title: "The Confluence Jersey Party", date: "2026-09-26", isMediaFolder: false }];
+    const groups = planDriveVideos({ files: [file("f1")], links: new Map(), protectedIds: new Set(), events: onlyAnnouncement, now: NOW, graceMs: GRACE });
+    expect(groups[0].action).toBe("unmatched");
   });
 
   it("orders linked, then unlinked, then everything that needs attention", () => {

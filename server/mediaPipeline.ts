@@ -130,6 +130,17 @@ async function setFilePublicReadable(drive: any, fileId: string): Promise<void> 
 //  resulting session URL, which is single-use and expires on its own.
 // ===================================================================
 
+/**
+ * Google only sends CORS headers on a resumable session's responses when the
+ * request that OPENED the session carried the browser's Origin. Without it
+ * the bytes upload fine but the page can't read the final "success" reply,
+ * sees a network error, and re-uploads the whole file from scratch — which
+ * left ~6 identical copies of every video (and photo) on Drive.
+ */
+export function driveSessionOriginHeader(origin: unknown): Record<string, string> {
+  return typeof origin === 'string' && /^https?:\/\/[^\s/]+$/i.test(origin) ? { Origin: origin } : {};
+}
+
 export async function initDriveUploadSession(req: Request, res: Response): Promise<void> {
   try {
     const { fileName, mimeType, size, folderName } = req.body || {};
@@ -161,6 +172,7 @@ export async function initDriveUploadSession(req: Request, res: Response): Promi
           'Content-Type': 'application/json; charset=UTF-8',
           ...(size ? { 'X-Upload-Content-Length': String(size) } : {}),
           'X-Upload-Content-Type': mimeType,
+          ...driveSessionOriginHeader(req.headers.origin),
         },
         body: JSON.stringify(metadata),
       }

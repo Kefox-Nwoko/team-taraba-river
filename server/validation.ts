@@ -156,3 +156,11 @@ export function validateBody<T>(schema: z.ZodType<T>, body: unknown): { success:
   }
   return { success: true, data: result.data };
 }
+
+// --- One media folder per event: duplicate check before a new folder is created ---
+export const DuplicateFolderCheckSchema = z.object({
+  title: z.string().trim().min(1, 'Folder title is required').max(300),
+  date: z.string().trim().min(1, 'Folder date is required').max(40),
+  location: z.string().trim().max(300).optional(),
+  excludeEventId: z.string().max(100).optional(),
+});

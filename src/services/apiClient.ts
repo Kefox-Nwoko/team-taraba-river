@@ -588,6 +588,33 @@ export async function parseEventPosterWithAI(imageBase64: string, mimeType: stri
   return data as ParsedPosterDetails;
 }
 
+export interface DuplicateFolderVerdict {
+  duplicate: boolean;
+  event?: { id: string; title: string; date?: string; location?: string };
+  confidence: number;
+  method: "none" | "rules" | "ai";
+  reason: string;
+}
+
+/**
+ * Asks the server whether a media folder for this event (same day, same
+ * title/venue/period) already exists — the group keeps ONE folder per event.
+ * Callers treat a thrown error as "no answer" and let the upload proceed.
+ */
+export async function checkDuplicateFolder(input: { title: string; date: string; location?: string }): Promise<DuplicateFolderVerdict> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(apiUrl("/api/events/check-duplicate-folder"), {
+    method: "POST",
+    headers,
+    body: JSON.stringify(input),
+  });
+  const data = (res.headers.get("content-type") || "").includes("application/json") ? await res.json() : null;
+  if (!res.ok || !data || data.success === false) {
+    throw new Error(data?.error || "Could not check for an existing folder.");
+  }
+  return data as DuplicateFolderVerdict;
+}
+
 // The server route moves the event (and any pending approvals for it) into
 // the recycle bin and removes the live doc via the Admin SDK — there is no
 // client-SDK counterpart anymore (Firestore rules deny client-side event
