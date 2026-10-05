@@ -39,7 +39,7 @@ import {
     generateVideoThumbnailFromUrl,
     getDriveAuthClient,
 } from "./server/mediaPipeline";
-import { drainDriveVideosToYouTube, previewDriveVideoBacklog } from "./server/youtubeDrain";
+import { drainDriveVideosToYouTube, previewTransferPlan } from "./server/youtubeDrain";
 import {
   moveToRecycleBin,
   getRecycleBinEntries,
@@ -3889,9 +3889,9 @@ app.get("/api/cron/youtube-drain", requireCronSecret, async (req: Request, res: 
     return;
   }
   try {
-    // ?dryRun=1 only counts what is waiting on Drive; nothing is uploaded or changed.
+    // ?dryRun=1 only reports what a run would do (plus Drive housekeeping); nothing is uploaded, moved or deleted.
     if (req.query.dryRun === "1") {
-      res.json({ success: true, dryRun: true, ...(await previewDriveVideoBacklog(db)) });
+      res.json({ success: true, dryRun: true, ...(await previewTransferPlan(db)) });
       return;
     }
     const result = await drainDriveVideosToYouTube(db);
