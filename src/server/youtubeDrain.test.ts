@@ -10,6 +10,7 @@ import {
   matchEventForFolder,
   normalizeFolderTitle,
   planDriveVideos,
+  urlHasFileName,
   type DrainResult,
   type DriveFileRow,
   type EventLite,
@@ -237,6 +238,19 @@ describe("planDriveVideos", () => {
     expect(groups[0].action).toBe("unmatched");
   });
 
+  it("leaves a video alone when its event already lists it as a Firebase Storage copy", () => {
+    const withStorageCopy = [{ ...events[0], videoUrls: ["https://firebasestorage.googleapis.com/v0/b/bkt/o/events%2Ffolder_1%2Fvideos%2F1789000000_3_602675.mp4?alt=media&token=abc"] }, events[1]];
+    const groups = planDriveVideos({ files: [file("f1"), file("f2")], links: new Map(), protectedIds: new Set(), events: withStorageCopy, now: NOW, graceMs: GRACE });
+    expect(groups[0].action).toBe("already-on-event");
+    expect(groups[0].eventId).toBe("e1");
+  });
+
+  it("still moves it when the event lists a different file name", () => {
+    const other = [{ ...events[0], videoUrls: ["https://firebasestorage.googleapis.com/v0/b/bkt/o/events%2Ffolder_1%2Fvideos%2F1789000000_3_999999.mp4?alt=media&token=abc"] }, events[1]];
+    const groups = planDriveVideos({ files: [file("f1")], links: new Map(), protectedIds: new Set(), events: other, now: NOW, graceMs: GRACE });
+    expect(groups[0].action).toBe("move-orphan");
+  });
+
   it("orders linked, then unlinked, then everything that needs attention", () => {
     const links = new Map([["f9", [{ eventId: "e1", url: "u" }]]]);
     const groups = plan(
@@ -253,7 +267,7 @@ describe("planDriveVideos", () => {
 
 describe("buildDrainReportEmail", () => {
   const result: DrainResult = {
-    moved: 3, failed: 1, duplicatesRemoved: 40, driveFreedMB: 212, waiting: 6, held: 1, unmatched: 1, ambiguous: 0, tooNew: 0,
+    moved: 3, failed: 1, duplicatesRemoved: 40, driveFreedMB: 212, waiting: 6, held: 1, unmatched: 1, ambiguous: 0, tooNew: 0, alreadyOnEvent: 0,
     blocked: true, blockedReason: "The user has exceeded the number of videos they may upload.", timeBudgetHit: false,
     movedVideos: [{ name: "a.mp4", event: "Club <Nite>", youtubeUrl: YT, copiesRemoved: 20 }],
     failures: [{ name: "b.mp4", reason: "boom" }],
@@ -272,5 +286,20 @@ describe("buildDrainReportEmail", () => {
 
   it("escapes event and file names", () => {
     expect(buildDrainReportEmail(result).html).toContain("Club &lt;Nite&gt;");
+  });
+});
+
+describe("urlHasFileName", () => {
+  it("recognises a Firebase Storage copy of a Drive file by its name", () => {
+    expect(urlHasFileName("https://firebasestorage.googleapis.com/v0/b/bkt/o/events%2Ffolder_1%2Fvideos%2F1789000000_3_602675.mp4?alt=media&token=abc", "602675.mp4")).toBe(true);
+    expect(urlHasFileName("https://firebasestorage.googleapis.com/v0/b/bkt/o/events%2Ffolder_1%2Fvideos%2F1789000000_3_602675.mp4?alt=media&token=abc", "602675.MP4")).toBe(true);
+  });
+
+  it("does not confuse similar names or YouTube links", () => {
+    expect(urlHasFileName("https://firebasestorage.googleapis.com/v0/b/bkt/o/events%2Ffolder_1%2Fvideos%2F1789000000_3_602675.mp4?alt=media&token=abc", "75.mp4")).toBe(false);
+    expect(urlHasFileName("https://firebasestorage.googleapis.com/v0/b/bkt/o/events%2Ffolder_1%2Fvideos%2F1789000000_3_602675.mp4?alt=media&token=abc", "602676.mp4")).toBe(false);
+    expect(urlHasFileName("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "602675.mp4")).toBe(false);
+    expect(urlHasFileName("", "602675.mp4")).toBe(false);
+    expect(urlHasFileName("https://firebasestorage.googleapis.com/v0/b/bkt/o/events%2Ffolder_1%2Fvideos%2F1789000000_3_602675.mp4?alt=media&token=abc", "")).toBe(false);
   });
 });

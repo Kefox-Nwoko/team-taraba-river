@@ -70,11 +70,13 @@ export interface EventLite {
    * purged the day after the event, so a video attached to one would be lost.
    */
   isMediaFolder: boolean;
+  /** Every video link the event already lists (YouTube, Drive or Firebase Storage). */
+  videoUrls?: string[];
 }
 
 export type EventLink = { eventId: string; url: string };
 
-export type PlanAction = 'move-linked' | 'move-orphan' | 'held' | 'too-new' | 'unmatched' | 'ambiguous';
+export type PlanAction = 'move-linked' | 'move-orphan' | 'held' | 'too-new' | 'unmatched' | 'ambiguous' | 'already-on-event';
 
 export interface PlanGroup {
   key: string;
@@ -99,6 +101,8 @@ export interface DrainResult {
   unmatched: number;
   ambiguous: number;
   tooNew: number;
+  /** Videos the event already shows (e.g. as a Firebase Storage copy), so attaching a YouTube copy would list them twice. */
+  alreadyOnEvent: number;
   blocked: boolean;
   blockedReason?: string;
   timeBudgetHit: boolean;
@@ -233,6 +237,24 @@ export function matchEventForFolder(folder: string, events: EventLite[]): { even
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /**
+ * True when a video link ends with the given file name, e.g. a Firebase
+ * Storage link `.../o/events%2Fe1%2Fvideos%2F1789_3_602675.mp4?alt=media&token=…`
+ * for the file `602675.mp4`. The upload page names Storage copies
+ * `<timestamp>_<index>_<same cleaned name>`, which is how an earlier failed
+ * Drive upload shows up on an event.
+ */
+export function urlHasFileName(url: string, fileName: string): boolean {
+  let decoded = String(url || '');
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    // keep it as is
+  }
+  const name = String(fileName || '').toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return name.length > 0 && new RegExp(`[/_]${name}(?:[?#]|$)`).test(decoded.toLowerCase());
+}
+
+/**
  * Decides what to do with every video on Drive. Files are grouped by
  * checksum so identical copies form one group; see the module comment for
  * the rules. Actionable groups come first (event-linked, then unlinked,
@@ -295,6 +317,10 @@ export function planDriveVideos(input: {
     }
     if (matched.size === 1 && !ambiguous) {
       const ev = [...matched.values()][0];
+      if ((ev.videoUrls || []).some((u) => files.some((f) => urlHasFileName(u, f.name)))) {
+        groups.push({ ...base, action: 'already-on-event', reason: `"${ev.title}" already lists a video with this file name (probably a Firebase Storage copy); left alone so it is not shown twice.`, eventId: ev.id, eventTitle: ev.title });
+        continue;
+      }
       groups.push({ ...base, action: 'move-orphan', reason: `Not linked to an event; its folder matches "${ev.title}".`, eventId: ev.id, eventTitle: ev.title });
     } else if (matched.size > 1 || ambiguous) {
       groups.push({ ...base, action: 'ambiguous', reason: 'Its folder could belong to more than one event.' });
@@ -303,7 +329,7 @@ export function planDriveVideos(input: {
     }
   }
 
-  const rank: Record<PlanAction, number> = { 'move-linked': 0, 'move-orphan': 1, held: 2, 'too-new': 2, ambiguous: 2, unmatched: 2 };
+  const rank: Record<PlanAction, number> = { 'move-linked': 0, 'move-orphan': 1, held: 2, 'too-new': 2, ambiguous: 2, unmatched: 2, 'already-on-event': 2 };
   groups.sort((a, b) => rank[a.action] - rank[b.action] || a.files[0].createdTime.localeCompare(b.files[0].createdTime));
   return groups;
 }
@@ -401,7 +427,8 @@ async function loadTransferContext(db: Firestore, drive: any): Promise<TransferC
   const eventsSnap = await db.collection(EVENTS_COLLECTION).get();
   for (const doc of eventsSnap.docs) {
     const data = doc.data() as any;
-    events.push({ id: doc.id, title: String(data.title || 'Event'), date: data.date ? String(data.date) : undefined, isMediaFolder: !isChapterEvent({ id: doc.id } as any) });
+    const videoUrls = [...(Array.isArray(data.youtubeVideoUrls) ? data.youtubeVideoUrls : []), ...(data.youtubeVideoUrl ? [data.youtubeVideoUrl] : [])].filter((u: unknown): u is string => typeof u === 'string');
+    events.push({ id: doc.id, title: String(data.title || 'Event'), date: data.date ? String(data.date) : undefined, isMediaFolder: !isChapterEvent({ id: doc.id } as any), videoUrls });
     for (const { url, fileId } of findEventDriveLinks(data)) links.set(fileId, [...(links.get(fileId) || []), { eventId: doc.id, url }]);
   }
 
@@ -533,7 +560,7 @@ export async function previewTransferPlan(db: Firestore) {
 
 export async function drainDriveVideosToYouTube(db: Firestore): Promise<DrainResult> {
   const result: DrainResult = {
-    moved: 0, failed: 0, duplicatesRemoved: 0, driveFreedMB: 0, waiting: 0, held: 0, unmatched: 0, ambiguous: 0, tooNew: 0,
+    moved: 0, failed: 0, duplicatesRemoved: 0, driveFreedMB: 0, waiting: 0, held: 0, unmatched: 0, ambiguous: 0, tooNew: 0, alreadyOnEvent: 0,
     blocked: false, timeBudgetHit: false, movedVideos: [], failures: [], attention: [],
   };
   if (drainRunning) return { ...result, alreadyRunning: true };
@@ -553,6 +580,7 @@ export async function drainDriveVideosToYouTube(db: Firestore): Promise<DrainRes
       else if (g.action === 'unmatched') result.unmatched++;
       else if (g.action === 'ambiguous') result.ambiguous++;
       else if (g.action === 'too-new') result.tooNew++;
+      else if (g.action === 'already-on-event') result.alreadyOnEvent++;
       if (!g.action.startsWith('move') && result.attention.length < REPORT_LIST_LIMIT) {
         result.attention.push({ name: g.name, copies: g.files.length, folders: [...new Set(g.files.map((f) => f.folder))], issue: g.reason });
       }
